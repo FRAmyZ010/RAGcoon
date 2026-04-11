@@ -1,2 +1,49 @@
+# --- Security & Environment ---
 .env
-/node_modules
+.venv/
+env/
+venv/
+ENV/
+*.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Data & Local Cache ---
+data/dummy/*
+!data/dummy/.gitkeep
+*.pdf
+*.csv
+*.log
+
+# --- IDE & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints
+
+# --- Sentence Transformers / HuggingFace Cache ---
+.cache/
