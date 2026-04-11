@@ -18,7 +18,7 @@ query = "Methology of the Petfeeder project"
 query_vector = model.encode([query])[0]
 
 results = client.query_points(
-    collection_name="project_documents",  # 👈 ใช้ชื่อที่มีจริง
+    collection_name="project_documents", 
     query=query_vector,
     limit=3
 )
