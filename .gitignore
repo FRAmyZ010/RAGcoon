@@ -1,2 +1,21 @@
 .env
 /node_modules
+venv
+/backend/venv
+# Python Virtual Environment
+backend/venv/
+backend/.venv/
+**/__pycache__/
+*.pyc
+
+# Node Modules (สำหรับฝั่ง Frontend)
+frontend/node_modules/
+
+# Environment Variables (ไฟล์ความลับ)
+.env
+backend/.env
+frontend/.env
+
+# OS Files
+.DS_Store
+Thumbs.db
