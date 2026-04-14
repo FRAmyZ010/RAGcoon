@@ -5,6 +5,9 @@ from rag.embedding.pdf_scanning import scan_pdf_document
 
 times = []
 
+# ===================================================================
+# AVERAGE SCANNING TIME PER FILES : 1.528 seconds
+# ===================================================================
 
 
 def test_pipeline():
