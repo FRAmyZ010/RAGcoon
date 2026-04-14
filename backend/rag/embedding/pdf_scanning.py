@@ -11,17 +11,17 @@ def scan_pdf_document(file_path):
             text = page.extract_text(x_tolerance=1, y_tolerance=2)
 
             if text:
-                clean_text = clean_extracted_text(text)
+                # clean_text = clean_extracted_text(text)
 
                 metadata = {
                     "source": file_path.split("/")[-1],
                     "page_number":i+1,
                     "total_pages":len(pdf.pages),
-                    "char_count":len(clean_text)
+                    "char_count":len(text)
                 }
 
                 extracted_data.append({
-                    "content":clean_text,
+                    "content":text,
                     "metadata":metadata
                 })
             

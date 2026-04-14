@@ -3,6 +3,10 @@ import json
 from time import perf_counter
 from rag.embedding.pdf_scanning import scan_pdf_document
 
+times = []
+
+
+
 def test_pipeline():
     # define file  path
     target_dir = "./data/final_doc/"
@@ -20,11 +24,13 @@ def test_pipeline():
     
     print(f"🔍 Found {len(pdf_files)} PDF(s). Starting scanning...\n")
 
+    round = 0
     # Start scanning each PDF
     for file_name in pdf_files:
+        round += 1
         start = perf_counter()
         file_path = os.path.join(target_dir, file_name)
-        print(f"📚 Scanning: {file_name}")
+        print(f"📚 Scanning round {round}: {file_name}")
 
         try:
             results = scan_pdf_document(file_path)
@@ -40,7 +46,17 @@ def test_pipeline():
         except Exception as e:
             print(f"❌ Failed to scan {file_name}: {str(e)}")
         end = perf_counter()
+        
         print(f"⏱️ Time taken: {end - start:.3f} seconds\n")
+
+        elapsed = end - start
+        times.append(elapsed)
+
+    print(f"📈 Total time taken: {sum(times):.3f} seconds")
+    print(f"📊 Average time per file: {sum(times)/len(times):.3f} seconds")
+
+    print(f"📉 Min time: {min(times):.3f} seconds")
+    print(f"📈 Max time: {max(times):.3f} seconds")
 
 if __name__ == "__main__":
     test_pipeline()
