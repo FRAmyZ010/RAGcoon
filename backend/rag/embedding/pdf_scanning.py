@@ -1,4 +1,4 @@
-import pdfplumner
+import pdfplumber
 import re
 
 def scan_pdf_document(file_path):
