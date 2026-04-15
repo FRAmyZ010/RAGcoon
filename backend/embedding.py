@@ -6,7 +6,7 @@ from rag.embedding.pdf_scanning import scan_pdf_document
 def test_pipeline():
     # define file path
     target_dir = "./data/final_doc/"
-    target_file = "Final document(8).pdf"  # ชื่อไฟล์ที่ต้องการแสกน
+    target_file = "Book-Senior.pdf"  # ชื่อไฟล์ที่ต้องการแสกน
 
     # Checking directory
     if not os.path.exists(target_dir):
