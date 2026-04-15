@@ -6,68 +6,51 @@ from rag.embedding.pdf_scanning import scan_pdf_document
 def test_pipeline():
     # define file path
     target_dir = "./data/final_doc/"
+    target_file = "Final document(8).pdf"  # ชื่อไฟล์ที่ต้องการแสกน
 
-    # Checking directory and files
+    # Checking directory
     if not os.path.exists(target_dir):
         print(f"⚠️ Error: Directory '{target_dir}' not found.")
         return
     
-    pdf_files = [f for f in os.listdir(target_dir) if f.endswith('.pdf')]
-
-    if not pdf_files:
-        print(f"⚠️ No PDF files found in {target_dir}")
+    # ตรวจสอบว่ามีไฟล์ที่ระบุอยู่จริงหรือไม่
+    file_path = os.path.join(target_dir, target_file)
+    if not os.path.exists(file_path):
+        print(f"⚠️ Error: File '{target_file}' not found in {target_dir}")
         return
     
-    print(f"🔍 Found {len(pdf_files)} PDF(s). Starting scanning...\n")
+    print(f"🔍 Starting scanning for specific file: {target_file}\n")
 
-    times = []
-    round_num = 0
+    start = perf_counter()
 
-    for file_name in pdf_files:
-        round_num += 1
-        start = perf_counter()
-        file_path = os.path.join(target_dir, file_name)
-        
-        print(f"🚀 Round {round_num}: Processing {file_name}")
+    try:
+        # เริ่มการสแกนเฉพาะไฟล์ที่ระบุ
+        results = scan_pdf_document(file_path)
+        print(f"✅ Success! Extracted {len(results)} pages.")
 
-        try:
-            results = scan_pdf_document(file_path)
-            print(f"✅ Success! Extracted {len(results)} pages.")
-
-            # --- ส่วนที่เพิ่ม: Loop โชว์เนื้อหาทุกหน้า ---
-            # --- ส่วนที่ปรับปรุง: Loop โชว์เนื้อหาเฉพาะ 5 หน้าแรก ---
-            # ใช้ [:5] เพื่อดึงเฉพาะ 5 item แรกจาก list 'results'
-            # for page in results[:5]:
-            #     p_num = page['metadata']['page_number']
-            #     content = page['content']
-                
-            #     print(f"\n--- 📄 Page {p_num} ---")
-            #     print(content)
-            #     print(f"--- End of Page {p_num} ---")
+        # แสดงเนื้อหาเฉพาะ 5 หน้าแรก
+        for page in results[:5]:
+            p_num = page['metadata']['page_number']
+            content = page['content']
             
-            # # แจ้งเตือนผู้ใช้หน่อยว่ายังมีหน้าอื่นที่ไม่ได้โชว์
-            # if len(results) > 5:
-            #     print(f"\n... and {len(results) - 5} more pages were scanned but not displayed.")
-            # # ---------------------------------------------------
-
-            # โชว์ Metadata รวมของไฟล์นี้ (ดูจากหน้าแรก)
-            if results:
-                print(f"\n📊 Global Metadata Sample: {json.dumps(results[0]['metadata'], indent=4, ensure_ascii=False)}")
-
-            print("\n" + "="*50 + "\n")
-
-        except Exception as e:
-            print(f"❌ Failed to scan {file_name}: {str(e)}")
+            print(f"\n--- 📄 Page {p_num} ---")
+            print(content)
+            print(f"--- End of Page {p_num} ---")
         
-        end = perf_counter()
-        elapsed = end - start
-        times.append(elapsed)
-        print(f"⏱️ Time taken for this file: {elapsed:.3f} seconds\n")
+        if len(results) > 5:
+            print(f"\n... and {len(results) - 5} more pages were scanned but not displayed.")
 
-    # สรุปภาพรวม
-    if times:
-        print(f"📈 Total time: {sum(times):.3f} seconds")
-        print(f"📊 Avg/File: {sum(times)/len(times):.3f} seconds")
+        # โชว์ Metadata รวมของไฟล์นี้
+        if results:
+            print(f"\n📊 Metadata Detail: {json.dumps(results[0]['metadata'], indent=4, ensure_ascii=False)}")
+
+        print("\n" + "="*50 + "\n")
+
+    except Exception as e:
+        print(f"❌ Failed to scan {target_file}: {str(e)}")
+    
+    end = perf_counter()
+    print(f"⏱️ Total time taken: {end - start:.3f} seconds\n")
 
 if __name__ == "__main__":
     test_pipeline()
