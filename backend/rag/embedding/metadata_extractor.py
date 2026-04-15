@@ -52,11 +52,41 @@ def extract_project_metadata(first_page_text):
     if advisor_match:
         metadata["advisor"] = advisor_match.group(1).strip()
 
-    # Keywords
-    keywords_match = re.search(r"Keywords?\s*:\s*(.*)", first_page_text, re.IGNORECASE)
-    if keywords_match:
-        metadata["keywords"] = keywords_match.group(1).strip()
+    # 1. นิยามกลุ่มคำที่เราต้องการค้นหา (คุณสามารถเพิ่มคำได้ที่นี่)
+    tech_taxonomy = [
+        "Machine Learning", "Deep Learning", "Artificial Intelligence",
+        "Arduino", "ESP32", "Raspberry Pi", "IoT", "Internet of Things",
+        "Sensor", "Node.js", "React", "FastAPI", "Python", "SQL", "PostgreSQL",
+        "Mobile Application", "Web Application", "Image Processing",
+        "Neural Network", "RAG", "LLM", "Llama"
+    ]
 
+    found_keywords = []
+
+    # 2. ค้นหาคำจาก Taxonomy ในเนื้อหาหน้าแรก
+    for tech in tech_taxonomy:
+        # ใช้ \b เพื่อให้หาแบบเป็นคำ (เช่น หา 'RAG' จะไม่ไปติดในคำว่า 'DRAG')
+        if re.search(rf"(?i)\b{re.escape(tech)}\b", first_page_text):
+            found_keywords.append(tech)
+
+    # 3. ลองใช้ Regex แบบเดิมเป็นทางเลือกสำรอง (ถ้าเผื่อสกัดคำแปลกๆ ออกมาได้)
+    # ค้นหาช่วง Keywords: ... จนจบหน้าหรือเจอจุดตัด
+    keywords_match = re.search(r"(?i)Keywords?\s*[:\-]?\s*([\s\S]+?)(?=\n\n|Year|\b20[12]\d\b|$)", first_page_text)
+    
+    if keywords_match:
+        extracted_text = keywords_match.group(1).strip()
+        # ถ้าสกัดออกมาได้ ให้ลองเอามาแยกด้วย comma แล้วเติมเข้าไป
+        potential_kws = [k.strip() for k in re.split(r'[,;\n]', extracted_text) if len(k.strip()) > 2]
+        for pk in potential_kws:
+            if pk.lower() not in [f.lower() for f in found_keywords]:
+                found_keywords.append(pk)
+
+    # รวมผลลัพธ์
+    if found_keywords:
+        # ลบคำซ้ำและเชื่อมด้วย comma
+        unique_kws = []
+        [unique_kws.append(x) for x in found_keywords if x not in unique_kws]
+        metadata["keywords"] = ", ".join(unique_kws[:10]) # เก็บสูงสุด 10 คำ
     # Year
     year_match = re.search(r"\b(20[12]\d)\b", first_page_text)
     if year_match:
