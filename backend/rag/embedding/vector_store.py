@@ -1,76 +1,65 @@
+import os
 import uuid
+from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from langchain_huggingface import HuggingFaceEmbeddings
 
-import os
-from dotenv import load_dotenv
+load_dotenv()
+
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+
+# 🔥 โหลด model ครั้งเดียว
+embedding_model = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+
 
 def upload_to_qdrant(chunks):
-    
-
-    QDRANT_URL = os.getenv("QDRANT_URL")
-    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    COLLECTION_NAME = os.getenv("COLLECTION_NAME")
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
-    
-    # 1. สร้าง Client และตรวจสอบการเชื่อมต่อ (Health Check)
     try:
-        client = QdrantClient(
-            url=QDRANT_URL,
-            api_key=QDRANT_API_KEY,
-            check_compatibility=False,
-            timeout=60  # เพิ่ม Timeout เป็น 60 วินาที
-        )
-        # ตรวจสอบว่าเชื่อมต่อได้จริงไหม
-        collections = client.get_collections()
-        print("🌐 Connection to Qdrant Cloud: OK")
-    except Exception as e:
-        print(f"❌ Connection Failed: ไม่สามารถติดต่อ Qdrant Cloud ได้ ({e})")
-        return False
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        print("🌐 Connected to Qdrant")
 
-    # 2. เตรียม Embedding Model
-    print("🧠 Initializing Embedding Model...")
-    embeddings_model = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        # 🧠 เตรียมข้อมูล
+        docs = [c["content"] for c in chunks]
+        metas = [c["metadata"] for c in chunks]
 
-    # 3. เตรียมข้อมูล
-    documents = [c['content'] for c in chunks]
-    metadatas = [c['metadata'] for c in chunks]
+        vectors = embedding_model.embed_documents(docs)
 
-    # 4. แปลงเป็น Vectors (ทำทั้งหมดทีเดียวได้ เพราะรันในเครื่องเรา)
-    print(f"🧠 Generating {len(documents)} Embeddings...")
-    vectors = embeddings_model.embed_documents(documents)
+        # 📦 สร้าง collection ถ้ายังไม่มี
+        collections = [c.name for c in client.get_collections().collections]
+        if COLLECTION_NAME not in collections:
+            client.create_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=len(vectors[0]),
+                    distance=models.Distance.COSINE
+                )
+            )
+            print(f"📦 Created collection: {COLLECTION_NAME}")
 
-    # 5. แบ่งข้อมูลเป็น Batch เพื่อส่ง (ป้องกัน Server Disconnect)
-    batch_size = 20  # ส่งทีละ 20 จุด
-    total_chunks = len(vectors)
-    print(f"🚀 Pushing to Qdrant Cloud (Batch size: {batch_size})...")
-
-    try:
-        for i in range(0, total_chunks, batch_size):
-            batch_end = min(i + batch_size, total_chunks)
-            
+        # 🚀 Upload (batch)
+        batch_size = 50
+        for i in range(0, len(vectors), batch_size):
             points = [
                 models.PointStruct(
                     id=str(uuid.uuid4()),
                     vector=vectors[j],
                     payload={
-                        "page_content": documents[j],
-                        "metadata": metadatas[j]
+                        "content": docs[j],
+                        **metas[j]
                     }
                 )
-                for j in range(i, batch_end)
+                for j in range(i, min(i + batch_size, len(vectors)))
             ]
 
-            client.upsert(
-                collection_name=COLLECTION_NAME,
-                points=points
-            )
-            print(f"✅ Uploaded chunks {i+1} to {batch_end}...")
+            client.upsert(collection_name=COLLECTION_NAME, points=points)
+            print(f"✅ Uploaded {i + 1} - {i + len(points)}")
 
-        print("✨ All data uploaded successfully!")
+        print("✨ Upload complete")
         return True
 
     except Exception as e:
-        print(f"❌ Upload Error during batch processing: {e}")
+        print(f"❌ Error: {e}")
         return False
