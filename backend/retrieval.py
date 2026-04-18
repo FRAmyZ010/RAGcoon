@@ -17,7 +17,6 @@ reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 COLLECTION_NAME = "project_documents"
 
 
-<<<<<<< HEAD
 # ================== RETRIEVAL ==================
 def retrieve(query: str, top_k: int = 10):
     query_text = f"query: {query}"
@@ -26,13 +25,6 @@ def retrieve(query: str, top_k: int = 10):
         [query_text],
         normalize_embeddings=True
     )[0]
-=======
-results = client.query_points(
-    collection_name="project_documents", 
-    query=query_vector,
-    limit=3
-)
->>>>>>> 5544233e9dbdfec5eb6bb6f8f73e16f411d9d298
 
     results = client.query_points(
         collection_name=COLLECTION_NAME,
@@ -41,7 +33,6 @@ results = client.query_points(
         with_payload=True
     )
 
-<<<<<<< HEAD
     docs = [
         point.payload["text"]
         for point in results.points
@@ -84,6 +75,3 @@ if __name__ == "__main__":
 
     for i, doc in enumerate(results, 1):
         print(f"\n--- Result {i} ---\n{doc[:500]}...")
-=======
-print(context)
->>>>>>> 5544233e9dbdfec5eb6bb6f8f73e16f411d9d298
