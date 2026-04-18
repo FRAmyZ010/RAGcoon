@@ -24,7 +24,7 @@ DEFAULT_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
 embed_model = SentenceTransformer(EMBEDDING_MODEL)
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
-COLLECTION_NAME = "project_documents"
+COLLECTION_NAME = "project_documents" # ชื่อ collection ใน Qdrant ที่เก็บเอกสารของโปรเจค
 SAMPLE_QUERIES = [
     "methology of petfeeder",
     "objective of petfeeder",
