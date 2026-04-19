@@ -37,7 +37,7 @@ def summarize(times):
     print("=" * 40)
 
 
-def process_file(file_path, preview=False,ENABLE_UPLOAD = False):
+def process_file(file_path, preview=False,ENABLE_UPLOAD = True):
     start = perf_counter()
     file_name = os.path.basename(file_path)
     
@@ -101,7 +101,7 @@ def test_pipeline():
     target_dir = "./data/final_doc/"
 
     # ===== CONFIG =====
-    MODE = "limit"        # "all" | "specific" | "limit"
+    MODE = "all"        # "all" | "specific" | "limit"
     TARGET_FILES = ["file1.pdf", "file2.pdf"]  # ใช้ตอน mode = specific
     LIMIT = 20         # ใช้ตอน mode = limit
     # ==================
