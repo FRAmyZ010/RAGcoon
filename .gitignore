@@ -31,7 +31,6 @@ wheels/
 # --- Data & Local Cache ---
 data/dummy/*
 !data/dummy/.gitkeep
-*.pdf
 *.csv
 *.log
 
