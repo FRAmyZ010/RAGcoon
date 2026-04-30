@@ -1,60 +1,46 @@
-import math
 import statistics
 from typing import List
 
 
 def percentile(values: List[float], p: float) -> float:
-    """📊 Calculate percentile using linear interpolation."""
     if not values:
         return 0.0
 
     sorted_values = sorted(values)
-    rank = (len(sorted_values) - 1) * (p / 100)
+    k = (len(sorted_values) - 1) * (p / 100)
+    f = int(k)
+    c = min(f + 1, len(sorted_values) - 1)
 
-    lower = math.floor(rank)
-    upper = math.ceil(rank)
+    if f == c:
+        return sorted_values[int(k)]
 
-    if lower == upper:
-        return sorted_values[lower]
-
-    weight = rank - lower
-    return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight
+    return sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f)
 
 
 def format_performance_summary(item_label: str, durations: List[float]) -> str:
-    """📈 Return a nicely formatted performance summary."""
     if not durations:
-        return _empty_summary(item_label)
+        return f"{item_label}: No data"
 
-    total_time = sum(durations)
+    total = sum(durations)
+    count = len(durations)
 
-    return "\n".join([
-        "✨ ================= Performance Summary ================= ✨",
-        f"📌 {item_label}: {len(durations)}",
-        "----------------------------------------------------------",
-        f"⏱️  Total Time : {total_time:.3f}s",
-        f"📊 Mean       : {statistics.mean(durations):.3f}s",
-        f"📍 Median     : {statistics.median(durations):.3f}s",
-        f"🔽 Min        : {min(durations):.3f}s",
-        f"🔼 Max        : {max(durations):.3f}s",
-        f"🚀 P90        : {percentile(durations, 90):.3f}s",
-        f"🔥 P95        : {percentile(durations, 95):.3f}s",
-        "==========================================================",
-    ])
+    result = (
+        f"{item_label}\n"
+        f"{'-'*40}\n"
+        f"Count  : {count}\n"
+        f"Mean   : {statistics.mean(durations):.3f}s\n"
+        f"Median : {statistics.median(durations):.3f}s\n"
+        f"Min    : {min(durations):.3f}s\n"
+        f"Max    : {max(durations):.3f}s\n"
+        f"P90    : {percentile(durations, 90):.3f}s\n"
+        f"P95    : {percentile(durations, 95):.3f}s\n"
+    )
 
+    if total > 0:
+        qps = count / total
+        result += f"QPS    : {qps:.2f} req/s\n"
 
-def _empty_summary(item_label: str) -> str:
-    """📭 Return empty performance summary."""
-    return "\n".join([
-        "✨ ================= Performance Summary ================= ✨",
-        f"📌 {item_label}: 0",
-        "----------------------------------------------------------",
-        "⏱️  Total Time : 0.000s",
-        "📊 Mean       : 0.000s",
-        "📍 Median     : 0.000s",
-        "🔽 Min        : 0.000s",
-        "🔼 Max        : 0.000s",
-        "🚀 P90        : 0.000s",
-        "🔥 P95        : 0.000s",
-        "==========================================================",
-    ])
+    if count > 1:
+        result += f"StdDev : {statistics.stdev(durations):.3f}s\n"
+
+    return result
