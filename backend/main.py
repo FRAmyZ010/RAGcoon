@@ -56,6 +56,9 @@ if __name__ == "__main__":
 
         print(f"📄 Reference snippets used: {len(result['contexts'])}")
 
+        for source in result['sources']:
+            print(f"Source: {source}")
+
         # ===================== TIMING =====================
         print_section("⏱️ Timing")
 

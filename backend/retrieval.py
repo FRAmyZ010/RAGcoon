@@ -132,7 +132,7 @@ def semantic_search(query: str, top_k: int, metadata_filters=None) -> List[Dict]
         return []
 
     return [
-        {"text": p.payload["content"], "score": p.score}
+        {"text": p.payload["content"], "score": p.score, "payload": {**p.payload, "source": "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"}}
         for p in results.points
         if p.payload and p.payload.get("content")
     ]
@@ -153,21 +153,23 @@ def normalize_scores(scores: List[float]) -> List[float]:
 
     return [(s - min_s) / (max_s - min_s) for s in scores]
 
-def rerank(query: str, docs: List[str], top_n: int) -> List[Dict]: # โดย รับ : query และ เอกสารที่ semantic หาได้ top_n นำมาให้ คะแนน ใหม่
-    if not docs: # กัน error ถ้าไม่มีข้อมูล จะส่ง [] กลับไปเลย
+def rerank(query: str, docs_with_payload: List[Dict], top_n: int) -> List[Dict]: # โดย รับ : query และ เอกสารที่ semantic หาได้ top_n นำมาให้ คะแนน ใหม่
+    if not docs_with_payload: # กัน error ถ้าไม่มีข้อมูล จะส่ง [] กลับไปเลย
         return []
 
+    docs = [d["text"] for d in docs_with_payload]
     pairs = [[query, doc] for doc in docs] # สร้างคู่ของ query กับแต่ละ document ในรูปแบบของ list ที่มีสอง element คือ query และ doc ซึ่งจะถูกใช้เป็น input ให้กับ reranker ในการคำนวณความเกี่ยวข้องระหว่าง query กับแต่ละ document เพื่อให้ได้คะแนนความเกี่ยวข้องที่แม่นยำมากขึ้นในการจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุด
     scores = reranker.predict(pairs) # ใช้ reranker ที่เป็น CrossEncoder ในการคำนวณความเกี่ยวข้องระหว่าง query กับแต่ละ document โดยการส่ง pairs ที่ประกอบด้วย query และ doc เป็น input ให้กับ reranker ซึ่งจะทำการประมวลผลและให้คะแนนความเกี่ยวข้องออกมาเป็น list ของ scores ที่มีค่าเป็นตัวเลขที่แสดงถึงความเกี่ยวข้องระหว่าง query กับแต่ละ document ซึ่งจะถูกใช้ในการจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดในขั้นตอนถัดไป
 
-    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)  # (doc, score) โดยการใช้ฟังก์ชัน sorted() เพื่อจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดโดยการเรียงลำดับคู่ของ document และ score ที่ได้จาก reranker โดยใช้คะแนนความเกี่ยวข้อง (score) เป็นเกณฑ์ในการจัดอันดับและเรียงลำดับในรูปแบบจากมากไปน้อย (reverse=True) ซึ่งจะทำให้เอกสารที่มีความเกี่ยวข้องสูงสุดกับ query อยู่ในตำแหน่งแรกของ ranked list และเอกสารที่มีความเกี่ยวข้องต่ำสุดอยู่ในตำแหน่งสุดท้ายของ ranked list
-    top_docs = ranked[:top_n] # เอาแค่ top N (เช่น 5 ตัว)
+    scored = list(zip(docs_with_payload, scores))
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)  # (doc_with_payload, score) โดยการใช้ฟังก์ชัน sorted() เพื่อจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดโดยการเรียงลำดับคู่ของ document และ score ที่ได้จาก reranker โดยใช้คะแนนความเกี่ยวข้อง (score) เป็นเกณฑ์ในการจัดอันดับและเรียงลำดับในรูปแบบจากมากไปน้อย (reverse=True) ซึ่งจะทำให้เอกสารที่มีความเกี่ยวข้องสูงสุดกับ query อยู่ในตำแหน่งแรกของ ranked list และเอกสารที่มีความเกี่ยวข้องต่ำสุดอยู่ในตำแหน่งสุดท้ายของ ranked list
+    top_ranked = ranked[:top_n] # เอาแค่ top N (เช่น 5 ตัว)
 
-    norm_scores = normalize_scores([s for _, s in top_docs]) # ทำ normalization คะแนน (เช่น 0–1) เปรียบเทียบง่าย และช่วยให้การนำไปใช้ในขั้นตอนถัดไปมีความสอดคล้องกันมากขึ้น เช่น การนำคะแนนไปคำนวณร่วมกับคะแนนจากการค้นหาแบบอื่น ๆ หรือการแสดงผลคะแนนในรูปแบบที่เข้าใจง่ายขึ้นสำหรับผู้ใช้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
+    norm_scores = normalize_scores([s for _, s in top_ranked]) # ทำ normalization คะแนน (เช่น 0–1) เปรียบเทียบง่าย และช่วยให้การนำไปใช้ในขั้นตอนถัดไปมีความสอดคล้องกันมากขึ้น เช่น การนำคะแนนไปคำนวณร่วมกับคะแนนจากการค้นหาแบบอื่น ๆ หรือการแสดงผลคะแนนในรูปแบบที่เข้าใจง่ายขึ้นสำหรับผู้ใช้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
 
     return [ # สุดท้ายส่งกลับเป็น list ของ dict ที่มี text และ score โดยที่ text คือเนื้อหาของ document และ score คือคะแนนความเกี่ยวข้องที่ได้จาก reranker หลังจากทำ normalization แล้ว ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
-        {"text": doc, "score": float(norm)}
-        for (doc, _), norm in zip(top_docs, norm_scores)
+        {"text": item["text"], "score": float(norm), "payload": item["payload"]}
+        for (item, _), norm in zip(top_ranked, norm_scores)
     ]
 
 
@@ -200,10 +202,10 @@ def search(query: str) -> List[str]:
     print(f"📊 Retrieved (before rerank): {len(results)} docs")
 
     # 🧾 เอา text
-    docs = [r["text"] for r in results]
+    docs_with_payload = results
 
     # 🧠 rerank
-    reranked = rerank(clean_query, docs, DEFAULT_TOP_N)
+    reranked = rerank(clean_query, docs_with_payload, DEFAULT_TOP_N)
 
     print(f"🏆 Top after rerank: {len(reranked)} docs")
 
@@ -243,11 +245,11 @@ def search_with_details(query: str) -> dict:
                 "retrieved_count": 0,
             }
 
-        docs = [r["text"] for r in results]
+        docs_with_payload = results
 
         # 🧠 rerank
         rerank_start = time.perf_counter()
-        reranked = rerank(clean_query, docs, DEFAULT_TOP_N)
+        reranked = rerank(clean_query, docs_with_payload, DEFAULT_TOP_N)
         rerank_seconds = time.perf_counter() - rerank_start
 
         total_seconds = time.perf_counter() - total_start
@@ -295,22 +297,23 @@ def run_sample_queries(queries: List[str]) -> None:
 
         start = time.perf_counter()
 
-        # search
-        results = search(q)
+        # search with details
+        result = search_with_details(q)
 
-        elapsed = time.perf_counter() - start
-
+        elapsed = result["timing"]["total_seconds"]
 
         print("📌 RESULT")
         print("=" * 50)
 
         print(f"🔎 Query: {q}\n")
 
-        if not results:
+        if not result["results"]:
             print("❌ No results found")
 
         else:
             print("✅ Documents retrieved successfully")
+            for item in result["results"]:
+                print(f"Source: {item['payload']['source']}")
 
         print("\n" + "-" * 50)
         print(f"⏱️ Time: {elapsed:.3f} seconds")
