@@ -41,7 +41,7 @@ client = QdrantClient( # อันนี้คือการสร้าง con
 #           DEFAULT_TOP_N คือจำนวนผลสุดท้ายหลัง rerank
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "embedding_experiment")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
 DEFAULT_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "20"))
 DEFAULT_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
@@ -82,14 +82,8 @@ def extract_query_and_filters(user_query: str) -> Tuple[str, Dict]: #
     if year_match:
         filters["year"] = year_match.group() # regex นี้จะค้นหาเลขที่เป็นปีในรูปแบบ 4 หลักที่ขึ้นต้นด้วย 19 หรือ 20 และถ้าพบจะนำค่าที่จับได้มาเก็บใน filters dictionary โดยใช้ key เป็น "year" และ value เป็นปีที่จับได้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่ตรงกับความต้องการมากขึ้นและลดจำนวนเอกสารที่ไม่เกี่ยวข้องที่ถูกดึงมาในการค้นหา
 
-    # หา type เอกสาร (เช่น pdf)
-    if "pdf" in user_query.lower(): # ถ้าใน query มีคำว่า จะเพิ่ม filter ที่บอกว่าให้ค้นหาเฉพาะเอกสารที่มี field "type" เท่ากับ "pdf" 
-        filters["type"] = "pdf"
-
     # clean query
     clean_query = re.sub(r"\b(19\d{2}|20\d{2})\b", "", user_query)  # ทำความสะอาด query โดยการลบปีออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
-    clean_query = clean_query.replace("pdf", "") # ทำความสะอาด query โดยการลบคำว่า "pdf" ออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
-    clean_query = clean_query.replace("ปี", "") # ทำความสะอาด query โดยการลบคำว่า "ปี" ออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
     clean_query = clean_query.strip() # ทำความสะอาด query โดยการลบช่องว่างที่เกินออกจาก clean_query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
 
     return clean_query, filters  # หลังจากที่ได้แยก query และส่วนที่เป็น filters ออกมาแล้ว ฟังก์ชันนี้จะส่งกลับ clean_query ซึ่งเป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว และ filters ซึ่งเป็น dictionary ที่เก็บเงื่อนไขการกรองข้อมูลที่ถูกแยกออกมาจาก query เช่น ถ้า query มีคำว่า "ปี 2020" ฟังก์ชันนี้จะสามารถแยก "ปี 2020" ออกมาเป็น filter ที่บอกว่าให้ค้นหาเฉพาะเอกสารที่มี field "year" เท่ากับ 2020 และ clean_query จะเป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
