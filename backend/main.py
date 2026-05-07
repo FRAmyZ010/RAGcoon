@@ -2,18 +2,13 @@ from performance import format_performance_summary
 from step1_context import answer_question
 
 
-def format_context_preview(context: str, limit: int = 220) -> str:
-    preview = " ".join(context.split())
-    return preview if len(preview) <= limit else f"{preview[:limit].rstrip()}..."
-
-
 def print_divider(char="=", length=50):
     print(char * length)
 
 
 def print_section(title: str):
     print_divider("-")
-    print(f"{title}")
+    print(title)
     print_divider("-")
 
 
@@ -31,10 +26,14 @@ if __name__ == "__main__":
 
         if question.lower() == "exit":
             print("\n👋 Exiting system...")
+
             if session_total_times:
                 print_divider("=")
-                print(format_performance_summary("Questions processed", session_total_times))
-            print_divider("=")
+                print(format_performance_summary(
+                    "Questions processed",
+                    session_total_times
+                ))
+
             break
 
         if not question:
@@ -42,11 +41,11 @@ if __name__ == "__main__":
             continue
 
         result = answer_question(question)
+
         timing = result["timing"]
         session_total_times.append(timing["total_seconds"])
 
         # ===================== RESULT =====================
-        print_divider("=")
         print("📌 RESULT")
         print_divider("=")
 
@@ -59,6 +58,7 @@ if __name__ == "__main__":
 
         # ===================== TIMING =====================
         print_section("⏱️ Timing")
+
         print(f"Retrieval : {timing['retrieval_seconds']:.3f}s")
         print(f"Rerank    : {timing['rerank_seconds']:.3f}s")
         print(f"LLM       : {timing['llm_seconds']:.3f}s")
@@ -67,17 +67,8 @@ if __name__ == "__main__":
         # ===================== WARNINGS =====================
         if result["errors"]:
             print_section("⚠️ Retrieval Warnings")
+
             for error in result["errors"]:
                 print(f"- {error}")
-
-        # ===================== CONTEXT =====================
-        print_section("📚 Retrieved Context")
-
-        if result["scored_contexts"]:
-            for i, item in enumerate(result["scored_contexts"], 1):
-                print(f"[{i}] ⭐ Score: {item['score']:.4f}")
-                print(f"     {format_context_preview(item['text'])}\n")
-        else:
-            print("- No context retrieved")
 
         print_divider("=")

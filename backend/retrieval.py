@@ -118,10 +118,6 @@ def semantic_search(query: str, top_k: int, metadata_filters=None) -> List[Dict]
     query_vector = embed_model.embed_query(f"query: {query}") #
     query_filter = build_qdrant_filter(metadata_filters)
 
-    print("\n🔍 [QDRANT SEARCH]")
-    print("Query:", query)
-    print("Filter:", query_filter)
-
     try:
         results = client.query_points(
             collection_name=COLLECTION_NAME,
@@ -131,19 +127,9 @@ def semantic_search(query: str, top_k: int, metadata_filters=None) -> List[Dict]
             query_filter=query_filter,
         )
     except ResponseHandlingException:
-        print("❌ Qdrant Response Error")
         return []
     except Exception as e:
-        print("❌ Unknown Error:", e)
         return []
-
-    print(f"📦 Raw points from Qdrant: {len(results.points)}")
-
-    # 👉 DEBUG payload จริง
-    for i, p in enumerate(results.points[:5], 1):  # ดูแค่ 5 ตัวพอ
-        print(f"\n--- Point {i} ---")
-        print("Score:", p.score)            
-        print("Payload:", p.payload)
 
     return [
         {"text": p.payload["content"], "score": p.score}
@@ -179,11 +165,6 @@ def rerank(query: str, docs: List[str], top_n: int) -> List[Dict]: # โดย �
 
     norm_scores = normalize_scores([s for _, s in top_docs]) # ทำ normalization คะแนน (เช่น 0–1) เปรียบเทียบง่าย และช่วยให้การนำไปใช้ในขั้นตอนถัดไปมีความสอดคล้องกันมากขึ้น เช่น การนำคะแนนไปคำนวณร่วมกับคะแนนจากการค้นหาแบบอื่น ๆ หรือการแสดงผลคะแนนในรูปแบบที่เข้าใจง่ายขึ้นสำหรับผู้ใช้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
 
-    print("\n🧠 [RERANK DEBUG]")
-    for i, ((doc, raw), norm) in enumerate(zip(top_docs, norm_scores), 1):
-        print(f"{i}. raw={raw:.4f} | norm={norm:.4f} | preview={doc[:60]}...")
-
-    
     return [ # สุดท้ายส่งกลับเป็น list ของ dict ที่มี text และ score โดยที่ text คือเนื้อหาของ document และ score คือคะแนนความเกี่ยวข้องที่ได้จาก reranker หลังจากทำ normalization แล้ว ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
         {"text": doc, "score": float(norm)}
         for (doc, _), norm in zip(top_docs, norm_scores)
@@ -227,36 +208,113 @@ def search(query: str) -> List[str]:
     print(f"🏆 Top after rerank: {len(reranked)} docs")
 
     return [r["text"] for r in reranked]
+
+
+def search_with_details(query: str) -> dict:
+    """Search and return detailed results with scores and any errors."""
+    total_start = time.perf_counter()
+    try:
+            
+        print("\n" + "=" * 60)
+
+        normalized_query = normalize_query(query)
+
+        clean_query, filters = extract_query_and_filters(normalized_query)
+        qdrant_filter = build_qdrant_filter(filters)
+
+        # 🔍 semantic search + filter
+        retrieval_start = time.perf_counter()
+        results = semantic_search(clean_query, DEFAULT_TOP_K, metadata_filters=filters)
+        retrieval_seconds = time.perf_counter() - retrieval_start
+
+        if not results:
+            print("❌ No results after semantic + filter")
+            total_seconds = time.perf_counter() - total_start
+            return {
+                "results": [],
+                "errors": [],
+                "timing": {
+                    "retrieval_seconds": retrieval_seconds,
+                    "rerank_seconds": 0.0,
+                    "total_seconds": total_seconds,
+                },
+                "normalized_query": normalized_query,
+                "query_variants": [],
+                "retrieved_count": 0,
+            }
+
+        docs = [r["text"] for r in results]
+
+        # 🧠 rerank
+        rerank_start = time.perf_counter()
+        reranked = rerank(clean_query, docs, DEFAULT_TOP_N)
+        rerank_seconds = time.perf_counter() - rerank_start
+
+        total_seconds = time.perf_counter() - total_start
+        
+        return {
+            "results": reranked,
+            "errors": [],
+            "timing": {
+                "retrieval_seconds": retrieval_seconds,
+                "rerank_seconds": rerank_seconds,
+                "total_seconds": total_seconds,
+            },
+            "normalized_query": normalized_query,
+            "query_variants": [],
+            "retrieved_count": len(results),
+        }
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Error in search_with_details: {error_msg}")
+        total_seconds = time.perf_counter() - total_start
+        return {
+            "results": [],
+            "errors": [error_msg],
+            "timing": {
+                "retrieval_seconds": 0.0,
+                "rerank_seconds": 0.0,
+                "total_seconds": total_seconds,
+            },
+            "normalized_query": query,
+            "query_variants": [],
+            "retrieved_count": 0,
+        }
+
 # =========================
 # DEBUG / TEST
 # =========================
 
-def run_sample_queries(queries: List[str]) -> None: # ฟังก์ชันนี้ใช้สำหรับรันตัวอย่าง queries เพื่อทดสอบการทำงานของระบบค้นหาเอกสารใน Qdrant โดยรับพารามิเตอร์เป็น list ของ queries 
-    times = []
+def run_sample_queries(queries: List[str]) -> None:
 
-    print("\n" + "=" * 60)
-    print("🚀 RUN SAMPLE QUERIES")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print("📚 Senior Project Document QA System")
+    print("=" * 50)
 
     for idx, q in enumerate(queries, 1):
-        print(f"\n🔍 Query {idx}: {q}") 
-        print("-" * 60)
 
-        start = time.perf_counter()  # เริ่มจับเวลาการประมวลผลของแต่ละ query โดยใช้ time.perf_counter() ซึ่งจะให้ค่าที่แม่นยำสำหรับการวัดเวลาที่ใช้ในการประมวลผลของแต่ละ query  
-        results = search(q) # เรียกใช้ฟังก์ชัน search() เพื่อทำการค้นหาเอกสารที่เกี่ยวข้องกับ query ที่กำหนดไว้ใน list ของ queries โดยจะทำการประมวลผลและให้ผลลัพธ์เป็น list ของเอกสารที่เกี่ยวข้องกับ query นั้น ๆ 
-        elapsed = time.perf_counter() - start # หลังจากที่ได้ผลลัพธ์จากการค้นหาเอกสารแล้ว จะทำการคำนวณเวลาที่ใช้ในการประมวลผลของแต่ละ query โดยการนำเวลาปัจจุบันที่ได้จาก time.perf_counter() มาลบกับเวลาที่เริ่มต้นจับเวลา (start) ซึ่งจะให้ค่าที่แสดงถึงเวลาที่ใช้ในการประมวลผลของแต่ละ query นั้น ๆ
+        start = time.perf_counter()
 
-        times.append(elapsed) 
+        # search
+        results = search(q)
+
+        elapsed = time.perf_counter() - start
+
+
+        print("📌 RESULT")
+        print("=" * 50)
+
+        print(f"🔎 Query: {q}\n")
 
         if not results:
             print("❌ No results found")
-        else:
-            for i, text in enumerate(results, 1):
-                preview = text.replace("\n", " ").strip()
-                print(f"{i:>2}. {preview[:100]}...")
 
-        print("-" * 60)
+        else:
+            print("✅ Documents retrieved successfully")
+
+        print("\n" + "-" * 50)
         print(f"⏱️ Time: {elapsed:.3f} seconds")
+        print("=" * 50)
 
 
 if __name__ == "__main__":
