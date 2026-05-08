@@ -41,7 +41,7 @@ client = QdrantClient( # อันนี้คือการสร้าง con
 #           DEFAULT_TOP_N คือจำนวนผลสุดท้ายหลัง rerank
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "embedding_experiment")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
 DEFAULT_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "20"))
 DEFAULT_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
@@ -82,14 +82,8 @@ def extract_query_and_filters(user_query: str) -> Tuple[str, Dict]: #
     if year_match:
         filters["year"] = year_match.group() # regex นี้จะค้นหาเลขที่เป็นปีในรูปแบบ 4 หลักที่ขึ้นต้นด้วย 19 หรือ 20 และถ้าพบจะนำค่าที่จับได้มาเก็บใน filters dictionary โดยใช้ key เป็น "year" และ value เป็นปีที่จับได้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่ตรงกับความต้องการมากขึ้นและลดจำนวนเอกสารที่ไม่เกี่ยวข้องที่ถูกดึงมาในการค้นหา
 
-    # หา type เอกสาร (เช่น pdf)
-    if "pdf" in user_query.lower(): # ถ้าใน query มีคำว่า จะเพิ่ม filter ที่บอกว่าให้ค้นหาเฉพาะเอกสารที่มี field "type" เท่ากับ "pdf" 
-        filters["type"] = "pdf"
-
     # clean query
     clean_query = re.sub(r"\b(19\d{2}|20\d{2})\b", "", user_query)  # ทำความสะอาด query โดยการลบปีออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
-    clean_query = clean_query.replace("pdf", "") # ทำความสะอาด query โดยการลบคำว่า "pdf" ออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
-    clean_query = clean_query.replace("ปี", "") # ทำความสะอาด query โดยการลบคำว่า "ปี" ออกจาก query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
     clean_query = clean_query.strip() # ทำความสะอาด query โดยการลบช่องว่างที่เกินออกจาก clean_query เพื่อให้ clean_query เป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
 
     return clean_query, filters  # หลังจากที่ได้แยก query และส่วนที่เป็น filters ออกมาแล้ว ฟังก์ชันนี้จะส่งกลับ clean_query ซึ่งเป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว และ filters ซึ่งเป็น dictionary ที่เก็บเงื่อนไขการกรองข้อมูลที่ถูกแยกออกมาจาก query เช่น ถ้า query มีคำว่า "ปี 2020" ฟังก์ชันนี้จะสามารถแยก "ปี 2020" ออกมาเป็น filter ที่บอกว่าให้ค้นหาเฉพาะเอกสารที่มี field "year" เท่ากับ 2020 และ clean_query จะเป็นส่วนที่เหลือของ query ที่ถูกทำความสะอาดแล้ว ซึ่งจะช่วยเพิ่มโอกาสในการค้นหาเอกสารที่เกี่ยวข้องได้มากขึ้นและลดปัญหาจากการสะกดผิดหรือรูปแบบต่าง ๆ ของคำใน query
@@ -124,10 +118,6 @@ def semantic_search(query: str, top_k: int, metadata_filters=None) -> List[Dict]
     query_vector = embed_model.embed_query(f"query: {query}") #
     query_filter = build_qdrant_filter(metadata_filters)
 
-    print("\n🔍 [QDRANT SEARCH]")
-    print("Query:", query)
-    print("Filter:", query_filter)
-
     try:
         results = client.query_points(
             collection_name=COLLECTION_NAME,
@@ -137,22 +127,12 @@ def semantic_search(query: str, top_k: int, metadata_filters=None) -> List[Dict]
             query_filter=query_filter,
         )
     except ResponseHandlingException:
-        print("❌ Qdrant Response Error")
         return []
     except Exception as e:
-        print("❌ Unknown Error:", e)
         return []
 
-    print(f"📦 Raw points from Qdrant: {len(results.points)}")
-
-    # 👉 DEBUG payload จริง
-    for i, p in enumerate(results.points[:5], 1):  # ดูแค่ 5 ตัวพอ
-        print(f"\n--- Point {i} ---")
-        print("Score:", p.score)            
-        print("Payload:", p.payload)
-
     return [
-        {"text": p.payload["content"], "score": p.score}
+        {"text": p.payload["content"], "score": p.score, "payload": {**p.payload, "source": "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"}}
         for p in results.points
         if p.payload and p.payload.get("content")
     ]
@@ -173,26 +153,23 @@ def normalize_scores(scores: List[float]) -> List[float]:
 
     return [(s - min_s) / (max_s - min_s) for s in scores]
 
-def rerank(query: str, docs: List[str], top_n: int) -> List[Dict]: # โดย รับ : query และ เอกสารที่ semantic หาได้ top_n นำมาให้ คะแนน ใหม่
-    if not docs: # กัน error ถ้าไม่มีข้อมูล จะส่ง [] กลับไปเลย
+def rerank(query: str, docs_with_payload: List[Dict], top_n: int) -> List[Dict]: # โดย รับ : query และ เอกสารที่ semantic หาได้ top_n นำมาให้ คะแนน ใหม่
+    if not docs_with_payload: # กัน error ถ้าไม่มีข้อมูล จะส่ง [] กลับไปเลย
         return []
 
+    docs = [d["text"] for d in docs_with_payload]
     pairs = [[query, doc] for doc in docs] # สร้างคู่ของ query กับแต่ละ document ในรูปแบบของ list ที่มีสอง element คือ query และ doc ซึ่งจะถูกใช้เป็น input ให้กับ reranker ในการคำนวณความเกี่ยวข้องระหว่าง query กับแต่ละ document เพื่อให้ได้คะแนนความเกี่ยวข้องที่แม่นยำมากขึ้นในการจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุด
     scores = reranker.predict(pairs) # ใช้ reranker ที่เป็น CrossEncoder ในการคำนวณความเกี่ยวข้องระหว่าง query กับแต่ละ document โดยการส่ง pairs ที่ประกอบด้วย query และ doc เป็น input ให้กับ reranker ซึ่งจะทำการประมวลผลและให้คะแนนความเกี่ยวข้องออกมาเป็น list ของ scores ที่มีค่าเป็นตัวเลขที่แสดงถึงความเกี่ยวข้องระหว่าง query กับแต่ละ document ซึ่งจะถูกใช้ในการจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดในขั้นตอนถัดไป
 
-    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)  # (doc, score) โดยการใช้ฟังก์ชัน sorted() เพื่อจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดโดยการเรียงลำดับคู่ของ document และ score ที่ได้จาก reranker โดยใช้คะแนนความเกี่ยวข้อง (score) เป็นเกณฑ์ในการจัดอันดับและเรียงลำดับในรูปแบบจากมากไปน้อย (reverse=True) ซึ่งจะทำให้เอกสารที่มีความเกี่ยวข้องสูงสุดกับ query อยู่ในตำแหน่งแรกของ ranked list และเอกสารที่มีความเกี่ยวข้องต่ำสุดอยู่ในตำแหน่งสุดท้ายของ ranked list
-    top_docs = ranked[:top_n] # เอาแค่ top N (เช่น 5 ตัว)
+    scored = list(zip(docs_with_payload, scores))
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)  # (doc_with_payload, score) โดยการใช้ฟังก์ชัน sorted() เพื่อจัดอันดับเอกสารที่เกี่ยวข้องกับ query มากที่สุดโดยการเรียงลำดับคู่ของ document และ score ที่ได้จาก reranker โดยใช้คะแนนความเกี่ยวข้อง (score) เป็นเกณฑ์ในการจัดอันดับและเรียงลำดับในรูปแบบจากมากไปน้อย (reverse=True) ซึ่งจะทำให้เอกสารที่มีความเกี่ยวข้องสูงสุดกับ query อยู่ในตำแหน่งแรกของ ranked list และเอกสารที่มีความเกี่ยวข้องต่ำสุดอยู่ในตำแหน่งสุดท้ายของ ranked list
+    top_ranked = ranked[:top_n] # เอาแค่ top N (เช่น 5 ตัว)
 
-    norm_scores = normalize_scores([s for _, s in top_docs]) # ทำ normalization คะแนน (เช่น 0–1) เปรียบเทียบง่าย และช่วยให้การนำไปใช้ในขั้นตอนถัดไปมีความสอดคล้องกันมากขึ้น เช่น การนำคะแนนไปคำนวณร่วมกับคะแนนจากการค้นหาแบบอื่น ๆ หรือการแสดงผลคะแนนในรูปแบบที่เข้าใจง่ายขึ้นสำหรับผู้ใช้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
+    norm_scores = normalize_scores([s for _, s in top_ranked]) # ทำ normalization คะแนน (เช่น 0–1) เปรียบเทียบง่าย และช่วยให้การนำไปใช้ในขั้นตอนถัดไปมีความสอดคล้องกันมากขึ้น เช่น การนำคะแนนไปคำนวณร่วมกับคะแนนจากการค้นหาแบบอื่น ๆ หรือการแสดงผลคะแนนในรูปแบบที่เข้าใจง่ายขึ้นสำหรับผู้ใช้ ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
 
-    print("\n🧠 [RERANK DEBUG]")
-    for i, ((doc, raw), norm) in enumerate(zip(top_docs, norm_scores), 1):
-        print(f"{i}. raw={raw:.4f} | norm={norm:.4f} | preview={doc[:60]}...")
-
-    
     return [ # สุดท้ายส่งกลับเป็น list ของ dict ที่มี text และ score โดยที่ text คือเนื้อหาของ document และ score คือคะแนนความเกี่ยวข้องที่ได้จาก reranker หลังจากทำ normalization แล้ว ซึ่งจะช่วยให้ได้ผลลัพธ์ที่แม่นยำและมีความเกี่ยวข้องมากขึ้นกับ query ที่ต้องการค้นหา
-        {"text": doc, "score": float(norm)}
-        for (doc, _), norm in zip(top_docs, norm_scores)
+        {"text": item["text"], "score": float(norm), "payload": item["payload"]}
+        for (item, _), norm in zip(top_ranked, norm_scores)
     ]
 
 
@@ -225,44 +202,122 @@ def search(query: str) -> List[str]:
     print(f"📊 Retrieved (before rerank): {len(results)} docs")
 
     # 🧾 เอา text
-    docs = [r["text"] for r in results]
+    docs_with_payload = results
 
     # 🧠 rerank
-    reranked = rerank(clean_query, docs, DEFAULT_TOP_N)
+    reranked = rerank(clean_query, docs_with_payload, DEFAULT_TOP_N)
 
     print(f"🏆 Top after rerank: {len(reranked)} docs")
 
     return [r["text"] for r in reranked]
+
+
+def search_with_details(query: str) -> dict:
+    """Search and return detailed results with scores and any errors."""
+    total_start = time.perf_counter()
+    try:
+            
+        print("\n" + "=" * 60)
+
+        normalized_query = normalize_query(query)
+
+        clean_query, filters = extract_query_and_filters(normalized_query)
+        qdrant_filter = build_qdrant_filter(filters)
+
+        # 🔍 semantic search + filter
+        retrieval_start = time.perf_counter()
+        results = semantic_search(clean_query, DEFAULT_TOP_K, metadata_filters=filters)
+        retrieval_seconds = time.perf_counter() - retrieval_start
+
+        if not results:
+            print("❌ No results after semantic + filter")
+            total_seconds = time.perf_counter() - total_start
+            return {
+                "results": [],
+                "errors": [],
+                "timing": {
+                    "retrieval_seconds": retrieval_seconds,
+                    "rerank_seconds": 0.0,
+                    "total_seconds": total_seconds,
+                },
+                "normalized_query": normalized_query,
+                "query_variants": [],
+                "retrieved_count": 0,
+            }
+
+        docs_with_payload = results
+
+        # 🧠 rerank
+        rerank_start = time.perf_counter()
+        reranked = rerank(clean_query, docs_with_payload, DEFAULT_TOP_N)
+        rerank_seconds = time.perf_counter() - rerank_start
+
+        total_seconds = time.perf_counter() - total_start
+        
+        return {
+            "results": reranked,
+            "errors": [],
+            "timing": {
+                "retrieval_seconds": retrieval_seconds,
+                "rerank_seconds": rerank_seconds,
+                "total_seconds": total_seconds,
+            },
+            "normalized_query": normalized_query,
+            "query_variants": [],
+            "retrieved_count": len(results),
+        }
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Error in search_with_details: {error_msg}")
+        total_seconds = time.perf_counter() - total_start
+        return {
+            "results": [],
+            "errors": [error_msg],
+            "timing": {
+                "retrieval_seconds": 0.0,
+                "rerank_seconds": 0.0,
+                "total_seconds": total_seconds,
+            },
+            "normalized_query": query,
+            "query_variants": [],
+            "retrieved_count": 0,
+        }
+
 # =========================
 # DEBUG / TEST
 # =========================
 
-def run_sample_queries(queries: List[str]) -> None: # ฟังก์ชันนี้ใช้สำหรับรันตัวอย่าง queries เพื่อทดสอบการทำงานของระบบค้นหาเอกสารใน Qdrant โดยรับพารามิเตอร์เป็น list ของ queries 
-    times = []
+def run_sample_queries(queries: List[str]) -> None:
 
-    print("\n" + "=" * 60)
-    print("🚀 RUN SAMPLE QUERIES")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print("📚 Senior Project Document QA System")
+    print("=" * 50)
 
     for idx, q in enumerate(queries, 1):
-        print(f"\n🔍 Query {idx}: {q}") 
-        print("-" * 60)
 
-        start = time.perf_counter()  # เริ่มจับเวลาการประมวลผลของแต่ละ query โดยใช้ time.perf_counter() ซึ่งจะให้ค่าที่แม่นยำสำหรับการวัดเวลาที่ใช้ในการประมวลผลของแต่ละ query  
-        results = search(q) # เรียกใช้ฟังก์ชัน search() เพื่อทำการค้นหาเอกสารที่เกี่ยวข้องกับ query ที่กำหนดไว้ใน list ของ queries โดยจะทำการประมวลผลและให้ผลลัพธ์เป็น list ของเอกสารที่เกี่ยวข้องกับ query นั้น ๆ 
-        elapsed = time.perf_counter() - start # หลังจากที่ได้ผลลัพธ์จากการค้นหาเอกสารแล้ว จะทำการคำนวณเวลาที่ใช้ในการประมวลผลของแต่ละ query โดยการนำเวลาปัจจุบันที่ได้จาก time.perf_counter() มาลบกับเวลาที่เริ่มต้นจับเวลา (start) ซึ่งจะให้ค่าที่แสดงถึงเวลาที่ใช้ในการประมวลผลของแต่ละ query นั้น ๆ
+        start = time.perf_counter()
 
-        times.append(elapsed) 
+        # search with details
+        result = search_with_details(q)
 
-        if not results:
+        elapsed = result["timing"]["total_seconds"]
+
+        print("📌 RESULT")
+        print("=" * 50)
+
+        print(f"🔎 Query: {q}\n")
+
+        if not result["results"]:
             print("❌ No results found")
-        else:
-            for i, text in enumerate(results, 1):
-                preview = text.replace("\n", " ").strip()
-                print(f"{i:>2}. {preview[:100]}...")
 
-        print("-" * 60)
+        else:
+            print("✅ Documents retrieved successfully")
+            for item in result["results"]:
+                print(f"Source: {item['payload']['source']}")
+
+        print("\n" + "-" * 50)
         print(f"⏱️ Time: {elapsed:.3f} seconds")
+        print("=" * 50)
 
 
 if __name__ == "__main__":

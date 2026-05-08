@@ -95,6 +95,7 @@ def answer_question(question: str) -> dict[str, object]:
     retrieval_details = search_with_details(question)
     scored_contexts = retrieval_details["results"]
     contexts = [item["text"] for item in scored_contexts]
+    sources = [item["payload"]["source"] for item in scored_contexts]
     retrieval_errors = retrieval_details["errors"]
 
     if not contexts and retrieval_errors:
@@ -103,6 +104,7 @@ def answer_question(question: str) -> dict[str, object]:
             "question": question,
             "answer": "Retrieval failed: unable to fetch documents from Qdrant right now.",
             "contexts": [],
+            "sources": [],
             "scored_contexts": [],
             "normalized_query": retrieval_details["normalized_query"],
             "query_variants": retrieval_details["query_variants"],
@@ -127,6 +129,7 @@ def answer_question(question: str) -> dict[str, object]:
         "question": question,
         "answer": answer,
         "contexts": contexts,
+        "sources": sources,
         "scored_contexts": scored_contexts,
         "normalized_query": retrieval_details["normalized_query"],
         "query_variants": retrieval_details["query_variants"],
