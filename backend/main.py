@@ -1,5 +1,12 @@
-from performance import format_performance_summary
-from step1_context import answer_question
+try:
+    from rag.retrieval import answer_question
+    from rag.retrieval.performance import format_performance_summary
+except ModuleNotFoundError as exc:
+    if exc.name != "rag":
+        raise
+
+    from backend.rag.retrieval import answer_question
+    from backend.rag.retrieval.performance import format_performance_summary
 
 
 def print_divider(char="=", length=50):
