@@ -11,7 +11,8 @@ from .config import (
 )
 from .debug import run_sample_queries
 from .filters import build_qdrant_filter
-from .query import extract_query_and_filters, normalize_query
+from .query import extract_query_and_filters
+from .normalizer import normalize_user_query as normalize_query
 from .rerank import normalize_scores, rerank
 from .semantic import semantic_search
 from .service import hybrid_search, search, search_with_details
