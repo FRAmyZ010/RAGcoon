@@ -6,6 +6,12 @@ from functools import lru_cache
 from typing import Iterable, Optional
 
 try:
+    from rapidfuzz import process, fuzz
+except ImportError:
+    process = None
+    fuzz = None
+
+try:
     import pkg_resources
     from symspellpy import SymSpell, Verbosity
 
@@ -215,7 +221,7 @@ def _apply_synonyms(
     return " ".join(normalized_tokens)
 
 
-def _correct_token(token: str, protected: bool = False) -> str:
+def _correct_token(token: str, protected_terms: MetadataProtection, protected: bool = False) -> str:
     if protected:
         return token
 
@@ -224,6 +230,11 @@ def _correct_token(token: str, protected: bool = False) -> str:
 
     if not ASCII_LETTER_PATTERN.search(token):
         return token
+
+    if process and fuzz and protected_terms.tokens:
+        best_match = process.extractOne(token, protected_terms.tokens, scorer=fuzz.ratio)
+        if best_match and best_match[1] >= 85:
+            return best_match[0]
 
     if _sym_spell:
         suggestions = _sym_spell.lookup(token, Verbosity.CLOSEST, max_edit_distance=2)
@@ -241,7 +252,7 @@ def _apply_fuzzy_corrections(
     protected_indexes = _protected_token_indexes(query, tokens, protected_terms)
 
     return " ".join(
-        _correct_token(token.text, protected=index in protected_indexes)
+        _correct_token(token.text, protected_terms, protected=index in protected_indexes)
         for index, token in enumerate(tokens)
     )
 

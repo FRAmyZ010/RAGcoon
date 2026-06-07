@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from .config import DEFAULT_TOP_K, DEFAULT_TOP_N
 from .filters import build_qdrant_filter
-from .query import extract_query_and_filters
+from .extractor import extract_query_and_filters
 from .normalizer import normalize_user_query as normalize_query
 from .rerank import rerank
 from .semantic import semantic_search
