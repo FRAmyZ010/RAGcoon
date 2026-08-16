@@ -1,9 +1,9 @@
 import os
 from time import perf_counter
 
-from rag.embedding.pdf_scanning import scan_pdf_document
-from rag.embedding.text_processor import chunk_extracted_data
-from rag.embedding.vector_store import upload_to_qdrant
+from backend.rag.embedding.pdf_scanning import scan_pdf_document
+from backend.rag.embedding.text_processor import chunk_extracted_data
+from backend.rag.embedding.vector_store import upload_to_qdrant
 
 
 def summarize(times):

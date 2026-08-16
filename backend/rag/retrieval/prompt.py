@@ -5,7 +5,7 @@ import time
 import requests
 from dotenv import load_dotenv
 
-from backend.retrieval import search, search_with_details
+from .service import search, search_with_details
 
 load_dotenv()
 
