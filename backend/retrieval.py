@@ -11,7 +11,7 @@ from sentence_transformers import CrossEncoder # CrossEncoder ใช้สำห
 from langchain_huggingface import HuggingFaceEmbeddings # HuggingFaceEmbeddings ใช้สำหรับแปลง query เป็นเวกเตอร์ embedding เพื่อใช้ในการค้นหาแบบ semantic ใน Qdrant
 from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny # Filter, FieldCondition, MatchValue, MatchAny ใช้สำหรับสร้างเงื่อนไขการกรอง (filter) ในการค้นหาเอกสารใน Qdrant เช่น กรองตาม metadata หรือ field อื่นๆ
 
-from backend.app.performance import format_performance_summary # format_performance_summary ใช้สำหรับสรุปผลการวัดประสิทธิภาพของการค้นหา เช่น เวลาที่ใช้ในการประมวลผลแต่ละ query และสถิติต่างๆ เช่น mean, median, p90, p95
+from backend.performance import format_performance_summary # format_performance_summary ใช้สำหรับสรุปผลการวัดประสิทธิภาพของการค้นหา เช่น เวลาที่ใช้ในการประมวลผลแต่ละ query และสถิติต่างๆ เช่น mean, median, p90, p95
 
 # =========================
 # ENV & INIT

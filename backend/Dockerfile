@@ -1,32 +1,24 @@
-# 1. ใช้ Python 3.11 Slim Image
 FROM python:3.11-slim
 
-# 2. ตั้งค่า Environment Variables สำหรับ Python
+# ตั้งค่า Environment variables เพื่อป้องกันไม่ให้ Python สร้าง .pyc และบังคับให้ output ออกทันที
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# 3. กำหนด Work Directory
 WORKDIR /app
 
-# 4. ติดตั้ง System Dependencies ที่จำเป็น
+# ติดตั้ง system dependencies ที่จำเป็นสำหรับ pdfplumber และ psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# 5. ติดตั้ง Python Dependencies
+# Copy requirements และทำการ install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. คัดลอก Source Code ทั้งหมด
+# Copy source code ทั้งหมดเข้า container
 COPY . .
 
-# 7. แปลงไฟล์ entrypoint.sh ให้สามารถ Execute ได้
-RUN chmod +x ./scripts/entrypoint.sh
-
-# 8. Expose Port 8000
-EXPOSE 8000
-
-# 9. คำสั่งเริ่มต้น Container
-ENTRYPOINT ["./scripts/entrypoint.sh"]
+# สั่งรัน FastAPI ด้วย Uvicorn โดยตรง
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,8 +1,5 @@
-version: '3.8'
-
 services:
-  # 1. Database Service: PostgreSQL Container
-  postgres_db:
+  postgres:
     image: postgres:15-alpine
     container_name: ragcoon_postgres
     restart: always
@@ -15,12 +12,23 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ragcoon_admin -d ragcoon_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # 2. Backend Service: FastAPI Container
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: ragcoon_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@ragcoon.com
+      PGADMIN_DEFAULT_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+
   backend:
     build:
       context: .
@@ -29,14 +37,14 @@ services:
     restart: always
     ports:
       - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_DB}:5432/${POSTGRES_DB}
     volumes:
       - .:/app
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_DB}:5432/${POSTGRES_DB}
+    env_file:
+      - .env
     depends_on:
-      postgres_db:
+      postgres:
         condition: service_healthy
 
 volumes:

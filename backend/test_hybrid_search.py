@@ -4,7 +4,7 @@ Test Hybrid Search with Normalized Scores (0-1)
 Prototype for testing hybrid search functionality
 """
 
-from backend.app.retrieval import hybrid_search
+from backend.retrieval import hybrid_search
 
 def test_hybrid_search():
     """Test hybrid search with normalized scores"""

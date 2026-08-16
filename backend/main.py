@@ -1,5 +1,5 @@
-from backend.app.performance import format_performance_summary
-from backend.app.step1_context import answer_question
+from backend.performance import format_performance_summary
+from backend.step1_context import answer_question
 
 
 def print_divider(char="=", length=50):
