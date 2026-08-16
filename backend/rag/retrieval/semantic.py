@@ -20,9 +20,7 @@ def semantic_search(
             with_payload=True,
             query_filter=query_filter,
         )
-    except ResponseHandlingException:
-        return []
-    except Exception:
+    except (ResponseHandlingException, ValueError, TypeError, RuntimeError):
         return []
 
     return [

@@ -1,8 +1,8 @@
 import time
 
 from .config import DEFAULT_TOP_K, DEFAULT_TOP_N
+from .extractor import QueryFilterProcessor
 from .filters import build_qdrant_filter
-from .extractor import extract_query_and_filters
 from .normalizer import normalize_user_query as normalize_query
 from .rerank import rerank
 from .semantic import semantic_search
@@ -15,7 +15,8 @@ def search(query: str) -> list[str]:
     normalized_query = normalize_query(query)
     print("NORMALIZED QUERY:", normalized_query)
 
-    clean_query, filters = extract_query_and_filters(normalized_query)
+    processor = QueryFilterProcessor(normalized_query)
+    clean_query, filters = processor.parse()
 
     print("CLEAN QUERY:", clean_query)
     print("FILTERS:", filters)
@@ -45,7 +46,8 @@ def search_with_details(query: str) -> dict:
         normalized_query = normalize_query(query)
         print("NORMALIZED QUERY:", normalized_query)
         
-        clean_query, filters = extract_query_and_filters(normalized_query)
+        processor = QueryFilterProcessor(normalized_query)
+        clean_query, filters = processor.parse()
         print("CLEAN QUERY:", clean_query)
         print("FILTERS:", filters)
 
@@ -91,7 +93,7 @@ def search_with_details(query: str) -> dict:
             for i, result in enumerate(reranked, 1):
                 preview = result["text"].replace("\n", " ")[:70]
                 print(f"    [{i}] {preview}...")
-        except Exception as e:
+        except (TypeError, ValueError, RuntimeError, AttributeError) as e:
             print(f"Error during reranking: {e}")
             rerank_seconds = 0.0
             reranked = results[:DEFAULT_TOP_N]  # Fallback to top semantic results
@@ -109,7 +111,7 @@ def search_with_details(query: str) -> dict:
             "query_variants": [],
             "retrieved_count": len(results),
         }
-    except Exception as exc:
+    except (TypeError, ValueError, RuntimeError, AttributeError) as exc:
         error_msg = str(exc)
         print(f"Error in search_with_details: {error_msg}")
         total_seconds = time.perf_counter() - total_start
@@ -135,7 +137,8 @@ def hybrid_search(
 ) -> list[dict]:
     """Compatibility wrapper for the current semantic-search plus rerank pipeline."""
     normalized_query = normalize_query(query)
-    clean_query, filters = extract_query_and_filters(normalized_query)
+    processor = QueryFilterProcessor(normalized_query)
+    clean_query, filters = processor.parse()
 
     if metadata_filters:
         filters.update(metadata_filters)

@@ -4,7 +4,29 @@ Utilities can now be imported without opening Qdrant or loading ML models.
 """
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .config import (
+        COLLECTION_NAME,
+        DEFAULT_TOP_K,
+        DEFAULT_TOP_N,
+        EMBEDDING_MODEL,
+        QDRANT_API_KEY,
+        QDRANT_URL,
+        client,
+        get_embed_model,
+        get_reranker,
+    )
+    from .debug import run_sample_queries
+    from .extractor import extract_query_and_filters
+    from .filters import build_qdrant_filter
+    from .normalizer import normalize_user_query as normalize_query
+    from .performance import format_performance_summary
+    from .prompt import answer_question
+    from .rerank import normalize_scores, rerank
+    from .semantic import semantic_search
+    from .service import hybrid_search, search, search_with_details
 
 _EXPORTS = {
     "answer_question": (".prompt", "answer_question"),
@@ -30,7 +52,29 @@ _EXPORTS = {
     "get_reranker": (".config", "get_reranker"),
 }
 
-__all__ = list(_EXPORTS)
+__all__ = (
+    "COLLECTION_NAME",
+    "DEFAULT_TOP_K",
+    "DEFAULT_TOP_N",
+    "EMBEDDING_MODEL",
+    "QDRANT_API_KEY",
+    "QDRANT_URL",
+    "answer_question",
+    "build_qdrant_filter",
+    "client",
+    "extract_query_and_filters",
+    "format_performance_summary",
+    "get_embed_model",
+    "get_reranker",
+    "hybrid_search",
+    "normalize_query",
+    "normalize_scores",
+    "rerank",
+    "run_sample_queries",
+    "search",
+    "search_with_details",
+    "semantic_search",
+)
 
 
 def __getattr__(name: str) -> Any:

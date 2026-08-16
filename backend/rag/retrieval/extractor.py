@@ -66,110 +66,175 @@ def _apply_known_author_aliases(clean_query: str, filters: dict) -> str:
     return clean_query
 
 
-def extract_query_and_filters(user_query: str) -> tuple[str, dict]:
-    """
-    Extracts the cleaned query and metadata filters from the user query.
-    Applies rule-based extraction for explicit fields, MFU staff names, 
-    and dynamic matching against Qdrant metadata.
-    """
-    
-    filters = {}
-    clean_query = user_query
+class QueryFilterProcessor:
+    """Bound the query parsing pipeline: extraction, validation, and query cleanup."""
 
-    # 1. Extract Explicit Key-Value Pairs
-    # Examples: project_title:"QUALITY DISCHARGE PLANNING PROJECT", advisor:Tossapon
-    for match in KV_PATTERN.finditer(user_query):
-        key = match.group(1).lower()
-        if key == "title":
-            key = "project_title"
-        elif key == "keyword":
-            key = "keywords"
-            
-        value = match.group(2) or match.group(3) or match.group(4)
-        
-        if value:
-            # Map advisor short names to exact values if applicable
+    def __init__(self, user_query: str):
+        self.user_query = user_query
+
+    @staticmethod
+    def validate_filters(filters: dict | None) -> dict:
+        """Normalize filter values and reject empty values at the boundary."""
+        if not filters:
+            return {}
+
+        validated: dict = {}
+        for key, value in filters.items():
+            if value is None:
+                continue
+
+            if isinstance(value, list):
+                cleaned_values = [str(item).strip() for item in value if item is not None and str(item).strip()]
+                if cleaned_values:
+                    validated[key] = cleaned_values
+            elif isinstance(value, str):
+                cleaned_value = value.strip()
+                if cleaned_value:
+                    validated[key] = cleaned_value
+            else:
+                validated[key] = value
+
+        return validated
+
+    def extract_filters(self) -> dict:
+        """Extract metadata filters from the user query."""
+        filters: dict = {}
+        clean_query = self.user_query
+
+        for match in KV_PATTERN.finditer(self.user_query):
+            key = match.group(1).lower()
+            if key == "title":
+                key = "project_title"
+            elif key == "keyword":
+                key = "keywords"
+
+            value = match.group(2) or match.group(3) or match.group(4)
+            if not value:
+                continue
+
             if key == "advisor":
                 for short_name, exact_name in ADVISOR_EXACT_MAP.items():
                     if short_name.lower() in value.lower():
                         value = exact_name
                         break
-            
+
             filters[key] = value.strip()
-            # Remove the exact match from the query string
             clean_query = clean_query.replace(match.group(0), "")
 
-    # 2. Extract Year
-    year_match = YEAR_PATTERN.search(clean_query)
-    if year_match:
-        filters["year"] = year_match.group()
-        clean_query = YEAR_PATTERN.sub("", clean_query)
+        year_match = YEAR_PATTERN.search(clean_query)
+        if year_match:
+            filters["year"] = year_match.group()
+            clean_query = YEAR_PATTERN.sub("", clean_query)
 
-    # 3. Fallback handling for common author aliases when metadata is unavailable
-    clean_query = _apply_known_author_aliases(clean_query, filters)
+        clean_query = _apply_known_author_aliases(clean_query, filters)
 
-    # Loading metadata requires a network request.  Known explicit filters and
-    # aliases already provide an exact Qdrant filter, so avoid that request for
-    # those queries (and keep the extractor usable offline).
-    if not filters:
-        metadata_cache.load_metadata()
+        if not filters:
+            metadata_cache.load_metadata()
 
-    # 4. Dynamic matching against exact Qdrant metadata fields
-    # We sort by length descending to match longest phrases first
-    
-    # Match Project Titles
-    if "project_title" not in filters:
-        for title in sorted(metadata_cache.titles, key=len, reverse=True):
-            if len(title) > 3 and title.lower() in clean_query.lower():
-                filters["project_title"] = title
-                # Remove title from query
-                pattern = re.compile(re.escape(title), re.IGNORECASE)
-                clean_query = pattern.sub("", clean_query)
-                break
-                
-    # Match Authors
-    if "author" not in filters:
-        for author in sorted(metadata_cache.authors, key=len, reverse=True):
-            if len(author) > 3 and author.lower() in clean_query.lower():
-                full_strings = list(metadata_cache.author_to_full.get(author, [author]))
-                filters["author"] = full_strings if len(full_strings) > 1 else full_strings[0]
-                pattern = re.compile(re.escape(author), re.IGNORECASE)
-                clean_query = pattern.sub("", clean_query)
-                break
-                
-    # Match Advisors
-    if "advisor" not in filters:
-        for advisor in sorted(metadata_cache.advisors, key=len, reverse=True):
-            if len(advisor) > 3 and advisor.lower() in clean_query.lower():
-                filters["advisor"] = advisor
-                pattern = re.compile(re.escape(advisor), re.IGNORECASE)
-                clean_query = pattern.sub("", clean_query)
-                break
+        if "project_title" not in filters:
+            for title in sorted(metadata_cache.titles, key=len, reverse=True):
+                if len(title) > 3 and title.lower() in clean_query.lower():
+                    filters["project_title"] = title
+                    pattern = re.compile(re.escape(title), re.IGNORECASE)
+                    clean_query = pattern.sub("", clean_query)
+                    break
 
-    # Match Keywords
-    if "keywords" not in filters:
-        for kw in sorted(metadata_cache.keywords, key=len, reverse=True):
-            if len(kw) > 2 and kw.lower() in clean_query.lower():
-                full_strings = list(metadata_cache.keyword_to_full.get(kw, [kw]))
-                filters["keywords"] = full_strings if len(full_strings) > 1 else full_strings[0]
-                pattern = re.compile(re.escape(kw), re.IGNORECASE)
-                clean_query = pattern.sub("", clean_query)
-                break
+        if "author" not in filters:
+            for author in sorted(metadata_cache.authors, key=len, reverse=True):
+                if len(author) > 3 and author.lower() in clean_query.lower():
+                    full_strings = list(metadata_cache.author_to_full.get(author, [author]))
+                    filters["author"] = full_strings if len(full_strings) > 1 else full_strings[0]
+                    pattern = re.compile(re.escape(author), re.IGNORECASE)
+                    clean_query = pattern.sub("", clean_query)
+                    break
 
-    # 4. Rule-based heuristic for Advisor (if not already found explicitly or dynamically)
-    if "advisor" not in filters:
-        lower_query = clean_query.lower()
-        for staff in MFU_STAFF:
-            if re.search(r'\b' + re.escape(staff.lower()) + r'\b', lower_query):
-                # Use mapped exact name if available, otherwise just use the staff name
-                exact_name = ADVISOR_EXACT_MAP.get(staff, staff)
-                filters["advisor"] = exact_name
-                
-                # Remove the name from the query
-                clean_query = re.sub(r'\b' + re.escape(staff) + r'\b', "", clean_query, flags=re.IGNORECASE)
-                break # Take the first match
+        if "advisor" not in filters:
+            for advisor in sorted(metadata_cache.advisors, key=len, reverse=True):
+                if len(advisor) > 3 and advisor.lower() in clean_query.lower():
+                    filters["advisor"] = advisor
+                    pattern = re.compile(re.escape(advisor), re.IGNORECASE)
+                    clean_query = pattern.sub("", clean_query)
+                    break
 
-    # Keep the query form consistent whether this function is called directly
-    # or through the normalizer in the search pipeline.
-    clean_query = " ".join(clean_query.split()).lower()
-    return clean_query, filters
+        if "keywords" not in filters:
+            for kw in sorted(metadata_cache.keywords, key=len, reverse=True):
+                if len(kw) > 2 and kw.lower() in clean_query.lower():
+                    full_strings = list(metadata_cache.keyword_to_full.get(kw, [kw]))
+                    filters["keywords"] = full_strings if len(full_strings) > 1 else full_strings[0]
+                    pattern = re.compile(re.escape(kw), re.IGNORECASE)
+                    clean_query = pattern.sub("", clean_query)
+                    break
+
+        if "advisor" not in filters:
+            lower_query = clean_query.lower()
+            for staff in MFU_STAFF:
+                if re.search(r"\b" + re.escape(staff.lower()) + r"\b", lower_query):
+                    filters["advisor"] = ADVISOR_EXACT_MAP.get(staff, staff)
+                    clean_query = re.sub(r"\b" + re.escape(staff) + r"\b", "", clean_query, flags=re.IGNORECASE)
+                    break
+
+        return self.validate_filters(filters)
+
+    @staticmethod
+    def normalize_query_text(clean_query: str) -> str:
+        """Lowercase and collapse whitespace without re-running metadata extraction."""
+        return " ".join(clean_query.split()).lower()
+
+    def strip_query_filters(self, filters: dict | None = None) -> str:
+        """Remove filter values from the query and keep only the textual search intent."""
+        metadata_filters = self.validate_filters(filters) if filters is not None else self.extract_filters()
+        clean_query = self.user_query
+
+        for value in metadata_filters.values():
+            if value is None:
+                continue
+
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if not item:
+                    continue
+                pattern = re.compile(re.escape(str(item)), re.IGNORECASE)
+                clean_query = pattern.sub("", clean_query, count=1)
+
+        if "year" in metadata_filters:
+            clean_query = YEAR_PATTERN.sub("", clean_query)
+
+        return self.normalize_query_text(clean_query)
+
+    def parse(self) -> tuple[str, dict]:
+        """One-pass pipeline: extract filters, then clean the remaining query."""
+        filters = self.extract_filters()
+        clean_query = self.strip_query_filters(filters)
+        return clean_query, filters
+
+
+def extract_filters(user_query: str) -> dict:
+    """Backward-compatible function wrapper for the processor."""
+    return QueryFilterProcessor(user_query).extract_filters()
+
+
+def normalize_query_text(clean_query: str) -> str:
+    """Backward-compatible alias for the processor's text-normalization step."""
+    return QueryFilterProcessor.normalize_query_text(clean_query)
+
+
+def strip_query_filters(user_query: str, filters: dict | None) -> str:
+    """Backward-compatible function wrapper for query cleanup."""
+    return QueryFilterProcessor(user_query).strip_query_filters(filters)
+
+
+def extract_query(user_query: str, filters: dict | None = None) -> str:
+    """Backward-compatible query-cleaning wrapper."""
+    if filters is not None:
+        return QueryFilterProcessor(user_query).strip_query_filters(filters)
+    return QueryFilterProcessor(user_query).parse()[0]
+
+
+def parse_query(user_query: str) -> tuple[str, dict]:
+    """Fast one-pass parser: extract filters once, then strip them from the query once."""
+    return QueryFilterProcessor(user_query).parse()
+
+
+def extract_query_and_filters(user_query: str) -> tuple[str, dict]:
+    """Backward-compatible wrapper that keeps the old combined API."""
+    return parse_query(user_query)
