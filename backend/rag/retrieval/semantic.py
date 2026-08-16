@@ -1,20 +1,15 @@
-from typing import Dict, List, Optional
-
 from qdrant_client.http.exceptions import ResponseHandlingException
 
-from .config import COLLECTION_NAME, client, embed_model
+from .config import COLLECTION_NAME, client, get_embed_model
 from .filters import build_qdrant_filter
-
-
-DEFAULT_SOURCE = "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
 
 
 def semantic_search(
     query: str,
     top_k: int,
-    metadata_filters: Optional[Dict] = None,
-) -> List[Dict]:
-    query_vector = embed_model.embed_query(f"query: {query}")
+    metadata_filters: dict | None = None,
+) -> list[dict]:
+    query_vector = get_embed_model().embed_query(f"query: {query}")
     query_filter = build_qdrant_filter(metadata_filters)
 
     try:
@@ -34,7 +29,12 @@ def semantic_search(
         {
             "text": point.payload["content"],
             "score": point.score,
-            "payload": {**point.payload, "source": DEFAULT_SOURCE},
+            # Keep the filename saved during ingestion.  The previous code
+            # overwrote every result with one hard-coded filename.
+            "payload": {
+                **point.payload,
+                "source": point.payload.get("source", "Unknown source"),
+            },
         }
         for point in results.points
         if point.payload and point.payload.get("content")

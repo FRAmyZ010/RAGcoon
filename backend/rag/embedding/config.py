@@ -1,8 +1,9 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # โหลดค่าจากไฟล์ .env
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 class Config:
     QDRANT_URL = os.getenv("QDRANT_URL")

@@ -1,18 +1,19 @@
-import re
 import os
+import re
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from functools import lru_cache
-from typing import Iterable, Optional
 
 try:
-    from rapidfuzz import process, fuzz
+    from rapidfuzz import fuzz, process
 except ImportError:
-    process = None
     fuzz = None
+    process = None
+
+Verbosity = None
+_sym_spell = None
 
 try:
-    import pkg_resources
+    import pkg_resources  # type: ignore
     from symspellpy import SymSpell, Verbosity
 
     _sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
@@ -20,7 +21,7 @@ try:
         "symspellpy", "frequency_dictionary_en_82_765.txt"
     )
     _sym_spell.load_dictionary(_dictionary_path, term_index=0, count_index=1)
-except ModuleNotFoundError:
+except (ImportError, ModuleNotFoundError):
     _sym_spell = None
 
 
@@ -149,7 +150,7 @@ def _fetch_metadata_terms_from_qdrant() -> list[str]:
                 break
 
         return terms
-    except Exception:
+    except (ConnectionError, RuntimeError, TimeoutError):
         return []
 
 
@@ -157,6 +158,23 @@ def _fetch_metadata_terms_from_qdrant() -> list[str]:
 def _load_metadata_protection() -> MetadataProtection:
     phrases = set()
     tokens = set()
+
+    # Add MFU staff names as protected terms to prevent fuzzy correction from damaging them
+    try:
+        from .extractor import ADVISOR_EXACT_MAP, MFU_STAFF
+
+        protected_advisor_terms = list(ADVISOR_EXACT_MAP.keys()) + list(
+            ADVISOR_EXACT_MAP.values()
+        )
+        for term in protected_advisor_terms:
+            phrases.add(term.lower())
+            tokens.update(_metadata_term_tokens(term))
+        for staff in MFU_STAFF:
+            phrases.add(staff.lower())
+            tokens.update(_metadata_term_tokens(staff))
+    except (ImportError, ModuleNotFoundError):
+        # Continue without extra advisor protection if extractor not available
+        pass
 
     for term in _fetch_metadata_terms_from_qdrant():
         phrases.add(term)
@@ -236,8 +254,10 @@ def _correct_token(token: str, protected_terms: MetadataProtection, protected: b
         if best_match and best_match[1] >= 85:
             return best_match[0]
 
-    if _sym_spell:
-        suggestions = _sym_spell.lookup(token, Verbosity.CLOSEST, max_edit_distance=2)
+    if _sym_spell and Verbosity:
+        suggestions = _sym_spell.lookup(
+            token, Verbosity.CLOSEST, max_edit_distance=2
+        )
         if suggestions:
             return suggestions[0].term
 

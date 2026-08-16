@@ -1,5 +1,4 @@
 import re
-from typing import Dict, Tuple
 
 from .metadata_cache import metadata_cache
 
@@ -40,15 +39,39 @@ ADVISOR_EXACT_MAP = {
     "Shanmugam": "Prof. Shanmugam Nandagopalan",
 }
 
-def extract_query_and_filters(user_query: str) -> Tuple[str, Dict]:
+AUTHOR_EXACT_MAP = {
+    "teerapat": "TEERAPAT PUANGKANKHAM",
+    "teerapatt": "TEERAPAT PUANGKANKHAM",
+    "teerapat puangkankham": "TEERAPAT PUANGKANKHAM",
+    "teerapatt puangkankham": "TEERAPAT PUANGKANKHAM",
+}
+
+
+def _apply_known_author_aliases(clean_query: str, filters: dict) -> str:
+    if "author" in filters:
+        return clean_query
+
+    lowered = clean_query.lower()
+    for alias, canonical in AUTHOR_EXACT_MAP.items():
+        alias_pattern = re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE)
+        if alias_pattern.search(lowered):
+            filters["author"] = canonical
+            return alias_pattern.sub("", clean_query, count=1)
+
+    author_pattern = re.compile(r"\bteerapa?t+\b", re.IGNORECASE)
+    if author_pattern.search(clean_query):
+        filters["author"] = "TEERAPAT PUANGKANKHAM"
+        return author_pattern.sub("", clean_query, count=1)
+
+    return clean_query
+
+
+def extract_query_and_filters(user_query: str) -> tuple[str, dict]:
     """
     Extracts the cleaned query and metadata filters from the user query.
     Applies rule-based extraction for explicit fields, MFU staff names, 
     and dynamic matching against Qdrant metadata.
     """
-    
-    # Ensure metadata is loaded from Qdrant
-    metadata_cache.load_metadata()
     
     filters = {}
     clean_query = user_query
@@ -81,8 +104,17 @@ def extract_query_and_filters(user_query: str) -> Tuple[str, Dict]:
     if year_match:
         filters["year"] = year_match.group()
         clean_query = YEAR_PATTERN.sub("", clean_query)
-        
-    # 3. Dynamic matching against exact Qdrant metadata fields
+
+    # 3. Fallback handling for common author aliases when metadata is unavailable
+    clean_query = _apply_known_author_aliases(clean_query, filters)
+
+    # Loading metadata requires a network request.  Known explicit filters and
+    # aliases already provide an exact Qdrant filter, so avoid that request for
+    # those queries (and keep the extractor usable offline).
+    if not filters:
+        metadata_cache.load_metadata()
+
+    # 4. Dynamic matching against exact Qdrant metadata fields
     # We sort by length descending to match longest phrases first
     
     # Match Project Titles
@@ -137,5 +169,7 @@ def extract_query_and_filters(user_query: str) -> Tuple[str, Dict]:
                 clean_query = re.sub(r'\b' + re.escape(staff) + r'\b', "", clean_query, flags=re.IGNORECASE)
                 break # Take the first match
 
-    clean_query = " ".join(clean_query.split()) # clean up extra spaces
+    # Keep the query form consistent whether this function is called directly
+    # or through the normalizer in the search pipeline.
+    clean_query = " ".join(clean_query.split()).lower()
     return clean_query, filters

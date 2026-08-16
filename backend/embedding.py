@@ -98,7 +98,7 @@ def process_file(file_path, preview=False,ENABLE_UPLOAD = True):
 
 
 def test_pipeline():
-    target_dir = "./data/final_doc/"
+    target_dir = "./data/files_for_evaluation/"
 
     # ===== CONFIG =====
     MODE = "all"        # "all" | "specific" | "limit"

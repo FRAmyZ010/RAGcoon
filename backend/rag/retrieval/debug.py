@@ -1,9 +1,7 @@
-from typing import List
-
 from .service import search_with_details
 
 
-def run_sample_queries(queries: List[str]) -> None:
+def run_sample_queries(queries: list[str]) -> None:
     print("\n" + "=" * 50)
     print("Senior Project Document QA System")
     print("=" * 50)
