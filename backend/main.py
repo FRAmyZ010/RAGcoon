@@ -9,8 +9,8 @@ for path in (str(PROJECT_ROOT), str(BACKEND_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from app.rag.retrieval import answer_question
-from app.rag.retrieval.performance import format_performance_summary
+from rag.retrieval import answer_question
+from rag.retrieval.performance import format_performance_summary
 
 
 def print_divider(char="=", length=50):
