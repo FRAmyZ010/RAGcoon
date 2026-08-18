@@ -1,5 +1,16 @@
-from backend.performance import format_performance_summary
-from backend.step1_context import answer_question
+import sys
+from pathlib import Path
+from typing import Any, cast
+
+BACKEND_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_ROOT.parent
+
+for path in (str(PROJECT_ROOT), str(BACKEND_ROOT)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
+from app.rag.retrieval import answer_question
+from app.rag.retrieval.performance import format_performance_summary
 
 
 def print_divider(char="=", length=50):
@@ -40,9 +51,9 @@ if __name__ == "__main__":
             print("⚠️ Please enter a question.")
             continue
 
-        result = answer_question(question)
+        result = cast(dict[str, Any], answer_question(question))
 
-        timing = result["timing"]
+        timing = cast(dict[str, float], result["timing"])
         session_total_times.append(timing["total_seconds"])
 
         # ===================== RESULT =====================
@@ -54,9 +65,11 @@ if __name__ == "__main__":
         print("💡 Answer:")
         print(f"{result['answer']}\n")
 
-        print(f"📄 Reference snippets used: {len(result['contexts'])}")
+        contexts = cast(list[str], result["contexts"])
+        sources = cast(list[str], result["sources"])
+        print(f"📄 Reference snippets used: {len(contexts)}")
 
-        for source in result['sources']:
+        for source in sources:
             print(f"Source: {source}")
 
         # ===================== TIMING =====================
@@ -68,10 +81,11 @@ if __name__ == "__main__":
         print(f"Total     : {timing['total_seconds']:.3f}s")
 
         # ===================== WARNINGS =====================
-        if result["errors"]:
+        errors = cast(list[str], result["errors"])
+        if errors:
             print_section("⚠️ Retrieval Warnings")
 
-            for error in result["errors"]:
+            for error in errors:
                 print(f"- {error}")
 
         print_divider("=")
