@@ -1,9 +1,7 @@
-from typing import Dict, Optional
-
 from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 
 
-def build_qdrant_filter(filters: Optional[Dict]) -> Optional[Filter]:
+def build_qdrant_filter(filters: dict | None) -> Filter | None:
     if not filters:
         return None
 

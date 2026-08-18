@@ -1,9 +1,7 @@
-from typing import Dict, List
-
-from .config import reranker
+from .config import get_reranker
 
 
-def normalize_scores(scores: List[float]) -> List[float]:
+def normalize_scores(scores: list[float]) -> list[float]:
     if not scores:
         return []
 
@@ -16,13 +14,13 @@ def normalize_scores(scores: List[float]) -> List[float]:
     return [(score - min_s) / (max_s - min_s) for score in scores]
 
 
-def rerank(query: str, docs_with_payload: List[Dict], top_n: int) -> List[Dict]:
+def rerank(query: str, docs_with_payload: list[dict], top_n: int) -> list[dict]:
     if not docs_with_payload:
         return []
 
     docs = [doc["text"] for doc in docs_with_payload]
     pairs = [[query, doc] for doc in docs]
-    scores = reranker.predict(pairs)
+    scores = get_reranker().predict(pairs)
 
     scored = list(zip(docs_with_payload, scores))
     ranked = sorted(scored, key=lambda item: item[1], reverse=True)

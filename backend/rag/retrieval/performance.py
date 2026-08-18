@@ -1,12 +1,12 @@
 import statistics
-from typing import List
 
 
-def percentile(values: List[float], p: float) -> float:
+def percentile(values: list[float], p: float) -> float:
     if not values:
         return 0.0
 
     sorted_values = sorted(values)
+
     k = (len(sorted_values) - 1) * (p / 100)
     f = int(k)
     c = min(f + 1, len(sorted_values) - 1)
@@ -14,10 +14,15 @@ def percentile(values: List[float], p: float) -> float:
     if f == c:
         return sorted_values[int(k)]
 
-    return sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f)
+    return sorted_values[f] + (
+        sorted_values[c] - sorted_values[f]
+    ) * (k - f)
 
 
-def format_performance_summary(item_label: str, durations: List[float]) -> str:
+def format_performance_summary(
+    item_label: str,
+    durations: list[float],
+) -> str:
     if not durations:
         return f"{item_label}: No data"
 
@@ -26,7 +31,7 @@ def format_performance_summary(item_label: str, durations: List[float]) -> str:
 
     result = (
         f"{item_label}\n"
-        f"{'-'*40}\n"
+        f"{'-' * 40}\n"
         f"Count  : {count}\n"
         f"Mean   : {statistics.mean(durations):.3f}s\n"
         f"Median : {statistics.median(durations):.3f}s\n"
@@ -41,6 +46,9 @@ def format_performance_summary(item_label: str, durations: List[float]) -> str:
         result += f"QPS    : {qps:.2f} req/s\n"
 
     if count > 1:
-        result += f"StdDev : {statistics.stdev(durations):.3f}s\n"
+        result += (
+            f"StdDev : "
+            f"{statistics.stdev(durations):.3f}s\n"
+        )
 
     return result
