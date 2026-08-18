@@ -2,12 +2,12 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from qdrant_client import QdrantClient
 from sentence_transformers import CrossEncoder
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv(find_dotenv())
 
 QDRANT_URL: str | None = os.getenv("QDRANT_URL")
 QDRANT_API_KEY: str | None = os.getenv("QDRANT_API_KEY")
