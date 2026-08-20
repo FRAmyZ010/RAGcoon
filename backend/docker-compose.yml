@@ -44,6 +44,7 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragcoon_db}
+      - POSTGRES_HOST=postgres
     volumes:
       - .:/app
       - ./storage:/app/storage
