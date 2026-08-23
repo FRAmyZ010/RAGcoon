@@ -38,4 +38,4 @@ class Document(Base):
     error_message = Column(Text, nullable=True)
 
     uplaoded_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.now(timezone.now), onupdate=datetime.now(timezone.now))
+    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
