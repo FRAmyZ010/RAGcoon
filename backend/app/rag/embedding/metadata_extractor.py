@@ -42,6 +42,58 @@ def _extract_title_and_authors(lines: list[str]) -> tuple[list[str], list[str]]:
     return lines[:1], []
 
 
+def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]]:
+    """Extract names from the approval page's labelled committee entries."""
+    label_pattern = re.compile(r"\b(ADVISOR|COMMITTEE)\b", re.IGNORECASE)
+    label_lines = [
+        (line_index, match)
+        for line_index, line in enumerate(lines)
+        for match in [label_pattern.search(line)]
+        if match
+    ]
+    advisor: str | None = None
+    committee: list[str] = []
+
+    for label_index, (line_index, label) in enumerate(label_lines):
+        next_line_index = (
+            label_lines[label_index + 1][0]
+            if label_index + 1 < len(label_lines)
+            else len(lines)
+        )
+        block = lines[line_index:next_line_index]
+        candidates: list[str] = []
+        for block_index, line in enumerate(block):
+            if block_index == 0:
+                line = line[label.end():]
+            candidates.extend(
+                value.strip(" .:-")
+                for value in re.findall(r"\(([^()]*)\)", line)
+                if value.strip(" .:-")
+            )
+            cleaned = re.sub(r"[.:-]+", " ", line).strip()
+            if cleaned and not re.search(
+                r"ADVISOR|COMMITTEE|EXAMINING", cleaned, re.IGNORECASE
+            ):
+                candidates.append(cleaned)
+
+        name = next(
+            (
+                candidate
+                for candidate in candidates
+                if len(candidate) > 3
+                and re.fullmatch(r"[A-Za-z][A-Za-z .,'()&-]*", candidate)
+            ),
+            None,
+        )
+        if name and name != advisor:
+            if label.group(1).upper() == "ADVISOR":
+                advisor = name
+            else:
+                committee.append(name)
+
+    return advisor, committee
+
+
 def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
     metadata: dict[str, str | None] = {
         "project_title": None,
@@ -154,6 +206,10 @@ def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
                     found_committee.append(committee_name)
 
             break
+    if found_advisor is None and found_committee == []:
+        approval_advisor, approval_committee = _extract_approval_committee(lines)
+        found_advisor = approval_advisor
+        found_committee = approval_committee
 
     metadata["advisor"] = found_advisor
     if found_committee:

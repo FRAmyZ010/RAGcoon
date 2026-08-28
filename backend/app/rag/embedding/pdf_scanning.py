@@ -17,19 +17,22 @@ def scan_pdf_document(file_path):
             "advisor": None, "committee": None, "keywords": None, "year": None
         }
 
-        # 2. Loop อ่านทุกหน้าตามปกติ
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text(x_tolerance=1, y_tolerance=2)
+        # 2. Collect metadata first so every page receives the final payload.
+        page_texts = [
+            page.extract_text(x_tolerance=1, y_tolerance=2) or ""
+            for page in pdf.pages
+        ]
+        for text in page_texts[:5]:
+            if text:
+                page_meta = extract_project_metadata(text)
+                for key, value in page_meta.items():
+                    if special_meta[key] is None and value is not None:
+                        special_meta[key] = value
+
+        # 3. Loop through pages and attach the completed metadata payload.
+        for i, text in enumerate(page_texts):
 
             if text:
-                # 3. เฉพาะ 5 หน้าแรก (index 0-4): พยายามอัปเดต Metadata ถ้ายังเป็น None อยู่
-                if i < 5:
-                    page_meta = extract_project_metadata(text)
-                    for key, value in page_meta.items():
-                        # ถ้าของเดิมเป็น None แต่ของใหม่หาเจอ ให้แทนที่ด้วยของใหม่
-                        if special_meta[key] is None and value is not None:
-                            special_meta[key] = value
-
                 # 4. ประกอบร่าง Data
                 metadata = {
                     "source": os.path.basename(file_path),
