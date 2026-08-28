@@ -1,6 +1,9 @@
-import pdfplumber
 import os
+
+import pdfplumber
+
 from .metadata_extractor import extract_project_metadata
+
 
 def scan_pdf_document(file_path):
     extracted_data = []
@@ -9,9 +12,9 @@ def scan_pdf_document(file_path):
         total_pages = len(pdf.pages)
         
         # 1. เตรียมตัวแปรเก็บ Metadata พิเศษ (ค่าเริ่มต้นเป็น None)
-        special_meta = {
-            "project_title": None, "author": None, 
-            "advisor": None, "keywords": None, "year": None
+        special_meta: dict[str, str | None] = {
+            "project_title": None, "author": None,
+            "advisor": None, "committee": None, "keywords": None, "year": None
         }
 
         # 2. Loop อ่านทุกหน้าตามปกติ

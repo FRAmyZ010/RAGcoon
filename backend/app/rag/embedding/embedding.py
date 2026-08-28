@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from time import perf_counter
 
 from backend.app.rag.embedding.pdf_scanning import scan_pdf_document
@@ -98,7 +99,7 @@ def process_file(file_path, preview=False,ENABLE_UPLOAD = True):
 
 
 def test_pipeline():
-    target_dir = "./data/files_for_evaluation/"
+    target_dir = Path(__file__).resolve().parents[3] / "data" / "files_for_evaluation"
 
     # ===== CONFIG =====
     MODE = "all"        # "all" | "specific" | "limit"
