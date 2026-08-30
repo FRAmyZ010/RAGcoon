@@ -32,6 +32,41 @@ def _is_advisor_query(question: str) -> bool:
     )
 
 
+def _is_code_query(question: str) -> bool:
+    q = question.lower()
+    return any(
+        marker in q
+        for marker in (
+            "code",
+            "source code",
+            ".php",
+            ".py",
+            ".js",
+            ".java",
+            "function",
+            "query",
+            "sql",
+        )
+    )
+
+
+def _build_code_fallback(scored_contexts: list[dict]) -> str:
+    fragments: list[str] = []
+    for index, item in enumerate(scored_contexts, start=1):
+        payload = item.get("payload", {}) or {}
+        source = payload.get("source", "Unknown source")
+        page_number = payload.get("page_number", "?")
+        text = str(item.get("text", "")).strip()
+        if text:
+            fragments.append(
+                f"[Fragment {index} | {source} | page {page_number}]\n{text}"
+            )
+
+    if not fragments:
+        return NO_ANSWER_TEXT
+    return "Retrieved code fragments:\n\n" + "\n\n".join(fragments)
+
+
 def _build_metadata_answer(scored_contexts: list[dict], question: str) -> str | None:
     if not scored_contexts or not _is_advisor_query(question):
         return None
@@ -118,6 +153,10 @@ def get_llm_response(question: str, context_list: list[str]) -> str:
     context_text = "\n\n".join(context_list)
     prompt = f"""You are an assistant for a senior project document repository.
 Use only the retrieved context below. Do not invent facts.
+If the question asks for source code or a named file, extract and reproduce the
+matching code from the context. Do not say that information is missing when the
+context contains a relevant filename or code fragment. Preserve code syntax as
+closely as possible and clearly state when the retrieved context is only a fragment.
 If the question asks about advisor, supervisory committee, or staff involvement, look for:
   - Full advisor names (e.g., "Dr. Mahamah Sebakor", "Aj. Surapol Vorapatratorn")
   - Project titles that match the advisor's projects
@@ -180,6 +219,7 @@ def answer_question(question: str) -> dict[str, object]:
 
     contexts: list[str] = []
     seen_projects: set[str] = set()
+    preserve_same_project_chunks = _is_code_query(question)
     sources: list[str] = []
 
     for item in scored_contexts:
@@ -188,13 +228,15 @@ def answer_question(question: str) -> dict[str, object]:
         project_title = payload.get("project_title") or payload.get("title")
         advisor = payload.get("advisor")
 
-        if project_title:
+        if project_title and not preserve_same_project_chunks:
             key = project_title.lower().strip()
             if key in seen_projects:
                 continue
             seen_projects.add(key)
 
-        snippet = item["text"].replace("\n", " ").strip()
+        snippet = item["text"].strip()
+        if not preserve_same_project_chunks:
+            snippet = snippet.replace("\n", " ")
         context_parts = []
         if project_title:
             context_parts.append(f"Project title: {project_title}")
@@ -202,6 +244,8 @@ def answer_question(question: str) -> dict[str, object]:
             context_parts.append(f"Advisor: {advisor}")
         if source:
             context_parts.append(f"Source: {source}")
+        if preserve_same_project_chunks:
+            context_parts.append(f"Page: {payload.get('page_number', '?')}")
         if context_parts:
             contexts.append(" | ".join(context_parts) + "\n" + snippet)
         else:
@@ -233,6 +277,9 @@ def answer_question(question: str) -> dict[str, object]:
     llm_start = time.perf_counter()
     answer = get_llm_response(question, contexts)
     llm_seconds = time.perf_counter() - llm_start
+
+    if _is_code_query(question) and answer == NO_ANSWER_TEXT:
+        answer = _build_code_fallback(scored_contexts)
 
     retrieval_timing = retrieval_details["timing"]
     total_seconds = retrieval_timing["total_seconds"] + llm_seconds

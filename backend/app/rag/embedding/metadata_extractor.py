@@ -42,11 +42,64 @@ def _extract_title_and_authors(lines: list[str]) -> tuple[list[str], list[str]]:
     return lines[:1], []
 
 
+def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]]:
+    """Extract names from the approval page's labelled committee entries."""
+    label_pattern = re.compile(r"\b(ADVISOR|COMMITTEE)\b", re.IGNORECASE)
+    label_lines = [
+        (line_index, match)
+        for line_index, line in enumerate(lines)
+        for match in [label_pattern.search(line)]
+        if match
+    ]
+    advisor: str | None = None
+    committee: list[str] = []
+
+    for label_index, (line_index, label) in enumerate(label_lines):
+        next_line_index = (
+            label_lines[label_index + 1][0]
+            if label_index + 1 < len(label_lines)
+            else len(lines)
+        )
+        block = lines[line_index:next_line_index]
+        candidates: list[str] = []
+        for block_index, line in enumerate(block):
+            if block_index == 0:
+                line = line[label.end():]
+            candidates.extend(
+                value.strip(" .:-")
+                for value in re.findall(r"\(([^()]*)\)", line)
+                if value.strip(" .:-")
+            )
+            cleaned = re.sub(r"[.:-]+", " ", line).strip()
+            if cleaned and not re.search(
+                r"ADVISOR|COMMITTEE|EXAMINING", cleaned, re.IGNORECASE
+            ):
+                candidates.append(cleaned)
+
+        name = next(
+            (
+                candidate
+                for candidate in candidates
+                if len(candidate) > 3
+                and re.fullmatch(r"[A-Za-z][A-Za-z .,'()&-]*", candidate)
+            ),
+            None,
+        )
+        if name and name != advisor:
+            if label.group(1).upper() == "ADVISOR":
+                advisor = name
+            else:
+                committee.append(name)
+
+    return advisor, committee
+
+
 def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
     metadata: dict[str, str | None] = {
         "project_title": None,
         "author": None,
         "advisor": None,
+        "committee": None,
         "keywords": None,
         "year": None
     }
@@ -93,13 +146,14 @@ def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
         if authors:
             metadata["author"] = ", ".join(authors)
 
-    # --- 3. Advisor (Dictionary + Supervisory Committee Logic) ---
+    # --- 3. Advisor and Committee ---
     found_advisor: str | None = None
+    found_committee: list[str] = []
     for i, line in enumerate(lines):
         # ปรับให้หาคำว่า Supervisory ก็พอ เผื่อ Committee มันกระเด็นไปบรรทัดอื่น
         if re.search(r"Supervisory", line, re.IGNORECASE):
-            # ตรวจสอบบรรทัดปัจจุบัน และ 2 บรรทัดถัดไป
-            search_scope = lines[i : i + 3]
+            # ตรวจสอบบรรทัดปัจจุบันและบรรทัดถัดไปที่อยู่ในส่วนคณะกรรมการ
+            search_scope = lines[i : i + 8]
             combined_context = " ".join(search_scope)
 
             # # เช็คจาก Dictionary (Priority 1)
@@ -131,9 +185,35 @@ def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
                             advisor_name = advisor_name.strip(" .:-")
                             
                             found_advisor = advisor_name
-                            break
+
+            for committee_line in search_scope:
+                committee_line = re.sub(
+                    r"^Supervisory\s+Committee\s*",
+                    "",
+                    committee_line,
+                    flags=re.IGNORECASE,
+                )
+                committee_match = re.search(
+                    r"\bCommittee\b",
+                    committee_line,
+                    re.IGNORECASE,
+                )
+                if not committee_match:
+                    continue
+
+                committee_name = committee_line[:committee_match.start()].strip(" .:-")
+                if committee_name and committee_name.lower() != "supervisory":
+                    found_committee.append(committee_name)
+
+            break
+    if found_advisor is None and found_committee == []:
+        approval_advisor, approval_committee = _extract_approval_committee(lines)
+        found_advisor = approval_advisor
+        found_committee = approval_committee
 
     metadata["advisor"] = found_advisor
+    if found_committee:
+        metadata["committee"] = ", ".join(dict.fromkeys(found_committee))
 
     # --- ส่วน Keywords (Logic ใหม่: สแกนทีละบรรทัด) ---
     lines = [line.strip() for line in first_page_text.split('\n') if line.strip()]
