@@ -248,8 +248,9 @@ def get_llm_response(question: str, context_list: list[str]) -> str:
     print(f"\n📝 LLM Input - {len(context_list)} Context Chunks into Prompt:")
     print("=" * 70)
     for i, ctx in enumerate(context_list, 1):
+        clean_ctx = ctx.replace("\r\n", "\n").replace("\r", "\n")
         print(f"📦 Context #{i}:")
-        for line in ctx.strip().split("\n"):
+        for line in clean_ctx.strip().split("\n"):
             print(f"   {line}")
         print("-" * 70)
     
@@ -330,7 +331,7 @@ def answer_question(question: str) -> dict[str, object]:
     contexts: list[str] = []
     seen_texts: set[str] = set()
     project_chunk_counts: dict[str, int] = {}
-    max_chunks_per_project = 4
+    max_chunks_per_project = 5
     preserve_same_project_chunks = _is_code_query(question)
     sources: list[str] = []
 
@@ -353,13 +354,19 @@ def answer_question(question: str) -> dict[str, object]:
                 continue
             project_chunk_counts[key] = count + 1
 
-        snippet = item.get("text", "").strip()
-        if not snippet or snippet in seen_texts:
+        raw_snippet = str(item.get("text", "")).strip()
+        raw_snippet = raw_snippet.replace("\r\n", "\n").replace("\r", "\n")
+        if not raw_snippet:
             continue
-        seen_texts.add(snippet)
 
         if not preserve_same_project_chunks:
-            snippet = snippet.replace("\n", " ")
+            snippet = " ".join(raw_snippet.split())
+        else:
+            snippet = raw_snippet
+
+        if snippet in seen_texts:
+            continue
+        seen_texts.add(snippet)
 
         context_parts = []
         if project_title:

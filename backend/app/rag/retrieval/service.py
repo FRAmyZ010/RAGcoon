@@ -104,8 +104,8 @@ def search_with_details(query: str) -> dict:
                 print(f"   ├─ Title: {title}")
                 print(f"   ├─ Author: {author} | Advisor: {advisor}")
                 print("   └─ Content:")
-                # Indent content slightly for readability
-                for line in result["text"].strip().split("\n"):
+                clean_text = result["text"].replace("\r\n", "\n").replace("\r", "\n")
+                for line in clean_text.strip().split("\n"):
                     print(f"      {line}")
                 print("-" * 70)
         except (TypeError, ValueError, RuntimeError, AttributeError) as e:
