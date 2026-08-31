@@ -88,11 +88,26 @@ def search_with_details(query: str) -> dict:
             rerank_start = time.perf_counter()
             reranked = rerank(clean_query, results, DEFAULT_TOP_N)
             rerank_seconds = time.perf_counter() - rerank_start
-            print(f"\nAfter rerank: top {len(reranked)} results")
-            print("  Reranked chunks:")
+            print(f"\n🎯 [RERANK] Top {len(reranked)} Results (Full Chunks):")
+            print("=" * 70)
             for i, result in enumerate(reranked, 1):
-                preview = result["text"].replace("\n", " ")[:70]
-                print(f"    [{i}] {preview}...")
+                payload = result.get("payload", {})
+                score = result.get("score", 0.0)
+                source = payload.get("source", "Unknown")
+                page = payload.get("page_number", "?")
+                title = payload.get("project_title") or payload.get("title", "-")
+                advisor = payload.get("advisor", "-")
+                author = payload.get("author", "-")
+
+                print(f"📄 Chunk #{i} | Rerank Score: {score:.4f}")
+                print(f"   ├─ Source: {source} (Page {page})")
+                print(f"   ├─ Title: {title}")
+                print(f"   ├─ Author: {author} | Advisor: {advisor}")
+                print("   └─ Content:")
+                # Indent content slightly for readability
+                for line in result["text"].strip().split("\n"):
+                    print(f"      {line}")
+                print("-" * 70)
         except (TypeError, ValueError, RuntimeError, AttributeError) as e:
             print(f"Error during reranking: {e}")
             rerank_seconds = 0.0

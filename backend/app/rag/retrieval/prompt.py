@@ -245,10 +245,13 @@ def get_llm_response(question: str, context_list: list[str]) -> str:
     if not context_list:
         return fallback_text
     
-    print(f"\n📝 LLM Input - {len(context_list)} chunks:")
+    print(f"\n📝 LLM Input - {len(context_list)} Context Chunks into Prompt:")
+    print("=" * 70)
     for i, ctx in enumerate(context_list, 1):
-        preview = ctx.replace("\n", " ")[:80]
-        print(f"  [{i}] {preview}...")
+        print(f"📦 Context #{i}:")
+        for line in ctx.strip().split("\n"):
+            print(f"   {line}")
+        print("-" * 70)
     
     context_text = "\n\n".join(context_list)
     lang_instruction = (
