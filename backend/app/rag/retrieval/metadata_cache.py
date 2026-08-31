@@ -41,6 +41,7 @@ class MetadataCache:
         self.keywords: set[str] = set()
 
         self.author_to_full: dict[str, set[str]] = {}
+        self.advisor_to_full: dict[str, set[str]] = {}
         self.keyword_to_full: dict[str, set[str]] = {}
 
         self._loaded = False
@@ -125,9 +126,18 @@ class MetadataCache:
                     # Advisor
                     # -------------------------
                     if payload.get("advisor"):
-                        self.advisors.add(
-                            payload["advisor"].strip()
-                        )
+                        full_advisor = payload["advisor"].strip()
+                        self.advisors.add(full_advisor)
+
+                        name_words = [
+                            w.strip().lower()
+                            for w in re.findall(r"[A-Za-z]+", full_advisor)
+                            if len(w.strip()) > 3 and w.lower() not in {"prof", "asst", "assoc", "lecturer", "doctor", "aj"}
+                        ]
+                        for nw in name_words:
+                            if nw not in self.advisor_to_full:
+                                self.advisor_to_full[nw] = set()
+                            self.advisor_to_full[nw].add(full_advisor)
 
                     # -------------------------
                     # Keywords

@@ -266,12 +266,15 @@ def get_llm_response(question: str, context_list: list[str]) -> str:
 Use only the retrieved context below. Do not invent facts.
 
 Instructions:
-1. Check both the metadata headers (Project title, Author, Advisor, Committee, Year, Keywords, Source) and the document content.
-2. If the question asks for source code or a named file, extract and reproduce the matching code from the context.
-3. If the question asks about advisor, author, committee, year, or methodology, provide the accurate answer directly from the context.
-4. {lang_instruction}
-5. If the context is still insufficient, reply exactly: {insufficient_reply}
-6. Keep the answer concise and directly relevant to the question.
+1. Check both the metadata headers (Project title, Author, Advisor, Committee, Year, Keywords, Source) and the document content thoroughly.
+2. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, operating systems, or methodologies, extract and summarize all relevant items mentioned in the context (including under sections like Related Technology, System Overview, or Methodology).
+3. If the context mentions specific technologies or tools used (for example, VMware Workstation, Ubuntu, Arduino, Python, etc.), state them clearly and explain how they are used based on the context.
+4. If the question asks for source code or a named file, extract and reproduce the matching code from the context.
+5. If the question asks "Which projects..." or "Which project reports have [advisor/author]...", always explicitly enumerate and list the exact distinct project titles found in the context (for example: "1. [Project Title A]\n2. [Project Title B]"). Never give vague or generic responses like "All project reports".
+6. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata or context.
+7. {lang_instruction}
+8. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
+9. Keep the answer concise and directly relevant to the question.
 
 Context:
 {context_text}
@@ -282,6 +285,7 @@ Question:
 Answer:
 """
 
+    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     try:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -289,9 +293,12 @@ Answer:
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0},
+                "options": {
+                    "temperature": 0,
+                    "num_predict": 512,
+                },
             },
-            timeout=60,
+            timeout=ollama_timeout,
         )
         response.raise_for_status()
     except requests.RequestException as exc:
@@ -308,30 +315,17 @@ def answer_question(question: str) -> dict[str, object]:
     retrieval_details = search_with_details(question)
     scored_contexts = retrieval_details["results"]
 
-    metadata_answer = _build_metadata_answer(scored_contexts, question)
-    if metadata_answer:
-        return {
-            "question": question,
-            "answer": metadata_answer,
-            "contexts": [item["text"] for item in scored_contexts],
-            "sources": [item.get("payload", {}).get("source", "Unknown source") for item in scored_contexts],
-            "scored_contexts": scored_contexts,
-            "normalized_query": retrieval_details["normalized_query"],
-            "query_variants": retrieval_details["query_variants"],
-            "retrieved_count": retrieval_details["retrieved_count"],
-            "errors": retrieval_details["errors"],
-            "timing": {
-                "retrieval_seconds": retrieval_details["timing"]["retrieval_seconds"],
-                "rerank_seconds": retrieval_details["timing"]["rerank_seconds"],
-                "llm_seconds": 0.0,
-                "total_seconds": retrieval_details["timing"]["total_seconds"],
-            },
-        }
-
     contexts: list[str] = []
     seen_texts: set[str] = set()
     project_chunk_counts: dict[str, int] = {}
-    max_chunks_per_project = 5
+    
+    # Check if multiple distinct projects are present in the retrieved candidates
+    distinct_projects = set(
+        item.get("payload", {}).get("project_title") or item.get("payload", {}).get("title")
+        for item in scored_contexts
+        if item.get("payload") and (item.get("payload", {}).get("project_title") or item.get("payload", {}).get("title"))
+    )
+    max_chunks_per_project = 2 if len(distinct_projects) > 1 else 7
     preserve_same_project_chunks = _is_code_query(question)
     sources: list[str] = []
 

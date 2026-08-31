@@ -66,6 +66,94 @@ def _apply_known_author_aliases(clean_query: str, filters: dict) -> str:
     return clean_query
 
 
+GENERIC_KEYWORD_WORDS = {
+    "tracking", "system", "systems", "python", "iot", "internet", "of", "things",
+    "application", "applications", "app", "management", "analysis", "monitoring",
+    "design", "development", "security", "learning", "machine", "sensor", "sensors",
+    "smart", "online", "service", "algorithm", "model", "detection", "mobile",
+    "web", "data", "and", "in", "for", "the", "to", "with", "based", "using",
+    "evaluation", "performance", "method", "project", "proposal", "paper", "study",
+}
+
+QUERY_STOP_WORDS = GENERIC_KEYWORD_WORDS | {
+    "author", "authors", "advisor", "advisors", "committee", "year", "title",
+    "paper", "project", "projects", "proposal", "which", "what", "where", "when", "who",
+    "whom", "whose", "how", "tell", "show", "give", "retrieve", "find", "list",
+    "about", "using", "used", "name", "names", "detail", "details", "information",
+    "system", "systems", "development", "application",
+}
+
+
+def _is_generic_keyword(kw: str) -> bool:
+    words = [w.strip().lower() for w in re.findall(r"[A-Za-z0-9]+", kw) if w.strip()]
+    if not words:
+        return True
+    # If all words are in generic list
+    if all(w in GENERIC_KEYWORD_WORDS for w in words):
+        return True
+    # Single generic word or too short
+    if len(words) == 1 and (words[0] in GENERIC_KEYWORD_WORDS or len(words[0]) <= 3):
+        return True
+    return False
+
+
+def _find_matching_project_title(query: str, titles: set[str]) -> tuple[str | None, str]:
+    """Find matching project title, supporting exact substring, flexible spaces/punctuation, and parenthesized aliases."""
+    query_lower = query.lower()
+
+    # 1. Exact case-insensitive substring match (prioritize longer titles)
+    for title in sorted(titles, key=len, reverse=True):
+        if len(title) > 3 and title.lower() in query_lower:
+            clean_q = re.sub(re.escape(title), "", query, flags=re.IGNORECASE)
+            return title, clean_q
+
+    # 2. Check parenthesized acronyms / nicknames (e.g. '(GEM CAR)' in title or '(BLE)')
+    for title in sorted(titles, key=len, reverse=True):
+        brackets = re.findall(r"\(([^)]+)\)", title)
+        for b in brackets:
+            b_clean = b.strip()
+            if len(b_clean) >= 3 and b_clean.lower() not in QUERY_STOP_WORDS:
+                b_compact = re.sub(r"[\s\-_]+", "", b_clean.lower())
+                b_words = [re.escape(w) for w in b_clean.split()]
+                b_regex = r"\b" + r"[\s\-_]*".join(b_words) + r"\b"
+
+                match = re.search(b_regex, query, re.IGNORECASE)
+                if match:
+                    clean_q = query[:match.start()] + " " + query[match.end():]
+                    return title, clean_q
+
+                compact_match = re.search(rf"\b{re.escape(b_compact)}\b", query_lower)
+                if compact_match:
+                    clean_q = re.sub(rf"\b{re.escape(b_compact)}\b", "", query, flags=re.IGNORECASE)
+                    return title, clean_q
+
+    # 3. Flexible spacing match on the full title
+    for title in sorted(titles, key=len, reverse=True):
+        words = [re.escape(w) for w in title.split() if w.lower() not in QUERY_STOP_WORDS]
+        if len(words) >= 2:
+            title_regex = r"\b" + r"[\s\-_]+".join(words[:4]) + r"\b"
+            match = re.search(title_regex, query, re.IGNORECASE)
+            if match:
+                clean_q = query[:match.start()] + " " + query[match.end():]
+                return title, clean_q
+
+    # 4. Compact substring matching for merged project name tokens (e.g. 'mfuaccesspointsenergy' in query matches 'MFU ACCESS POINTS ENERGY SAVING')
+    # Extract only non-stop-word tokens from query with length >= 6
+    query_tokens = [
+        w.strip().lower()
+        for w in re.findall(r"[A-Za-z0-9]+", query)
+        if len(w.strip()) >= 6 and w.strip().lower() not in QUERY_STOP_WORDS
+    ]
+    for title in sorted(titles, key=len, reverse=True):
+        title_compact = re.sub(r"[\s\-_.,/]+", "", title.lower())
+        for token in query_tokens:
+            if (token in title_compact and len(token) >= 8) or (len(title_compact) >= 8 and title_compact in token):
+                clean_q = re.sub(rf"\b{re.escape(token)}\b", "", query, flags=re.IGNORECASE)
+                return title, clean_q
+
+    return None, query
+
+
 class QueryFilterProcessor:
     """Bound the query parsing pipeline: extraction, validation, and query cleanup."""
 
@@ -132,12 +220,9 @@ class QueryFilterProcessor:
             metadata_cache.load_metadata()
 
         if "project_title" not in filters:
-            for title in sorted(metadata_cache.titles, key=len, reverse=True):
-                if len(title) > 3 and title.lower() in clean_query.lower():
-                    filters["project_title"] = title
-                    pattern = re.compile(re.escape(title), re.IGNORECASE)
-                    clean_query = pattern.sub("", clean_query)
-                    break
+            matched_title, clean_query = _find_matching_project_title(clean_query, metadata_cache.titles)
+            if matched_title:
+                filters["project_title"] = matched_title
 
         if "author" not in filters:
             for author in sorted(metadata_cache.authors, key=len, reverse=True):
@@ -151,17 +236,27 @@ class QueryFilterProcessor:
         if "advisor" not in filters:
             for advisor in sorted(metadata_cache.advisors, key=len, reverse=True):
                 if len(advisor) > 3 and advisor.lower() in clean_query.lower():
-                    filters["advisor"] = advisor
+                    name_words = [w.strip().lower() for w in re.findall(r"[A-Za-z]+", advisor) if len(w.strip()) > 3]
+                    variants = set()
+                    for nw in name_words:
+                        variants.update(metadata_cache.advisor_to_full.get(nw, set()))
+                    if not variants:
+                        variants = {advisor}
+                    filters["advisor"] = list(variants) if len(variants) > 1 else list(variants)[0]
                     pattern = re.compile(re.escape(advisor), re.IGNORECASE)
                     clean_query = pattern.sub("", clean_query)
                     break
 
         if "keywords" not in filters:
             for kw in sorted(metadata_cache.keywords, key=len, reverse=True):
-                if len(kw) > 2 and kw.lower() in clean_query.lower():
+                # Ignore generic single words or stop words from auto-locking keyword filters
+                if _is_generic_keyword(kw):
+                    continue
+
+                pattern = re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE)
+                if pattern.search(clean_query):
                     full_strings = list(metadata_cache.keyword_to_full.get(kw, [kw]))
                     filters["keywords"] = full_strings if len(full_strings) > 1 else full_strings[0]
-                    pattern = re.compile(re.escape(kw), re.IGNORECASE)
                     clean_query = pattern.sub("", clean_query)
                     break
 
@@ -169,7 +264,11 @@ class QueryFilterProcessor:
             lower_query = clean_query.lower()
             for staff in MFU_STAFF:
                 if re.search(r"\b" + re.escape(staff.lower()) + r"\b", lower_query):
-                    filters["advisor"] = ADVISOR_EXACT_MAP.get(staff, staff)
+                    variants = metadata_cache.advisor_to_full.get(staff.lower(), set())
+                    if not variants:
+                        exact = ADVISOR_EXACT_MAP.get(staff, staff)
+                        variants = {exact}
+                    filters["advisor"] = list(variants) if len(variants) > 1 else list(variants)[0]
                     clean_query = re.sub(r"\b" + re.escape(staff) + r"\b", "", clean_query, flags=re.IGNORECASE)
                     break
 
@@ -177,8 +276,11 @@ class QueryFilterProcessor:
 
     @staticmethod
     def normalize_query_text(clean_query: str) -> str:
-        """Lowercase and collapse whitespace without re-running metadata extraction."""
-        return " ".join(clean_query.split()).lower()
+        """Lowercase, strip trailing dangling prepositions/punctuation, and collapse whitespace."""
+        cleaned = " ".join(clean_query.split()).lower().strip(" ,;:-_")
+        # Strip trailing prepositions leftover from title stripping (e.g. "in", "of", "for", "by", "on", "about", "at", "from", "with", "the")
+        cleaned = re.sub(r"\s+\b(in|of|for|by|on|about|at|from|with|the|to|a|an)\b\s*$", "", cleaned, flags=re.IGNORECASE).strip(" ,;:-_")
+        return " ".join(cleaned.split()).lower()
 
     def strip_query_filters(self, filters: dict | None = None) -> str:
         """Remove filter values from the query and keep only the textual search intent."""
