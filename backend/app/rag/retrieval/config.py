@@ -7,7 +7,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from qdrant_client import QdrantClient
 from sentence_transformers import CrossEncoder
 
-load_dotenv(find_dotenv())
+# Load .env from backend or root directory
+env_path = Path(__file__).resolve().parents[3] / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv(find_dotenv(usecwd=True))
 
 QDRANT_URL: str | None = os.getenv("QDRANT_URL")
 QDRANT_API_KEY: str | None = os.getenv("QDRANT_API_KEY")
