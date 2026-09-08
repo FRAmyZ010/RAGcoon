@@ -40,7 +40,25 @@ class QueryFilterResult(BaseModel):
     project_title: Optional[str] = Field(None, description="Exact project title if specifically queried.")
     author: Optional[Any] = Field(None, description="Author student name(s) (string or array of strings) if specifically queried.")
     keywords: Optional[str] = Field(None, description="Domain keywords (e.g., IoT, BLE, MySQL, Arduino).")
-    intent: str = Field("FACTOID", description="Query intent: FACTOID, EXPLORATORY, COMPARISON, OUT_OF_SCOPE")
+    intent: str = Field("FACTOID", description="Query intent: EXPLORATORY, DEEP_DIVE, COMPARISON, CODE, FACTOID")
+
+
+def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False) -> str:
+    """Rule-based intent detection fallback."""
+    q = raw_query.lower()
+    if any(k in q for k in ["code", "source code", "sql", "select", "function", "คำสั่ง", "โค้ด", "ฟังก์ชัน", ".php", ".py", ".js", ".java"]):
+        return "CODE"
+    if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
+        return "EXPLORATORY"
+    if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด"]):
+        return "COMPARISON"
+    if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
+        return "DEEP_DIVE"
+    if any(k in q for k in ["มีอะไรบ้าง", "ขอเอกสาร", "แนะนำ", "any project", "list", "survey", "further", "ต่อยอด", "บ้าง", "projects", "โครงงานไหน", "which project"]):
+        return "EXPLORATORY"
+    if project_title_present:
+        return "DEEP_DIVE"
+    return "FACTOID"
 
 
 def _build_dynamic_system_prompt() -> str:
@@ -63,8 +81,12 @@ Your task is to analyze the user's raw query (which may be in Thai, English, hav
 3. "author": Exact matching author name(s) from the KNOWN AUTHORS list. If multiple authors are mentioned, return a list/array of author names (e.g. ["FANA YAHLEE", "ROMTHEERA WANG"]). If single author, return a string (e.g. "PHUMPHOL CHANRUNGSRICHAY"). If not mentioned, return null.
 4. "year": 4-digit academic year in Christian Era (e.g. convert Thai year 2565 or 65 -> 2022, 2563 or 63 -> 2020). Return null if no year is specified.
 5. "project_title": Exact project title from the KNOWN PROJECTS list if specifically referenced, otherwise null.
-6. "intent": One of ["FACTOID", "EXPLORATORY", "COMPARISON", "OUT_OF_SCOPE"].
-   - If the user asks for recommendations or general survey (e.g., "Which project is best for web apps?", "มีโครงงานอะไรบ้าง"), set intent to "EXPLORATORY" and DO NOT lock project_title filter.
+6. "intent": One of ["EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"].
+   - "EXPLORATORY": Broad search, survey, recommendations, listing multiple projects, similarity clustering across repository (e.g. "มีโปรเจกต์ไหนบ้าง", "Which projects have similar objectives?", "Are there any projects that could be developed further?"). DO NOT lock project_title filter.
+   - "DEEP_DIVE": In-depth analysis of a single named project (e.g. "อธิบายระบบ X อย่างละเอียด", "Architecture of project Y").
+   - "COMPARISON": Direct pairwise comparison between 2 specific named projects (e.g. "เปรียบเทียบ A กับ B", "Compare X and Y").
+   - "CODE": Asking for source code, SQL, functions.
+   - "FACTOID": Direct factual/metadata lookup (e.g. "Who is advisor of X?", "What year was Y?").
 
 CURRENT REPOSITORY METADATA IN QDRANT (DYNAMIC):
 KNOWN ADVISORS:
@@ -86,7 +108,7 @@ OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
   "author": ["Author 1", "Author 2"] or "Exact Author Name" or null,
   "year": "2022 or null",
   "project_title": "Exact Title or null",
-  "intent": "FACTOID"
+  "intent": "EXPLORATORY"
 }}"""
 
 
@@ -123,13 +145,13 @@ def _call_ollama_for_query_parsing(raw_query: str) -> Optional[dict[str, Any]]:
     return None
 
 
-def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any]]:
+def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
     """
     ฟังก์ชันหลักสำหรับเรียกใช้งาน:
-    รับคำถามดิบของผู้ใช้ -> คืนค่า (clean_query_for_vector, filters_dict_for_qdrant)
+    รับคำถามดิบของผู้ใช้ -> คืนค่า (clean_query_for_vector, filters_dict_for_qdrant, query_intent)
     """
     if not raw_query or not raw_query.strip():
-        return "", {}
+        return "", {}, "FACTOID"
 
     from .extractor import QueryFilterProcessor
     from .normalizer import normalize_user_query
@@ -140,6 +162,7 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any]]:
     if llm_result:
         norm_query = llm_result.get("normalized_query", "").strip() or raw_query
         filters: dict[str, Any] = {}
+        intent = str(llm_result.get("intent", "")).upper().strip()
 
         if llm_result.get("advisor"):
             raw_advisor = str(llm_result["advisor"]).strip()
@@ -196,10 +219,21 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any]]:
                 merged = list(dict.fromkeys(current_authors + rule_authors))
                 filters[k] = merged if len(merged) > 1 else merged[0]
 
-        return norm_query, filters
+        valid_intents = {"EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"}
+        if intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
+            intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
+
+        # Multi-project modes must not lock to a single project filter
+        if intent in {"EXPLORATORY", "COMPARISON"}:
+            filters.pop("project_title", None)
+
+        return norm_query, filters, intent
 
     # 2. Fallback: กรณี Ollama ปิดอยู่หรือ Timeout ให้สลับไปใช้ In-Memory Cache อัตโนมัติ
     clean_norm = normalize_user_query(raw_query)
     processor = QueryFilterProcessor(clean_norm)
     clean_q, fallback_filters = processor.parse()
-    return clean_q, fallback_filters
+    fallback_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(fallback_filters.get("project_title")))
+    if fallback_intent in {"EXPLORATORY", "COMPARISON"}:
+        fallback_filters.pop("project_title", None)
+    return clean_q, fallback_filters, fallback_intent

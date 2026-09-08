@@ -104,7 +104,40 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
     return cleaned or fallback_text
 
 
-def get_llm_response(question: str, context_list: list[str]) -> str:
+def _build_intent_instruction(intent: str, question: str = "") -> str:
+    """Return specialized prompt instructions based on dynamic query intent."""
+    q_lower = question.lower()
+    if intent == "EXPLORATORY":
+        if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
+            return """4. Theme-Based Similarity Grouping:
+   - Group the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
+   - Under each group, list the matching projects formatted as:
+     * **[Project Title]** ([Year]) - [Core objective and key technologies based strictly on its own document text]
+   - Conclude with a brief 1-2 sentence summary explaining the common objective thread among the grouped projects.
+5. Do NOT output placeholder tags like '[DOCUMENT 1]' in your text; use the actual clean Project Title."""
+        else:
+            return """4. Enumerated Project Overview: When presenting multiple projects, format cleanly as:
+   1. **[Project Title]** ([Year]) - [Accurate summary of objectives and technologies based ONLY on this project's own text]
+5. Provide a diverse overview covering each retrieved project concisely. Do not use '[DOCUMENT 1]' tags in your final answer."""
+    elif intent == "DEEP_DIVE":
+        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis structured into clear sections:
+   - **Project Overview & Objectives**: Core problem addressed and main goals.
+   - **System Architecture & Methodology**: System workflows, design patterns, and operational steps.
+   - **Tech Stack, Tools & Hardware**: Exact languages, frameworks, libraries, microcontrollers, or cloud services used.
+   - **Results & Evaluation**: Expected or achieved results, testing methodologies, and deliverables.
+5. Do not use '[DOCUMENT 1]' tags in your final text; use the actual Project Title."""
+    elif intent == "COMPARISON":
+        return """4. Side-by-Side Comparison:
+   - Include a Markdown Comparison Table (Columns: Project Title, Year, Core Objective, Tech Stack, Key Findings / Strengths).
+   - Follow with a concise analytical summary highlighting technical trade-offs and domain suitability.
+5. Do not include verbose boilerplate introductions (e.g. 'To determine...', 'From [DOCUMENT 1]...'); start directly with the comparison analysis."""
+    elif intent == "CODE":
+        return """4. Technical Code Extraction: Extract and present exact code snippets, SQL queries, algorithms, or API calls from the text in syntax-highlighted code blocks (```). Explain what each code snippet or configuration does."""
+    else:  # FACTOID
+        return """4. Direct Concise Answer: Provide an exact, direct, 1-3 sentence factual answer answering the question precisely without extra filler."""
+
+
+def get_llm_response(question: str, context_list: list[str], intent: str = "FACTOID") -> str:
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -113,25 +146,29 @@ def get_llm_response(question: str, context_list: list[str]) -> str:
     
     context_text = "\n\n".join(context_list)
     lang_instruction = (
-        "Please respond in Thai language directly and concisely."
+        "Please respond in Thai language directly and professionally."
         if is_thai
-        else "Please respond in English directly and concisely."
+        else "Please respond in English directly and professionally."
     )
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
+    intent_instruction = _build_intent_instruction(intent, question)
 
-    prompt = f"""You are an assistant for a senior project document repository.
-Use only the retrieved context below. Do not invent facts.
+    prompt = f"""You are an expert AI academic assistant for a university senior project document repository.
+Use ONLY the retrieved context below. Do not invent facts or extrapolate beyond what is stated.
 
-Instructions:
-1. Check both the metadata headers (Project title, Author, Advisor, Committee, Year, Keywords, Source) and the document content thoroughly.
-2. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, operating systems, or methodologies, extract and summarize all relevant items mentioned in the context (including under sections like Related Technology, System Overview, or Methodology).
-3. If the context mentions specific technologies or tools used (for example, VMware Workstation, Ubuntu, Arduino, Python, etc.), state them clearly and explain how they are used based on the context.
-4. If the question asks for source code or a named file, extract and reproduce the matching code from the context.
-5. If the question asks "Which projects..." or "Which project reports have [advisor/author]...", always explicitly enumerate and list the exact distinct project titles found in the context (for example: "1. [Project Title A]\n2. [Project Title B]"). Never give vague or generic responses like "All project reports".
-6. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata or context.
-7. {lang_instruction}
-8. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
-9. Keep the answer concise and directly relevant to the question.
+CRITICAL INSTRUCTIONS:
+1. Strict Document Independence: The context contains numbered documents (e.g. [DOCUMENT 1], [DOCUMENT 2]). You must analyze each document strictly on its own.
+2. ZERO Cross-Contamination: NEVER transfer, duplicate, or copy features, functionalities, equipment, or future plans from one document into another unrelated document. Every single detail for a project must come exclusively from that project's own document block.
+3. Accurate Objective & Future Scope:
+   - If a project explicitly states future plans or extensions in its document text, summarize those specific plans.
+   - If a project does NOT state future plans in its document text, state its core objective/system purpose based on its excerpt (e.g. "Focuses on [core objective/methodology] (No explicit future extensions detailed in excerpt)"). NEVER transfer features (like barcodes or stock alerts) to other projects!
+{intent_instruction}
+6. No Robotic Meta-Talk: Never write boilerplate intros like "To determine which projects...", "From [DOCUMENT 1] : ...", or "Based on the provided documents...". Start directly with the structured answer content.
+7. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, or methodologies, extract only what is mentioned in that specific project.
+8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata.
+9. {lang_instruction}
+10. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
+11. Keep the answer accurate, well-structured, objective, and professional.
 
 Context:
 {context_text}
@@ -143,6 +180,7 @@ Answer:
 """
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    num_predict = 1024 if intent in {"DEEP_DIVE", "COMPARISON"} else 768
     try:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -153,7 +191,7 @@ Answer:
                 "keep_alive": "15m",
                 "options": {
                     "temperature": 0,
-                    "num_predict": 512,
+                    "num_predict": num_predict,
                 },
             },
             timeout=ollama_timeout,
@@ -172,10 +210,9 @@ def answer_question(question: str) -> dict[str, object]:
 
     retrieval_details = search_with_details(question)
     scored_contexts = retrieval_details["results"]
+    intent = retrieval_details.get("intent", "FACTOID")
 
     contexts: list[str] = []
-    seen_texts: set[str] = set()
-    project_chunk_counts: dict[str, int] = {}
     
     # Check if multiple distinct projects are present in the retrieved candidates
     distinct_projects = set(
@@ -183,28 +220,41 @@ def answer_question(question: str) -> dict[str, object]:
         for item in scored_contexts
         if item.get("payload") and (item.get("payload", {}).get("project_title") or item.get("payload", {}).get("title"))
     )
-    max_chunks_per_project = 2 if len(distinct_projects) > 1 else 7
-    preserve_same_project_chunks = _is_code_query(question)
+
+    # Dynamic Context Quota Routing
+    if intent in {"EXPLORATORY", "COMPARISON"}:
+        max_chunks_per_project = 2
+    elif intent == "DEEP_DIVE":
+        max_chunks_per_project = 8
+    elif intent == "CODE":
+        max_chunks_per_project = 6
+    else:  # FACTOID
+        max_chunks_per_project = 2 if len(distinct_projects) > 1 else 6
+
+    preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
+
+    projects_ordered: list[str] = []
+    projects_data: dict[str, dict] = {}
     sources: list[str] = []
 
     for item in scored_contexts:
         payload = item.get("payload", {}) or {}
         source = payload.get("source", "Unknown source")
-        project_title = payload.get("project_title") or payload.get("title")
-        author = payload.get("author")
-        advisor = payload.get("advisor")
-        committee = payload.get("committee")
-        year = payload.get("year")
-        keywords = payload.get("keywords")
-        page_number = payload.get("page_number", "?")
+        project_title = payload.get("project_title") or payload.get("title") or source
+        proj_key = str(project_title).strip()
 
-        # Allow multiple chunks per project without dropping them all, while avoiding exact duplicate texts
-        if project_title and not preserve_same_project_chunks:
-            key = project_title.lower().strip()
-            count = project_chunk_counts.get(key, 0)
-            if count >= max_chunks_per_project:
-                continue
-            project_chunk_counts[key] = count + 1
+        if proj_key not in projects_data:
+            projects_ordered.append(proj_key)
+            projects_data[proj_key] = {
+                "title": project_title,
+                "payload": payload,
+                "snippets": [],
+                "pages": set(),
+            }
+
+        page_number = payload.get("page_number")
+        if page_number:
+            projects_data[proj_key]["pages"].add(str(page_number))
 
         raw_snippet = str(item.get("text", "")).strip()
         raw_snippet = raw_snippet.replace("\r\n", "\n").replace("\r", "\n")
@@ -216,9 +266,28 @@ def answer_question(question: str) -> dict[str, object]:
         else:
             snippet = raw_snippet
 
-        if snippet in seen_texts:
+        if snippet not in projects_data[proj_key]["snippets"]:
+            if len(projects_data[proj_key]["snippets"]) < max_chunks_per_project:
+                projects_data[proj_key]["snippets"].append(snippet)
+
+        if source not in sources:
+            sources.append(source)
+
+    for proj_key in projects_ordered:
+        proj_info = projects_data[proj_key]
+        snippets = proj_info["snippets"]
+        if not snippets:
             continue
-        seen_texts.add(snippet)
+
+        payload = proj_info["payload"]
+        project_title = proj_info["title"]
+        author = payload.get("author")
+        advisor = payload.get("advisor")
+        committee = payload.get("committee")
+        year = payload.get("year")
+        keywords = payload.get("keywords")
+        source = payload.get("source", "Unknown source")
+        pages_str = ", ".join(sorted(proj_info["pages"])) if proj_info["pages"] else "?"
 
         context_parts = []
         if project_title:
@@ -234,15 +303,14 @@ def answer_question(question: str) -> dict[str, object]:
         if keywords:
             context_parts.append(f"Keywords: {keywords}")
         if source:
-            context_parts.append(f"Source: {source} (Page {page_number})")
+            context_parts.append(f"Source: {source} (Pages: {pages_str})")
 
-        if context_parts:
-            contexts.append(" | ".join(context_parts) + "\n" + snippet)
-        else:
-            contexts.append(snippet)
-
-        if source not in sources:
-            sources.append(source)
+        doc_idx = len(contexts) + 1
+        doc_header = f"=== [DOCUMENT {doc_idx}] : {project_title} ==="
+        meta_line = " | ".join(context_parts)
+        combined_content = "\n\n".join(snippets)
+        doc_entry = f"{doc_header}\nMetadata: {meta_line}\nDocument Content:\n{combined_content}\n=== END OF [DOCUMENT {doc_idx}] ==="
+        contexts.append(doc_entry)
 
     retrieval_errors = retrieval_details["errors"]
 
@@ -268,10 +336,10 @@ def answer_question(question: str) -> dict[str, object]:
         }
 
     llm_start = time.perf_counter()
-    answer = get_llm_response(question, contexts)
+    answer = get_llm_response(question, contexts, intent=intent)
     llm_seconds = time.perf_counter() - llm_start
 
-    if _is_code_query(question) and answer == fallback_text:
+    if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
         answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
     retrieval_timing = retrieval_details["timing"]
@@ -280,6 +348,7 @@ def answer_question(question: str) -> dict[str, object]:
     return {
         "question": question,
         "answer": answer,
+        "intent": intent,
         "contexts": contexts,
         "sources": sources,
         "scored_contexts": scored_contexts,
