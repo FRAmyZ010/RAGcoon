@@ -1,8 +1,10 @@
 import React, { useState } from "react";
+import './App.css'
 
 export default function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [source, setSource] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,7 +35,8 @@ export default function App() {
 
       const data = await response.json();
       // สมมติว่า Backend ตอบกลับมาในรูปแบบ { answer: "คำตอบ..." }
-      setAnswer(data.answer, data.source);
+      setAnswer(data.answer);
+      setSource(data.sources);
     } catch (err) {
       setError(err.message || "ไม่สามารถเชื่อมต่อกับ Server ได้");
     } finally {
@@ -46,7 +49,7 @@ export default function App() {
       <div className="max-w-2xl w-full bg-slate-800 rounded-2xl p-6 shadow-2xl border border-slate-700">
         {/* หัวข้อโปรเจกต์ */}
         <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 text-indigo-400">
-          Project Q&A Assistant 🤖
+          🦝 RAGcoon 🦝
         </h1>
 
         {/* ฟอร์มรับ Input คำถาม */}
@@ -56,7 +59,7 @@ export default function App() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="พิมพ์คำถามเกี่ยวกับโปรเจกต์ที่นี่..."
-            className="flex-1 bg-slate-700 text-white placeholder-slate-400 px-4 py-3 rounded-xl border border-slate-600 focus:outline-none focus:border-indigo-500 transition"
+            className="input-box flex-1 bg-slate-700 text-white placeholder-slate-400 px-4 py-3 rounded-xl border border-slate-600 focus:outline-none focus:border-indigo-500 transition"
           />
           <button
             type="submit"
@@ -92,6 +95,15 @@ export default function App() {
               </h2>
               <p className="text-slate-200 leading-relaxed whitespace-pre-line">
                 {answer}
+              </p>
+              <h2 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-2">
+                แหล่งอ้างอิง:
+              </h2>
+
+              <p className="text-slate-200 leading-relaxed">
+                {Array.isArray(source) && source.length > 0
+                  ? source.join(", ")
+                  : "ไม่พบข้อมูลแหล่งอ้างอิง"}
               </p>
             </div>
           )}
