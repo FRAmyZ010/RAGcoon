@@ -31,6 +31,16 @@ services:
     depends_on:
       - postgres
 
+  # LLM Service: Ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ragcoon-ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
   # Backend Service: FastAPI
   backend:
     build:
@@ -45,12 +55,16 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragcoon_db}
       - POSTGRES_HOST=postgres
+      - OLLAMA_BASE_URL=http://ollama:11434
     volumes:
       - .:/app
       - ./storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
 
 volumes:
   postgres_data:
+  ollama_data:

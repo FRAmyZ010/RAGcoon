@@ -1,7 +1,7 @@
 from app.core.database import Base
 from app.models.document import Document
 # from app.models.user import User
-# from app.models.chat import Chat
+from app.models.chat import SearchQuery
 # from app.models.feedback import Feedback
 
 """
@@ -13,5 +13,5 @@ Models Central Package Identifier
 3. ช่วยให้ไฟล์อื่น Import Class โมเดลไปใช้งานได้สะดวกและสั้นลง
 """
 
-# __all__ = ["Base", "Document", "User", "Chat", "Feedback"]
-__all__ = ["Base", "Document"]
+# __all__ = ["Base", "Document", "User", "SearchQuery", "Feedback"]
+__all__ = ["Base", "Document", "SearchQuery"]
