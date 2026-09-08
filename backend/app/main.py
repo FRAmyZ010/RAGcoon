@@ -3,6 +3,8 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.core.database import engine, Base, get_db
 from app.core.config import settings
 import app.models  # โหลด Models ทั้งหมดเข้า SQLAlchemy Context
@@ -26,6 +28,20 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="Backend API for RAGcoon Project - Senior Project Document QA System",
     version="0.1.0"
+)
+
+# ตั้งค่าอนุญาต CORS
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # หรือใช้ ["*"] เพื่ออนุญาตทุก origin ตอน dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- Register API Routers ---

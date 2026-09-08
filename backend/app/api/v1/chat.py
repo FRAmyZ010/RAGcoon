@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, cast
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -60,11 +61,11 @@ async def chat_with_rag(payload: ChatRequest):
         sources = cast(list[str], result.get("sources", []))
 
         # ดึงชื่อโมเดลจาก result (ถ้าไม่มีให้ตั้งค่า default fallback ไว้)
-        model_used = str(result.get("model", "llama3.2"))
+        MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
         return ChatResponse(
             answer=result.get("answer", ""),
-            model=model_used,
+            model=MODEL_NAME,
             sources=sources,
             contexts_count=len(contexts),
             timing=metrics
