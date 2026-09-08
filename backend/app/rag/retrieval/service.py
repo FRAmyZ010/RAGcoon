@@ -1,3 +1,4 @@
+import re
 import sys
 import time
 
@@ -74,7 +75,24 @@ def search_with_details(query: str) -> dict:
         print("FILTERS:", filters)
 
         retrieval_start = time.perf_counter()
-        results = semantic_search(clean_query, top_k, metadata_filters=filters)
+        if intent == "COMPARISON":
+            sub_queries = [p.strip() for p in re.split(r"\s+(?:vs|versus|กับ|and)\s+", clean_query, flags=re.IGNORECASE) if p.strip()]
+            if len(sub_queries) >= 2:
+                split_k = max(15, top_k // len(sub_queries))
+                all_results = []
+                seen_texts = set()
+                for sq in sub_queries:
+                    sq_res = semantic_search(sq, split_k, metadata_filters=filters)
+                    for item in sq_res:
+                        txt = item.get("text")
+                        if txt not in seen_texts:
+                            seen_texts.add(txt)
+                            all_results.append(item)
+                results = all_results if all_results else semantic_search(clean_query, top_k, metadata_filters=filters)
+            else:
+                results = semantic_search(clean_query, top_k, metadata_filters=filters)
+        else:
+            results = semantic_search(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
         print(f"Retrieved (before rerank): {len(results)} results")
 

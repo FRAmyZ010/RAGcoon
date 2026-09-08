@@ -26,7 +26,7 @@ else:
     load_dotenv(find_dotenv(usecwd=True))
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3:latest")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 LLM_TIMEOUT = int(os.getenv("LLM_QUERY_TIMEOUT", "60"))
 
 
@@ -50,7 +50,7 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "CODE"
     if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
         return "EXPLORATORY"
-    if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด"]):
+    if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด", "matrix", "แมทริกซ์", "ให้คะแนน", "ประเมิน", "evaluate", "scoring", "score"]):
         return "COMPARISON"
     if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
@@ -142,6 +142,78 @@ def _call_ollama_for_query_parsing(raw_query: str) -> Optional[dict[str, Any]]:
     except Exception:
         pass
 
+def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]]:
+    """
+    Fast-Path Shortcut:
+    ตรวจจับคำถามที่มีชื่อโปรเจกต์ หรือชื่ออาจารย์ที่ปรึกษาชัดเจน เพื่อข้ามการเรียก LLM
+    ช่วยลดเวลา Query Processing จาก ~8s เหลือ ~0.001s ทันที
+    """
+    if not raw_query or not raw_query.strip():
+        return None
+
+    metadata_cache.load_metadata()
+    q_clean = raw_query.strip()
+    q_lower = q_clean.lower()
+
+    # 1. ค้นหาชื่อโครงงานทั้งหมดที่ตรงกับ Metadata
+    matched_titles = []
+    for title in metadata_cache.titles:
+        t_low = title.lower()
+        if t_low in q_lower or (len(t_low) > 8 and t_low[:18] in q_lower):
+            if title not in matched_titles:
+                matched_titles.append(title)
+
+    # 2. ค้นหาชื่ออาจารย์ที่ปรึกษา (รองรับชื่อเล่น/คำนำหน้าภาษาไทย)
+    matched_advisor = None
+    advisor_aliases = {
+        "สุรพล": "Aj. Surapol Vorapatratorn",
+        "surapol": "Aj. Surapol Vorapatratorn",
+        "มาหะมะ": "Aj. Dr.Mahamah Sebakor",
+        "mahamah": "Aj. Dr.Mahamah Sebakor",
+        "ทศพร": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
+        "tossapon": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
+        "ณัฐพล": "Assoc.Prof. Nattapol Aunsri, Ph.D",
+        "nattapol": "Assoc.Prof. Nattapol Aunsri, Ph.D",
+        "ภัทรมน": "Asst. Prof. Pattaramon Vuttipittayamongkol, Ph.D",
+        "pattaramon": "Asst. Prof. Pattaramon Vuttipittayamongkol, Ph.D",
+    }
+    for alias, canonical in advisor_aliases.items():
+        if alias in q_lower:
+            matched_advisor = canonical
+            break
+    if not matched_advisor:
+        for adv in metadata_cache.advisors:
+            if adv.lower() in q_lower:
+                matched_advisor = adv
+                break
+
+    # 3. Intent Detection
+    intent = _detect_intent_by_rules(raw_query, project_title_present=bool(matched_titles))
+
+    # Fast-path case 1: เปรียบเทียบหลายโครงงาน (COMPARISON)
+    if intent == "COMPARISON":
+        if len(matched_titles) >= 2:
+            norm_q = " vs ".join(matched_titles)
+            return norm_q, {}, intent
+        # ถ้าจับคู่ได้แค่ 1 ชื่อในโหมดเปรียบเทียบ ให้ส่งต่อ LLM ช่วยแยกแยะ
+        return None
+
+    # Fast-path case 2: เจาะจงโครงงานเดี่ยว
+    if len(matched_titles) == 1:
+        matched_title = matched_titles[0]
+        filters: dict[str, Any] = {}
+        if intent not in {"EXPLORATORY", "COMPARISON"}:
+            filters["project_title"] = matched_title
+        if matched_advisor:
+            filters["advisor"] = matched_advisor
+        return matched_title, filters, intent
+
+    # Fast-path case 2: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
+    if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร"]):
+        filters = {"advisor": matched_advisor}
+        norm_q = f"senior projects advised by {matched_advisor}"
+        return norm_q, filters, intent
+
     return None
 
 
@@ -155,6 +227,11 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
 
     from .extractor import QueryFilterProcessor
     from .normalizer import normalize_user_query
+
+    # 0. Fast-Path Shortcut check (ประหยัดเวลา ~8 วินาทีเมื่อเจอ Pattern ชัดเจน)
+    fast_result = _fast_path_check(raw_query)
+    if fast_result:
+        return fast_result
 
     # 1. เรียก Ollama วิเคราะห์คำถามแบบ Dynamic
     llm_result = _call_ollama_for_query_parsing(raw_query)
