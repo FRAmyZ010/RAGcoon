@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 export default function App() {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // ฟังก์ชันสำหรับส่งคำถามไปยัง Backend
   const handleAskQuestion = async (e) => {
@@ -12,28 +12,30 @@ export default function App() {
     if (!question.trim()) return;
 
     setLoading(true);
-    setError('');
-    setAnswer('');
+    setError("");
+    setAnswer("");
 
     try {
       // เปลี่ยน URL นี้ให้ตรงกับ Backend API ของคุณ
-      const response = await fetch('http://localhost:5000/api/ask-project', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8000/api/v1/chat/query", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({
+          query_text: question, // แก้จาก question เป็น query_text ให้ตรงกับ FastAPI Schema
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('เกิดข้อผิดพลาดในการดึงข้อมูลจาก Server');
+        throw new Error("เกิดข้อผิดพลาดในการดึงข้อมูลจาก Server");
       }
 
       const data = await response.json();
       // สมมติว่า Backend ตอบกลับมาในรูปแบบ { answer: "คำตอบ..." }
-      setAnswer(data.answer);
+      setAnswer(data.answer, data.source);
     } catch (err) {
-      setError(err.message || 'ไม่สามารถเชื่อมต่อกับ Server ได้');
+      setError(err.message || "ไม่สามารถเชื่อมต่อกับ Server ได้");
     } finally {
       setLoading(false);
     }
@@ -42,7 +44,6 @@ export default function App() {
   return (
     <div className="bg-slate-900 min-h-screen text-white flex flex-col items-center justify-center p-4">
       <div className="max-w-2xl w-full bg-slate-800 rounded-2xl p-6 shadow-2xl border border-slate-700">
-        
         {/* หัวข้อโปรเจกต์ */}
         <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 text-indigo-400">
           Project Q&A Assistant 🤖
@@ -65,7 +66,7 @@ export default function App() {
             {loading ? (
               <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
             ) : (
-              'ถาม'
+              "ถาม"
             )}
           </button>
         </form>
@@ -101,7 +102,6 @@ export default function App() {
             </p>
           )}
         </div>
-
       </div>
     </div>
   );
