@@ -8,17 +8,16 @@ from .rerank import rerank
 from .semantic import semantic_search
 
 
+from .llm_query_processor import process_query_with_llm
+
+
 def search(query: str) -> list[str]:
     print("\n" + "=" * 60)
     print("ORIGINAL QUERY:", query)
 
-    normalized_query = normalize_query(query)
-    print("NORMALIZED QUERY:", normalized_query)
-
-    processor = QueryFilterProcessor(normalized_query)
-    clean_query, filters = processor.parse()
-
-    print("CLEAN QUERY:", clean_query)
+    # 1. Use LLM Query Normalizer & Filter Extractor
+    clean_query, filters = process_query_with_llm(query)
+    print("NORMALIZED / CLEAN QUERY:", clean_query)
     print("FILTERS:", filters)
 
     qdrant_filter = build_qdrant_filter(filters)
@@ -42,31 +41,20 @@ def search_with_details(query: str) -> dict:
     total_start = time.perf_counter()
     try:
         print("\n" + "=" * 60)
+        print("ORIGINAL QUERY:", query)
 
-        normalized_query = normalize_query(query)
-        print("NORMALIZED QUERY:", normalized_query)
-        
-        processor = QueryFilterProcessor(normalized_query)
-        clean_query, filters = processor.parse()
-        print("CLEAN QUERY:", clean_query)
+        # 1. Use LLM Query Normalizer & Filter Extractor
+        query_proc_start = time.perf_counter()
+        normalized_query, filters = process_query_with_llm(query)
+        query_proc_seconds = time.perf_counter() - query_proc_start
+        clean_query = normalized_query
+        print("NORMALIZED / CLEAN QUERY:", clean_query)
         print("FILTERS:", filters)
 
         retrieval_start = time.perf_counter()
         results = semantic_search(clean_query, DEFAULT_TOP_K, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
         print(f"Retrieved (before rerank): {len(results)} results")
-        
-        # Debug: show all retrieved chunks with their advisors
-        print("\nDEBUG Retrieved chunks:")
-        for i, result in enumerate(results[:10], 1):
-            advisor = result.get("payload", {}).get("advisor", "N/A")
-            text_preview = result["text"].replace("\n", " ")[:60]
-            print(f"  {i:2d}. Advisor: {advisor} | {text_preview}")
-        
-        # Show advisor info from first result
-        if results:
-            first_advisor = results[0]["payload"].get("advisor", "N/A")
-            print(f"\nFirst result advisor: {first_advisor}")
 
         if not results:
             print("No results after semantic + filter")
@@ -75,6 +63,7 @@ def search_with_details(query: str) -> dict:
                 "results": [],
                 "errors": [],
                 "timing": {
+                    "query_proc_seconds": query_proc_seconds,
                     "retrieval_seconds": retrieval_seconds,
                     "rerank_seconds": 0.0,
                     "total_seconds": total_seconds,
@@ -88,11 +77,26 @@ def search_with_details(query: str) -> dict:
             rerank_start = time.perf_counter()
             reranked = rerank(clean_query, results, DEFAULT_TOP_N)
             rerank_seconds = time.perf_counter() - rerank_start
-            print(f"\nAfter rerank: top {len(reranked)} results")
-            print("  Reranked chunks:")
+            print(f"\n🎯 [RERANK] Top {len(reranked)} Results (Full Chunks):")
+            print("=" * 70)
             for i, result in enumerate(reranked, 1):
-                preview = result["text"].replace("\n", " ")[:70]
-                print(f"    [{i}] {preview}...")
+                payload = result.get("payload", {})
+                score = result.get("score", 0.0)
+                source = payload.get("source", "Unknown")
+                page = payload.get("page_number", "?")
+                title = payload.get("project_title") or payload.get("title", "-")
+                advisor = payload.get("advisor", "-")
+                author = payload.get("author", "-")
+
+                print(f"📄 Chunk #{i} | Rerank Score: {score:.4f}")
+                print(f"   ├─ Source: {source} (Page {page})")
+                print(f"   ├─ Title: {title}")
+                print(f"   ├─ Author: {author} | Advisor: {advisor}")
+                print("   └─ Content:")
+                clean_text = result["text"].replace("\r\n", "\n").replace("\r", "\n")
+                for line in clean_text.strip().split("\n"):
+                    print(f"      {line}")
+                print("-" * 70)
         except (TypeError, ValueError, RuntimeError, AttributeError) as e:
             print(f"Error during reranking: {e}")
             rerank_seconds = 0.0
@@ -101,8 +105,10 @@ def search_with_details(query: str) -> dict:
         total_seconds = time.perf_counter() - total_start
         return {
             "results": reranked,
+            "filters": filters,
             "errors": [],
             "timing": {
+                "query_proc_seconds": query_proc_seconds,
                 "retrieval_seconds": retrieval_seconds,
                 "rerank_seconds": rerank_seconds,
                 "total_seconds": total_seconds,
@@ -119,6 +125,7 @@ def search_with_details(query: str) -> dict:
             "results": [],
             "errors": [error_msg],
             "timing": {
+                "query_proc_seconds": 0.0,
                 "retrieval_seconds": 0.0,
                 "rerank_seconds": 0.0,
                 "total_seconds": total_seconds,
@@ -136,9 +143,7 @@ def hybrid_search(
     metadata_filters: dict | None = None,
 ) -> list[dict]:
     """Compatibility wrapper for the current semantic-search plus rerank pipeline."""
-    normalized_query = normalize_query(query)
-    processor = QueryFilterProcessor(normalized_query)
-    clean_query, filters = processor.parse()
+    clean_query, filters = process_query_with_llm(query)
 
     if metadata_filters:
         filters.update(metadata_filters)

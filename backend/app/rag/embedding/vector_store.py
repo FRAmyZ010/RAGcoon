@@ -9,7 +9,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from langchain_huggingface import HuggingFaceEmbeddings
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
@@ -19,6 +19,7 @@ FILTERABLE_FIELDS = (
     "project_title",
     "author",
     "advisor",
+    "committee",
     "keywords",
     "year",
     "source",
@@ -66,8 +67,18 @@ def upload_to_qdrant(chunks: Iterable[Mapping[str, Any]]) -> bool:
 
         vectors = get_embedding_model().embed_documents(docs)
 
-        # 📦 สร้าง collection ถ้ายังไม่มี
+        # 📦 สร้าง collection ถ้ายังไม่มี หรือ collection เดิมไม่มี vector schema
         collections = [c.name for c in client.get_collections().collections]
+        if COLLECTION_NAME in collections:
+            collection_info = client.get_collection(COLLECTION_NAME)
+            if (
+                collection_info.points_count == 0
+                and collection_info.config.params.vectors == {}
+            ):
+                client.delete_collection(collection_name=COLLECTION_NAME)
+                collections.remove(COLLECTION_NAME)
+                print(f"Recreated invalid collection: {COLLECTION_NAME}")
+
         if COLLECTION_NAME not in collections:
             client.create_collection(
                 collection_name=COLLECTION_NAME,

@@ -1,240 +1,184 @@
-import re
+"""
+Module: extractor.py
+Description:
+    Dynamic Metadata Filter Extractor (Rule-based Fallback & Helper)
+    - สกัดตัวกรองเมทาดาตาโดยอ้างอิงจาก Dynamic Metadata Cache ใน Qdrant 100%
+    - ไม่มี Hardcode รายชื่ออาจารย์ ผู้จัดทำ หรือชื่อโครงงานในโค้ด
+    - แปลงปี พ.ศ. (4 หลัก และ 2 หลัก) เป็นปี ค.ศ. แบบ Dynamic
+"""
 
-from .metadata_cache import metadata_cache
+import re
+from typing import Any
+
+from .metadata_cache import metadata_cache, _NON_NAME_WORDS
 
 YEAR_PATTERN = re.compile(r"\b(19\d{2}|20\d{2})\b")
+THAI_BE_YEAR_PATTERN = re.compile(r"\b(25\d{2})\b")
+THAI_SHORT_YEAR_PATTERN = re.compile(r"(?:ปี|พ\.ศ\.)\s*['\"]?([5-7]\d)\b")
 
-# Extract key:value or key="value" or key:"value" patterns
-# Supports project_title, title, author, advisor, keywords
 KV_PATTERN = re.compile(
-    r'(?:"?)\b(project_title|title|author|advisor|keywords?)\b(?:"?)\s*[:=]\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s"]+))', 
-    re.IGNORECASE
+    r'(?:"?)\b(project_title|title|author|advisor|keywords?)\b(?:"?)\s*[:=]\s*(?:"([^"]+)"|\'([^\']+)\'|([^\s"]+))',
+    re.IGNORECASE,
 )
 
-# Comprehensive list of MFU ADT Staff / Lecturers based on the directory
-# Maps common short names to their possible full formal names or just used for detection
-MFU_STAFF = [
-    "Nacha", "Worasak", "Pruet", "Paweena", "Kemachart", "Surapol",
-    "Shanmugam", "Khwunta", "Pattaramon", "Narong", "Chayapol", "Mahamah",
-    "Suppakarn", "Sirikan", "Titiya", "Teeravisit", "Prasara", "Wacharawan",
-    "Nang", "Sujitra", "Vittayasak", "Tew", "Nikorn", "Soontarin", "Patcharaporn",
-    "Teanjit", "Nilubon", "Waralak", "Charoenchai", "Nontawat", "Yootthapong",
-    "Karn", "Thanpahtt", "Banphot", "Ratchanon", "Surapong", "Santichai",
-    "Thongchai", "Roungsan", "Punnarumol", "Nattapol", "Tossapon", "Natthakan"
-]
 
-# Mapping heuristic names to exact Qdrant values based on metadata_extractor
-# Add more mappings here if necessary to match the exact string in the database
-ADVISOR_EXACT_MAP = {
-    "Mahamah": "Dr. Mahamah Sebakor",
-    "Surapol": "Aj. Surapol Vorapatratorn",
-    "Tossapon": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
-    "Natthakan": "Asst.Prof.Dr.Natthakan Iam-On",
-    "Suppakarn": "Asst.Prof.Suppakarn Chansareewittaya",
-    "Worasak": "Asst.Prof. Worasak Rueangsirarak",
-    "Paweena": "Paweena Suebsombut",
-    "Kemachart": "Kemachart Kemavuthanon",
-    "Khwunta": "Asst.Prof. Khwunta Kirimasthong",
-    "Pattaramon": "Asst.Prof. Pattaramon Vuttipittayamongkol",
-    "Shanmugam": "Prof. Shanmugam Nandagopalan",
-}
+def _extract_year(query: str) -> tuple[str | None, str]:
+    """สกัดปีการศึกษา ทั้งปี ค.ศ., พ.ศ. 4 หลัก, และ พ.ศ. 2 หลัก (เช่น ปี 65 -> 2022)"""
+    # 1. ค.ศ. (e.g. 2020, 2022, 2023)
+    match_ce = YEAR_PATTERN.search(query)
+    if match_ce:
+        year_str = match_ce.group()
+        clean_q = YEAR_PATTERN.sub("", query)
+        return year_str, clean_q
 
-AUTHOR_EXACT_MAP = {
-    "teerapat": "TEERAPAT PUANGKANKHAM",
-    "teerapatt": "TEERAPAT PUANGKANKHAM",
-    "teerapat puangkankham": "TEERAPAT PUANGKANKHAM",
-    "teerapatt puangkankham": "TEERAPAT PUANGKANKHAM",
-}
+    # 2. พ.ศ. 4 หลัก (e.g. 2565 -> 2022, 2563 -> 2020)
+    match_be = THAI_BE_YEAR_PATTERN.search(query)
+    if match_be:
+        be_val = int(match_be.group())
+        ce_val = str(be_val - 543)
+        clean_q = THAI_BE_YEAR_PATTERN.sub("", query)
+        return ce_val, clean_q
+
+    # 3. พ.ศ. 2 หลัก (e.g. ปี 65 -> 2022, ปี 63 -> 2020)
+    match_short = THAI_SHORT_YEAR_PATTERN.search(query)
+    if match_short:
+        short_val = int(match_short.group(1))
+        be_val = 2500 + short_val
+        ce_val = str(be_val - 543)
+        clean_q = query[:match_short.start()] + " " + query[match_short.end():]
+        return ce_val, clean_q
+
+    return None, query
 
 
-def _apply_known_author_aliases(clean_query: str, filters: dict) -> str:
-    if "author" in filters:
-        return clean_query
+def _extract_advisor(query: str) -> tuple[str | None, str]:
+    """สกัดชื่ออาจารย์ที่ปรึกษาแบบ Dynamic จาก Metadata Cache ใน Qdrant"""
+    clean_q = query
 
-    lowered = clean_query.lower()
-    for alias, canonical in AUTHOR_EXACT_MAP.items():
-        alias_pattern = re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE)
-        if alias_pattern.search(lowered):
-            filters["author"] = canonical
-            return alias_pattern.sub("", clean_query, count=1)
+    for advisor in sorted(metadata_cache.advisors, key=len, reverse=True):
+        if len(advisor) > 3 and advisor.lower() in clean_q.lower():
+            clean_q = re.sub(re.escape(advisor), "", clean_q, flags=re.IGNORECASE)
+            return advisor, clean_q
 
-    author_pattern = re.compile(r"\bteerapa?t+\b", re.IGNORECASE)
-    if author_pattern.search(clean_query):
-        filters["author"] = "TEERAPAT PUANGKANKHAM"
-        return author_pattern.sub("", clean_query, count=1)
+        # จับคู่คำสำคัญของชื่ออาจารย์ (First Name / Last Name)
+        for word in re.findall(r"[A-Za-z]+", advisor):
+            if len(word) >= 4 and word.lower() not in {"prof", "asst", "assoc", "doctor", "lecturer", "dr", "aj"}:
+                if re.search(rf"\b{re.escape(word)}\b", clean_q, re.IGNORECASE):
+                    clean_q = re.sub(rf"\b{re.escape(word)}\b", "", clean_q, flags=re.IGNORECASE)
+                    return advisor, clean_q
 
-    return clean_query
+    return None, query
+
+
+def _find_matching_project_title(query: str, titles: set[str]) -> tuple[str | None, str]:
+    """สกัดชื่อโครงงานแบบ Dynamic จาก Metadata Cache ใน Qdrant"""
+    clean_q = query
+
+    for title in sorted(titles, key=len, reverse=True):
+        if len(title) > 3 and title.lower() in clean_q.lower():
+            clean_q = re.sub(re.escape(title), "", clean_q, flags=re.IGNORECASE)
+            return title, clean_q
+
+    return None, query
+
+
+def _extract_authors(query: str) -> tuple[list[str], str]:
+    """สกัดรายชื่อผู้จัดทำทั้งหมดแบบ Dynamic จาก Metadata Cache ใน Qdrant"""
+    matched_authors: list[str] = []
+    clean_q = query
+
+    # 1. เช็คจากชื่อผู้จัดทำเต็มใน metadata_cache
+    for author in sorted(metadata_cache.authors, key=len, reverse=True):
+        if len(author) > 3 and author.lower() in clean_q.lower():
+            if author not in matched_authors:
+                matched_authors.append(author)
+            clean_q = re.sub(re.escape(author), "", clean_q, flags=re.IGNORECASE)
+
+    # 2. เช็คจากชื่อเดี่ยว (First name / Last name)
+    for word in re.findall(r"[A-Za-z]+", clean_q):
+        w_lower = word.lower()
+        if len(w_lower) >= 4 and w_lower not in _NON_NAME_WORDS:
+            for cand in sorted(metadata_cache.authors, key=len, reverse=True):
+                words_in_cand = [cw.lower() for cw in cand.split()]
+                if w_lower in words_in_cand:
+                    if cand not in matched_authors:
+                        matched_authors.append(cand)
+                    clean_q = re.sub(re.escape(word), "", clean_q, flags=re.IGNORECASE)
+                    break
+
+    return matched_authors, clean_q
 
 
 class QueryFilterProcessor:
-    """Bound the query parsing pipeline: extraction, validation, and query cleanup."""
+    """ประมวลผลสกัด Filter และทำความสะอาดคำค้นหาอย่างสมบูรณ์แบบด้วย Dynamic Metadata"""
 
     def __init__(self, user_query: str):
         self.user_query = user_query
 
-    @staticmethod
-    def validate_filters(filters: dict | None) -> dict:
-        """Normalize filter values and reject empty values at the boundary."""
-        if not filters:
-            return {}
+    def parse(self) -> tuple[str, dict[str, Any]]:
+        metadata_cache.load_metadata()
+        filters: dict[str, Any] = {}
+        clean_q = self.user_query
 
-        validated: dict = {}
-        for key, value in filters.items():
-            if value is None:
-                continue
-
-            if isinstance(value, list):
-                cleaned_values = [str(item).strip() for item in value if item is not None and str(item).strip()]
-                if cleaned_values:
-                    validated[key] = cleaned_values
-            elif isinstance(value, str):
-                cleaned_value = value.strip()
-                if cleaned_value:
-                    validated[key] = cleaned_value
-            else:
-                validated[key] = value
-
-        return validated
-
-    def extract_filters(self) -> dict:
-        """Extract metadata filters from the user query."""
-        filters: dict = {}
-        clean_query = self.user_query
-
+        # 1. Key-Value Syntax (e.g. advisor: "Surapol", year: 2022, author: "Phumphol")
         for match in KV_PATTERN.finditer(self.user_query):
-            key = match.group(1).lower()
-            if key == "title":
-                key = "project_title"
-            elif key == "keyword":
-                key = "keywords"
+            k = match.group(1).lower()
+            v = match.group(2) or match.group(3) or match.group(4)
+            if v:
+                if k in ("title", "project_title"):
+                    filters["project_title"] = v.strip()
+                elif k == "advisor":
+                    adv_match, _ = _extract_advisor(v)
+                    filters["advisor"] = adv_match or v.strip()
+                elif k == "author":
+                    auth_matches, _ = _extract_authors(v)
+                    if auth_matches:
+                        filters["author"] = auth_matches if len(auth_matches) > 1 else auth_matches[0]
+                    else:
+                        filters["author"] = v.strip()
+                elif k == "year":
+                    y_match, _ = _extract_year(v)
+                    filters["year"] = y_match or v.strip()
+                elif k in ("keyword", "keywords"):
+                    pass
+                clean_q = clean_q.replace(match.group(0), "")
 
-            value = match.group(2) or match.group(3) or match.group(4)
-            if not value:
-                continue
+        # 2. สกัดปีการศึกษา
+        if "year" not in filters:
+            year_val, clean_q = _extract_year(clean_q)
+            if year_val:
+                filters["year"] = year_val
 
-            if key == "advisor":
-                for short_name, exact_name in ADVISOR_EXACT_MAP.items():
-                    if short_name.lower() in value.lower():
-                        value = exact_name
-                        break
+        # 3. สกัดชื่ออาจารย์ที่ปรึกษา
+        if "advisor" not in filters:
+            adv_val, clean_q = _extract_advisor(clean_q)
+            if adv_val:
+                filters["advisor"] = adv_val
 
-            filters[key] = value.strip()
-            clean_query = clean_query.replace(match.group(0), "")
-
-        year_match = YEAR_PATTERN.search(clean_query)
-        if year_match:
-            filters["year"] = year_match.group()
-            clean_query = YEAR_PATTERN.sub("", clean_query)
-
-        clean_query = _apply_known_author_aliases(clean_query, filters)
-
-        if not filters:
-            metadata_cache.load_metadata()
-
-        if "project_title" not in filters:
-            for title in sorted(metadata_cache.titles, key=len, reverse=True):
-                if len(title) > 3 and title.lower() in clean_query.lower():
-                    filters["project_title"] = title
-                    pattern = re.compile(re.escape(title), re.IGNORECASE)
-                    clean_query = pattern.sub("", clean_query)
-                    break
-
+        # 4. สกัดชื่อผู้จัดทำ (Author / Multiple Authors)
         if "author" not in filters:
-            for author in sorted(metadata_cache.authors, key=len, reverse=True):
-                if len(author) > 3 and author.lower() in clean_query.lower():
-                    full_strings = list(metadata_cache.author_to_full.get(author, [author]))
-                    filters["author"] = full_strings if len(full_strings) > 1 else full_strings[0]
-                    pattern = re.compile(re.escape(author), re.IGNORECASE)
-                    clean_query = pattern.sub("", clean_query)
-                    break
+            auth_matches, clean_q = _extract_authors(clean_q)
+            if auth_matches:
+                filters["author"] = auth_matches if len(auth_matches) > 1 else auth_matches[0]
 
-        if "advisor" not in filters:
-            for advisor in sorted(metadata_cache.advisors, key=len, reverse=True):
-                if len(advisor) > 3 and advisor.lower() in clean_query.lower():
-                    filters["advisor"] = advisor
-                    pattern = re.compile(re.escape(advisor), re.IGNORECASE)
-                    clean_query = pattern.sub("", clean_query)
-                    break
+        # 5. สกัดชื่อโครงงาน (Project Title) - เฉพาะเมื่อไม่ได้เป็นคำถามภาพรวม
+        is_broad = any(w in self.user_query.lower() for w in ["ไหนดี", "แนะนำ", "อะไรบ้าง", "which project", "recommend"])
+        if "project_title" not in filters and not is_broad:
+            title_val, clean_q = _find_matching_project_title(clean_q, metadata_cache.titles)
+            if title_val:
+                filters["project_title"] = title_val
 
-        if "keywords" not in filters:
-            for kw in sorted(metadata_cache.keywords, key=len, reverse=True):
-                if len(kw) > 2 and kw.lower() in clean_query.lower():
-                    full_strings = list(metadata_cache.keyword_to_full.get(kw, [kw]))
-                    filters["keywords"] = full_strings if len(full_strings) > 1 else full_strings[0]
-                    pattern = re.compile(re.escape(kw), re.IGNORECASE)
-                    clean_query = pattern.sub("", clean_query)
-                    break
+        # 6. ล้างช่องว่างและปรับปรุงความหมายของ Clean Query
+        clean_q = re.sub(r"[ \t]+", " ", clean_q).strip()
 
-        if "advisor" not in filters:
-            lower_query = clean_query.lower()
-            for staff in MFU_STAFF:
-                if re.search(r"\b" + re.escape(staff.lower()) + r"\b", lower_query):
-                    filters["advisor"] = ADVISOR_EXACT_MAP.get(staff, staff)
-                    clean_query = re.sub(r"\b" + re.escape(staff) + r"\b", "", clean_query, flags=re.IGNORECASE)
-                    break
+        if filters.get("project_title") and len(clean_q) < 8:
+            clean_q = str(filters["project_title"])
+        elif not clean_q or len(clean_q) <= 2:
+            clean_q = self.user_query
 
-        return self.validate_filters(filters)
-
-    @staticmethod
-    def normalize_query_text(clean_query: str) -> str:
-        """Lowercase and collapse whitespace without re-running metadata extraction."""
-        return " ".join(clean_query.split()).lower()
-
-    def strip_query_filters(self, filters: dict | None = None) -> str:
-        """Remove filter values from the query and keep only the textual search intent."""
-        metadata_filters = self.validate_filters(filters) if filters is not None else self.extract_filters()
-        clean_query = self.user_query
-
-        for value in metadata_filters.values():
-            if value is None:
-                continue
-
-            values = value if isinstance(value, list) else [value]
-            for item in values:
-                if not item:
-                    continue
-                pattern = re.compile(re.escape(str(item)), re.IGNORECASE)
-                clean_query = pattern.sub("", clean_query, count=1)
-
-        if "year" in metadata_filters:
-            clean_query = YEAR_PATTERN.sub("", clean_query)
-
-        return self.normalize_query_text(clean_query)
-
-    def parse(self) -> tuple[str, dict]:
-        """One-pass pipeline: extract filters, then clean the remaining query."""
-        filters = self.extract_filters()
-        clean_query = self.strip_query_filters(filters)
-        return clean_query, filters
+        return clean_q, filters
 
 
-def extract_filters(user_query: str) -> dict:
-    """Backward-compatible function wrapper for the processor."""
-    return QueryFilterProcessor(user_query).extract_filters()
-
-
-def normalize_query_text(clean_query: str) -> str:
-    """Backward-compatible alias for the processor's text-normalization step."""
-    return QueryFilterProcessor.normalize_query_text(clean_query)
-
-
-def strip_query_filters(user_query: str, filters: dict | None) -> str:
-    """Backward-compatible function wrapper for query cleanup."""
-    return QueryFilterProcessor(user_query).strip_query_filters(filters)
-
-
-def extract_query(user_query: str, filters: dict | None = None) -> str:
-    """Backward-compatible query-cleaning wrapper."""
-    if filters is not None:
-        return QueryFilterProcessor(user_query).strip_query_filters(filters)
-    return QueryFilterProcessor(user_query).parse()[0]
-
-
-def parse_query(user_query: str) -> tuple[str, dict]:
-    """Fast one-pass parser: extract filters once, then strip them from the query once."""
-    return QueryFilterProcessor(user_query).parse()
-
-
-def extract_query_and_filters(user_query: str) -> tuple[str, dict]:
-    """Backward-compatible wrapper that keeps the old combined API."""
-    return parse_query(user_query)
+def extract_query_and_filters(query: str) -> tuple[str, dict[str, Any]]:
+    processor = QueryFilterProcessor(query)
+    return processor.parse()

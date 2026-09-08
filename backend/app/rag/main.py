@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+# HELLO
+
 BACKEND_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_ROOT.parent
 
@@ -60,7 +62,8 @@ if __name__ == "__main__":
         print("📌 RESULT")
         print_divider("=")
 
-        print(f"🔹 Normalized Query: {result['normalized_query']}\n")
+        print(f"🔹 Normalized Query: {result.get('normalized_query', question)}")
+        print(f"🏷️ FILTERS: {result.get('filters', {})}\n")
 
         print("💡 Answer:")
         print(f"{result['answer']}\n")
@@ -73,12 +76,16 @@ if __name__ == "__main__":
             print(f"Source: {source}")
 
         # ===================== TIMING =====================
-        print_section("⏱️ Timing")
+        print_section("⏱️ Timing Breakdown")
 
-        print(f"Retrieval : {timing['retrieval_seconds']:.3f}s")
-        print(f"Rerank    : {timing['rerank_seconds']:.3f}s")
-        print(f"LLM       : {timing['llm_seconds']:.3f}s")
-        print(f"Total     : {timing['total_seconds']:.3f}s")
+        query_proc_time = timing.get("query_proc_seconds", 0.0)
+        if query_proc_time > 0:
+            print(f"Query Process : {query_proc_time:.3f}s (LLM Normalizer & Filter Extractor)")
+        print(f"Retrieval     : {timing['retrieval_seconds']:.3f}s (Qdrant Semantic Search)")
+        print(f"Rerank        : {timing['rerank_seconds']:.3f}s (Cross-Encoder Reranker)")
+        print(f"LLM Answer    : {timing['llm_seconds']:.3f}s (Ollama Answer Generation)")
+        print_divider("-", 50)
+        print(f"Total         : {timing['total_seconds']:.3f}s")
 
         # ===================== WARNINGS =====================
         errors = cast(list[str], result["errors"])

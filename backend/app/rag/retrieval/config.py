@@ -7,7 +7,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from qdrant_client import QdrantClient
 from sentence_transformers import CrossEncoder
 
-load_dotenv(find_dotenv())
+# Load .env from backend or root directory
+env_path = Path(__file__).resolve().parents[3] / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv(find_dotenv(usecwd=True))
 
 QDRANT_URL: str | None = os.getenv("QDRANT_URL")
 QDRANT_API_KEY: str | None = os.getenv("QDRANT_API_KEY")
@@ -21,8 +26,8 @@ if not QDRANT_API_KEY:
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
 COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
-DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "20"))
-DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "5"))
+DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "25"))
+DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "7"))
 
 client: QdrantClient = QdrantClient(
     url=QDRANT_URL,
