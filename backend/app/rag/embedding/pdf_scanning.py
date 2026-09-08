@@ -10,7 +10,7 @@ def scan_pdf_document(file_path):
 
     with pdfplumber.open(file_path) as pdf:
         total_pages = len(pdf.pages)
-        
+
         # 1. เตรียมตัวแปรเก็บ Metadata พิเศษ (ค่าเริ่มต้นเป็น None)
         special_meta: dict[str, str | None] = {
             "project_title": None, "author": None,
@@ -29,21 +29,19 @@ def scan_pdf_document(file_path):
                     if special_meta[key] is None and value is not None:
                         special_meta[key] = value
 
-        # 3. Loop through pages and attach the completed metadata payload.
+        # 3. Keep every scanned page in order. Blank pages should still carry their
+        #    original page number so the numbering stays aligned with the PDF scan.
         for i, text in enumerate(page_texts):
+            metadata = {
+                "source": os.path.basename(file_path),
+                "page_number": i + 1,
+                "total_pages": total_pages,
+                **special_meta
+            }
 
-            if text:
-                # 4. ประกอบร่าง Data
-                metadata = {
-                    "source": os.path.basename(file_path),
-                    "page_number": i + 1,
-                    "total_pages": total_pages,
-                    **special_meta  # Metadata ที่สกัดได้จะถูกฝังลงไปในทุกหน้า
-                }
+            extracted_data.append({
+                "content": text,
+                "metadata": metadata
+            })
 
-                extracted_data.append({
-                    "content": text,
-                    "metadata": metadata
-                })
-            
     return extracted_data
