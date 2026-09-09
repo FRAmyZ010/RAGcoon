@@ -8,7 +8,7 @@ export default function App() {
 
   // ฟังก์ชันสำหรับส่งคำถามไปยัง Backend
   const handleAskQuestion = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!question.trim()) return;
 
     setLoading(true);
@@ -16,7 +16,6 @@ export default function App() {
     setAnswer('');
 
     try {
-      // เปลี่ยน URL นี้ให้ตรงกับ Backend API ของคุณ
       const response = await fetch('http://localhost:5000/api/ask-project', {
         method: 'POST',
         headers: {
@@ -30,12 +29,19 @@ export default function App() {
       }
 
       const data = await response.json();
-      // สมมติว่า Backend ตอบกลับมาในรูปแบบ { answer: "คำตอบ..." }
       setAnswer(data.answer);
     } catch (err) {
       setError(err.message || 'ไม่สามารถเชื่อมต่อกับ Server ได้');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ดักจับการกด Enter เพื่อส่งข้อมูล (กด Shift + Enter เพื่อขึ้นบรรทัดใหม่)
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAskQuestion();
     }
   };
 
@@ -45,22 +51,23 @@ export default function App() {
         
         {/* หัวข้อโปรเจกต์ */}
         <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 text-indigo-400">
-          Project Q&A Assistant 🤖
+          RAGcoon 🦝
         </h1>
 
-        {/* ฟอร์มรับ Input คำถาม */}
-        <form onSubmit={handleAskQuestion} className="flex gap-2 mb-6">
-          <input
-            type="text"
+        {/* ฟอร์มรับ Input คำถาม (ปรับเป็น textarea) */}
+        <form onSubmit={handleAskQuestion} className="flex gap-2 mb-6 items-end">
+          <textarea
+            rows={1}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="พิมพ์คำถามเกี่ยวกับโปรเจกต์ที่นี่..."
-            className="flex-1 bg-slate-700 text-white placeholder-slate-400 px-4 py-3 rounded-xl border border-slate-600 focus:outline-none focus:border-indigo-500 transition"
+            onKeyDown={handleKeyDown}
+            placeholder="พิมพ์คำถามเกี่ยวกับโปรเจกต์ที่นี่... (กด Shift + Enter เพื่อขึ้นบรรทัดใหม่)"
+            className="flex-1 bg-slate-700 text-white placeholder-slate-400 px-4 py-3 rounded-xl border border-slate-600 focus:outline-none focus:border-indigo-500 transition resize-none break-words overflow-y-auto max-h-32"
           />
           <button
             type="submit"
             disabled={loading || !question.trim()}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white font-semibold px-6 py-3 rounded-xl transition duration-200 flex items-center justify-center min-w-[100px]"
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-600 text-white font-semibold px-6 py-3 rounded-xl transition duration-200 flex items-center justify-center min-w-[100px] h-[48px]"
           >
             {loading ? (
               <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
@@ -89,7 +96,8 @@ export default function App() {
               <h2 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-2">
                 คำตอบ:
               </h2>
-              <p className="text-slate-200 leading-relaxed whitespace-pre-line">
+              {/* เพิ่ม break-words และ whitespace-pre-wrap เพื่อตัดคำข้อความยาวๆ */}
+              <p className="text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
                 {answer}
               </p>
             </div>
