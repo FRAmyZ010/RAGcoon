@@ -16,6 +16,17 @@ NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ย�
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
 
 
+def _clean_name_spacing(name: str | None) -> str | None:
+    """Clean missing spaces after dots and in CamelCase/TitleCase words."""
+    if not name or not isinstance(name, str):
+        return name
+    cleaned = name.strip(" .:-()[]")
+    cleaned = re.sub(r"\.([A-Za-z])", r". \1", cleaned)
+    cleaned = re.sub(r"([a-z])([A-Z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .:-")
+    return cleaned or None
+
+
 def _is_thai_query(text: str) -> bool:
     """Check if the text contains Thai characters."""
     return any("\u0e00" <= char <= "\u0e7f" for char in text)
@@ -110,15 +121,15 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     if intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
-   - Group the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
+   - Group ALL the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
    - Under each group, list the matching projects formatted as:
      * **[Project Title]** ([Year]) - [Core objective, system operation, and key technologies based strictly on its own document text].
    - Conclude with a brief 1-2 sentence summary explaining the common objective thread among the grouped projects.
 5. Do NOT output placeholder tags like '[DOCUMENT 1]' in your text; use the actual clean Project Title."""
         else:
-            return """4. Enumerated Project Overview: When presenting multiple projects, provide both what the system accomplishes and its key technologies/tools:
-   1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned].
-5. Provide a rich, informative overview covering each retrieved project concisely. Do not output repetitive filler phrases (such as 'no explicit future extensions detailed' unless specifically asked). Do not use '[DOCUMENT 1]' tags."""
+            return """4. Enumerated Project Overview: Enumerate ALL distinct projects found in the retrieved context without omitting any:
+   1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. (Authors: [Author Names], Advisor: [Advisor Name]). Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned if available].
+5. Provide a rich, informative overview covering each retrieved project concisely. Do not output repetitive filler phrases. Do not use '[DOCUMENT 1]' tags."""
     elif intent == "DEEP_DIVE":
         return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis structured into clear sections:
    - **Project Overview & Objectives**: Core problem addressed and main goals.
@@ -181,6 +192,12 @@ def get_llm_response(question: str, context_list: list[str], intent: str = "FACT
     prompt = f"""You are an expert AI academic assistant for a university senior project document repository.
 Use ONLY the retrieved context below. Do not invent facts or extrapolate beyond what is stated.
 
+Context:
+{context_text}
+
+Question:
+{question}
+
 CRITICAL INSTRUCTIONS:
 1. Strict Document Independence: The context contains numbered documents (e.g. [DOCUMENT 1], [DOCUMENT 2]). You must analyze each document strictly on its own.
 2. ZERO Cross-Contamination: NEVER transfer, duplicate, or copy features, functionalities, equipment, or future plans from one document into another unrelated document. Every single detail for a project must come exclusively from that project's own document block.
@@ -191,24 +208,21 @@ CRITICAL INSTRUCTIONS:
 {intent_instruction}
 6. No Robotic Meta-Talk: Never write boilerplate intros like "To determine which projects...", "From [DOCUMENT 1] : ...", or "Based on the provided documents...". Start directly with the structured answer content.
 7. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, or methodologies, extract only what is mentioned in that specific project.
-8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata.
+8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata:
+   - Academic Title & Rank Variations: Faculty members often appear with different academic titles across different years/projects (e.g. 'Aj.', 'Aj.Dr.', 'Dr.', 'Asst. Prof', 'Assoc. Prof' with the same name refer to the SAME faculty advisor). When listing projects advised by an advisor, include ALL projects in the retrieved context that match that advisor.
+   - Project Reports: Both 'Pre-Project', 'Senior Project', and 'Project Proposal' documents in the context are valid student project reports. Always include them when enumerating projects.
+   - Complete Enumeration: When asked which projects/reports are advised by an advisor, list EVERY distinct project present in the retrieved context documents that matches that advisor. Do NOT omit any matching project.
 9. {lang_instruction}
 10. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
 11. Keep the answer accurate, well-structured, objective, and professional.
-
-Context:
-{context_text}
-
-Question:
-{question}
 
 Answer:
 """
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     predict_map = {
-        "FACTOID": 256,
-        "EXPLORATORY": 400,
+        "FACTOID": 384,
+        "EXPLORATORY": 768,
         "CODE": 512,
         "COMPARISON": 1024,
         "DEEP_DIVE": 768,
@@ -260,30 +274,33 @@ def answer_question(question: str) -> dict[str, object]:
     retrieval_details = search_with_details(question)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
+    filters = retrieval_details.get("filters", {})
 
     contexts: list[str] = []
+
+    has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
     if intent == "EXPLORATORY":
         max_chunks_per_project = 1
-        max_total_projects = 5
-        min_score = 0.08
+        max_total_projects = 8
+        min_score = 0.001 if has_filter else 0.03
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
         max_total_projects = 4
-        min_score = 0.05
+        min_score = 0.001 if has_filter else 0.05
     elif intent == "DEEP_DIVE":
         max_chunks_per_project = 6
         max_total_projects = 1
-        min_score = 0.05
+        min_score = 0.001 if has_filter else 0.05
     elif intent == "CODE":
         max_chunks_per_project = 4
         max_total_projects = 2
-        min_score = 0.05
+        min_score = 0.001 if has_filter else 0.05
     else:  # FACTOID
         max_chunks_per_project = 2
-        max_total_projects = 2
-        min_score = 0.05
+        max_total_projects = 3
+        min_score = 0.001 if has_filter else 0.05
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -346,9 +363,16 @@ def answer_question(question: str) -> dict[str, object]:
 
         payload = proj_info["payload"]
         project_title = proj_info["title"]
-        author = payload.get("author")
-        advisor = payload.get("advisor")
+        author = _clean_name_spacing(payload.get("author")) or payload.get("author")
+        raw_advisor = payload.get("advisor")
+        advisor = _clean_name_spacing(raw_advisor) or raw_advisor
         committee = payload.get("committee")
+        if committee:
+            clean_committee_items = [
+                _clean_name_spacing(c) for c in committee.split(",")
+                if _clean_name_spacing(c)
+            ]
+            committee = ", ".join(clean_committee_items) if clean_committee_items else committee
         year = payload.get("year")
         keywords = payload.get("keywords")
         source = payload.get("source", "Unknown source")

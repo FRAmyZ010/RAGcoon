@@ -54,6 +54,8 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "COMPARISON"
     if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
+    if any(adv_word in q for adv_word in ["advisor", "advised", "ที่ปรึกษา", "ดูแล"]) and any(proj_word in q for proj_word in ["project", "projects", "โครงงาน", "โปรเจกต์"]) and not project_title_present:
+        return "EXPLORATORY"
     if any(k in q for k in ["มีอะไรบ้าง", "ขอเอกสาร", "แนะนำ", "any project", "list", "survey", "further", "ต่อยอด", "บ้าง", "projects", "โครงงานไหน", "which project"]):
         return "EXPLORATORY"
     if project_title_present:
@@ -212,7 +214,7 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
     if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร"]):
         filters = {"advisor": matched_advisor}
         norm_q = f"senior projects advised by {matched_advisor}"
-        return norm_q, filters, intent
+        return norm_q, filters, "EXPLORATORY"
 
     return None
 
@@ -300,6 +302,9 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
         if intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
 
+        if filters.get("advisor") and any(w in raw_query.lower() for w in ["project", "projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "who", "ใคร", "ที่ปรึกษา", "ดูแล"]) and not filters.get("project_title"):
+            intent = "EXPLORATORY"
+
         # Multi-project modes must not lock to a single project filter
         if intent in {"EXPLORATORY", "COMPARISON"}:
             filters.pop("project_title", None)
@@ -311,6 +316,8 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
     processor = QueryFilterProcessor(clean_norm)
     clean_q, fallback_filters = processor.parse()
     fallback_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(fallback_filters.get("project_title")))
+    if fallback_filters.get("advisor") and any(w in raw_query.lower() for w in ["project", "projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "who", "ใคร", "ที่ปรึกษา", "ดูแล"]) and not fallback_filters.get("project_title"):
+        fallback_intent = "EXPLORATORY"
     if fallback_intent in {"EXPLORATORY", "COMPARISON"}:
         fallback_filters.pop("project_title", None)
     return clean_q, fallback_filters, fallback_intent
