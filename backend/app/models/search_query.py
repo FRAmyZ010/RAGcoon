@@ -7,7 +7,7 @@ class SearchQuery(Base):
     __tablename__ = "search_queries"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # เพิ่ม ForeignKey ชี้ไปที่ users.id
     parent_query_id = Column(Integer, ForeignKey("search_queries.id"), nullable=True)
     query_text = Column(Text, nullable=False)
     answer_text = Column(Text, nullable=True)
