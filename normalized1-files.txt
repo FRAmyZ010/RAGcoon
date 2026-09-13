@@ -1,0 +1,109 @@
+.gitignore
+README.md
+backend/.dockerignore
+backend/.gitignore
+backend/Dockerfile
+backend/__init__.py
+backend/alembic.ini
+backend/alembic/env.py
+backend/app/__init__.py
+backend/app/api/__init__.py
+backend/app/api/v1/__init__.py
+backend/app/api/v1/router.py
+backend/app/core/__init__.py
+backend/app/core/config.py
+backend/app/core/database.py
+backend/app/core/security.py
+backend/app/models/__init__.py
+backend/app/models/chat.py
+backend/app/models/document.py
+backend/app/models/feedback.py
+backend/app/models/user.py
+backend/app/rag/__init__.py
+backend/app/schemas/__init__.py
+backend/app/schemas/chat.py
+backend/app/schemas/document.py
+backend/app/schemas/feedback.py
+backend/app/schemas/user.py
+backend/app/services/__init__.py
+backend/app/services/document_service.py
+backend/app/services/rag_services.py
+backend/data/files_for_evaluation/COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf
+backend/data/files_for_evaluation/FINAL_DOCUMENT_MFU_ACCESS_POINTS_ENERGY_SAVING.docx.pdf
+backend/data/files_for_evaluation/Final Proposal Project CE 2023.pdf
+backend/data/files_for_evaluation/Final document(8).pdf
+backend/data/files_for_evaluation/Online-Vehicle-access-management-system-proposol3_compressed.pdf
+backend/data/files_for_evaluation/PenTest CTF BOOK.pdf
+backend/data/files_for_evaluation/Pre-Project_Gem_Car2_edit2_V2.pdf
+backend/data/files_for_evaluation/Proposal Document.docx.pdf
+backend/data/files_for_evaluation/QUALITY-DISCHARGE-PLANNING-PROJECT.pdf
+backend/data/files_for_evaluation/SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf
+backend/data/filtered_data/6031501044_6031501061_FinalProject.pdf
+backend/data/filtered_data/BANGKOK TRANSIT SYSTEM.pdf
+backend/data/filtered_data/BSLD_Project.pdf
+backend/data/filtered_data/Book-Senior.pdf
+backend/data/filtered_data/CEproject.pdf
+backend/data/filtered_data/COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf
+backend/data/filtered_data/FINAL_DOCUMENT_MFU_ACCESS_POINTS_ENERGY_SAVING.docx.pdf
+backend/data/filtered_data/Final Document 6031501021,6031501042.pdf
+backend/data/filtered_data/Final Document The MFU AP-map analysis system.docx.pdf
+backend/data/filtered_data/Final Project Document_6031501035.pdf
+backend/data/filtered_data/Final Proposal Project CE 2023.pdf
+backend/data/filtered_data/Final document(8).pdf
+backend/data/filtered_data/Online-Vehicle-access-management-system-proposol3_compressed.pdf
+backend/data/filtered_data/PROJECT PROPOSAL logo.pdf
+backend/data/filtered_data/PROJECT PROPOSAL.pdf
+backend/data/filtered_data/PenTest CTF BOOK.pdf
+backend/data/filtered_data/Pre-Project_Gem_Car2_edit2_V2.pdf
+backend/data/filtered_data/Project Liquid flow using microcontroller_compressed.pdf
+backend/data/filtered_data/Project_Dust_Collector_Mini_Robot_Model.pdf
+backend/data/filtered_data/Proposal Document.docx.pdf
+backend/data/filtered_data/QUALITY-DISCHARGE-PLANNING-PROJECT.pdf
+backend/data/filtered_data/SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf
+backend/data/filtered_data/SMART INTERSECTION TRAFFIC LIGHT (1)_compressed.pdf
+backend/data/filtered_data/STUDENT IDENTITY CHECKING SYSTEM final.pdf
+backend/data/filtered_data/Senior-Project-Price-Range-Prediction-of-Accommodation-around-Mae-Fah-Luang-University-Campus-Using-Machine-Learning.pdf
+backend/data/filtered_data/TRACKING AND LOCATING SYSTEM ON WEBSITE.pdf
+backend/data/filtered_data/The-event-automation-system-in-Wireless-LAN-network-senior-project.pdf
+backend/data/filtered_data/project final_6031501040.pdf
+backend/data/filtered_data/proposal-final.pdf
+backend/data/filtered_paper/12092023-logo-detection.pdf
+backend/data/filtered_paper/6331501039_paper.pdf
+backend/data/filtered_paper/6331501083.6331501098.6331501099_Co-Channel-Interference_Final-Document.pdf
+backend/data/filtered_paper/Final Project Smart Light.pdf
+backend/data/filtered_paper/Final-Paper-The-MFU-AP-map-analysis-system.pdf
+backend/data/filtered_paper/Final_Document_AUTOMATIC FALL DETECTOR (GYRO).pdf
+backend/data/filtered_paper/IEEE-MFU-WIFI-MAP.pdf
+backend/data/filtered_paper/MFU_ACCESS_POINT_PAPER_FINAL.pdf
+backend/data/filtered_paper/Online Swith Monitoring Paper.pdf
+backend/data/filtered_paper/Online-Swith-Monitoring-Paper.pdf
+backend/data/filtered_paper/Peper Project.pdf
+backend/data/filtered_paper/Simulation of separating shapes robotic arm.pdf
+backend/data/filtered_paper/Switch-Loop-Detection-Research.pdf
+backend/data/filtered_paper/edited12092023-face-recorder.pdf
+backend/docker-compose.yml
+backend/main.py
+backend/rag/__init__.py
+backend/rag/embedding/__init__.py
+backend/rag/embedding/config.py
+backend/rag/embedding/embedding.py
+backend/rag/embedding/metadata_extractor.py
+backend/rag/embedding/pdf_scanning.py
+backend/rag/embedding/text_processor.py
+backend/rag/embedding/vector_store.py
+backend/rag/retrieval/__init__.py
+backend/rag/retrieval/config.py
+backend/rag/retrieval/debug.py
+backend/rag/retrieval/extractor.py
+backend/rag/retrieval/filters.py
+backend/rag/retrieval/metadata_cache.py
+backend/rag/retrieval/normalizer.py
+backend/rag/retrieval/performance.py
+backend/rag/retrieval/prompt.py
+backend/rag/retrieval/rerank.py
+backend/rag/retrieval/semantic.py
+backend/rag/retrieval/service.py
+backend/requirements.txt
+backend/scripts/entrypoints.sh
+frontend/.env.example
+frontend/public/index.html

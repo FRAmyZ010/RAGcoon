@@ -5,7 +5,7 @@ env/
 venv/
 ENV/
 *.env
-
+node_modules/
 # --- Python ---
 __pycache__/
 *.py[cod]
