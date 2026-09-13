@@ -1,17 +1,21 @@
 from app.core.database import Base
+from app.models.role import Role
+from app.models.user import User
+from app.models.project import Project
 from app.models.document import Document
-# from app.models.user import User
-from app.models.chat import SearchQuery
-# from app.models.feedback import Feedback
+from app.models.search_query import SearchQuery
+from app.models.feedback import Feedback
+from app.models.system_visit import SystemVisit
+from app.models.rag_config import RagConfig
 
-"""
-Models Central Package Identifier
-
-ไฟล์นี้ทำหน้าที่รวม ORM Models ทั้งหมดของระบบไว้ที่จุดเดียว:
-1. ช่วยให้ SQLAlchemy สแกนเจอทุกตารางเพื่อสร้าง Database Schema อัตโนมัติ
-2. ป้องกันปัญหา Circular Import ระหว่าง Models
-3. ช่วยให้ไฟล์อื่น Import Class โมเดลไปใช้งานได้สะดวกและสั้นลง
-"""
-
-# __all__ = ["Base", "Document", "User", "SearchQuery", "Feedback"]
-__all__ = ["Base", "Document", "SearchQuery"]
+__all__ = [
+    "Base",
+    "Role",
+    "User",
+    "Project",
+    "Document",
+    "SearchQuery",
+    "Feedback",
+    "SystemVisit",
+    "RagConfig",
+]
