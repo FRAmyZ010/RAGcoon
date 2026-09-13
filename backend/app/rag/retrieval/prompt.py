@@ -1,11 +1,15 @@
+import json
 import os
 import re
 import time
+from collections.abc import Generator
+from typing import Any, Optional
 
 import requests
 from dotenv import load_dotenv
 
 from .service import search, search_with_details
+from .session_manager import session_manager
 
 load_dotenv()
 
@@ -173,14 +177,17 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
         return """4. Direct Concise Answer: Provide an exact, direct, 1-3 sentence factual answer answering the question precisely without extra filler."""
 
 
-def get_llm_response(question: str, context_list: list[str], intent: str = "FACTOID") -> str:
+def _build_full_prompt(
+    question: str,
+    context_list: list[str],
+    intent: str = "FACTOID",
+    chat_history: str = "",
+) -> tuple[str, bool, str, int]:
+    """Construct prompt and return (prompt, is_thai, fallback_text, num_predict)."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
-    if not context_list:
-        return fallback_text
-    
-    context_text = "\n\n".join(context_list)
+    context_text = "\n\n".join(context_list) if context_list else ""
     lang_instruction = (
         "Please respond in Thai language directly and professionally."
         if is_thai
@@ -189,9 +196,15 @@ def get_llm_response(question: str, context_list: list[str], intent: str = "FACT
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
+    history_block = (
+        f"\nRecent Conversation History:\n{chat_history.strip()}\n"
+        if chat_history and chat_history.strip()
+        else ""
+    )
+
     prompt = f"""You are an expert AI academic assistant for a university senior project document repository.
 Use ONLY the retrieved context below. Do not invent facts or extrapolate beyond what is stated.
-
+{history_block}
 Context:
 {context_text}
 
@@ -219,7 +232,6 @@ CRITICAL INSTRUCTIONS:
 Answer:
 """
 
-    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     predict_map = {
         "FACTOID": 384,
         "EXPLORATORY": 768,
@@ -228,6 +240,24 @@ Answer:
         "DEEP_DIVE": 768,
     }
     num_predict = predict_map.get(intent, 512)
+    return prompt, is_thai, fallback_text, num_predict
+
+
+def get_llm_response(
+    question: str,
+    context_list: list[str],
+    intent: str = "FACTOID",
+    chat_history: str = "",
+) -> str:
+    """Synchronous (non-streaming) LLM call."""
+    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+        question, context_list, intent=intent, chat_history=chat_history
+    )
+
+    if not context_list:
+        return fallback_text
+
+    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     try:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -251,6 +281,54 @@ Answer:
     return clean_answer(raw_answer, is_thai=is_thai)
 
 
+def stream_llm_response(
+    question: str,
+    context_list: list[str],
+    intent: str = "FACTOID",
+    chat_history: str = "",
+) -> Generator[str, None, None]:
+    """Streaming LLM generator that yields text tokens in real time from Ollama."""
+    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+        question, context_list, intent=intent, chat_history=chat_history
+    )
+
+    if not context_list:
+        yield fallback_text
+        return
+
+    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    try:
+        with requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": True,
+                "keep_alive": "15m",
+                "options": {
+                    "temperature": 0,
+                    "num_predict": num_predict,
+                },
+            },
+            stream=True,
+            timeout=ollama_timeout,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines(decode_unicode=True):
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        token = chunk.get("response", "")
+                        if token:
+                            yield token
+                        if chunk.get("done", False):
+                            break
+                    except json.JSONDecodeError:
+                        continue
+    except requests.RequestException as exc:
+        yield f"LLM streaming request failed: {exc}"
+
+
 def _is_boilerplate_chunk(text: str) -> bool:
     """Check if snippet is mostly table of contents, committee signatures, or pure acknowledgements."""
     t = text.lower()
@@ -267,17 +345,20 @@ def _is_boilerplate_chunk(text: str) -> bool:
     return False
 
 
-def answer_question(question: str) -> dict[str, object]:
+def _prepare_rag_context(
+    question: str, session_id: Optional[str] = None
+) -> dict[str, Any]:
+    """Unified context retrieval and document assembly for both streaming and non-streaming."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
-    retrieval_details = search_with_details(question)
+    chat_history_str = session_manager.format_history_for_prompt(session_id)
+    retrieval_details = search_with_details(question, chat_history=chat_history_str)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})
 
     contexts: list[str] = []
-
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
@@ -310,7 +391,6 @@ def answer_question(question: str) -> dict[str, object]:
 
     for item in scored_contexts:
         score = float(item.get("score", 0.0))
-        # Skip low relevance noise unless we have zero candidates so far
         if score < min_score and projects_data:
             continue
 
@@ -324,7 +404,6 @@ def answer_question(question: str) -> dict[str, object]:
         if not raw_snippet:
             continue
 
-        # Skip pure table of contents / committee boilerplate if we have alternatives
         if _is_boilerplate_chunk(raw_snippet) and proj_key in projects_data and projects_data[proj_key]["snippets"]:
             continue
 
@@ -355,6 +434,7 @@ def answer_question(question: str) -> dict[str, object]:
         if source not in sources:
             sources.append(source)
 
+    citations: list[dict[str, Any]] = []
     for proj_key in projects_ordered:
         proj_info = projects_data[proj_key]
         snippets = proj_info["snippets"]
@@ -376,7 +456,18 @@ def answer_question(question: str) -> dict[str, object]:
         year = payload.get("year")
         keywords = payload.get("keywords")
         source = payload.get("source", "Unknown source")
-        pages_str = ", ".join(sorted(proj_info["pages"])) if proj_info["pages"] else "?"
+        pages_list = sorted(list(proj_info["pages"]))
+        pages_str = ", ".join(pages_list) if pages_list else "?"
+
+        citations.append({
+            "project_title": project_title,
+            "source": source,
+            "pages": pages_list,
+            "pages_formatted": pages_str,
+            "author": author,
+            "advisor": advisor,
+            "year": year,
+        })
 
         context_parts = []
         if project_title:
@@ -401,56 +492,221 @@ def answer_question(question: str) -> dict[str, object]:
         doc_entry = f"{doc_header}\nMetadata: {meta_line}\nDocument Content:\n{combined_content}\n=== END OF [DOCUMENT {doc_idx}] ==="
         contexts.append(doc_entry)
 
-    retrieval_errors = retrieval_details["errors"]
+    retrieval_errors = retrieval_details.get("errors", [])
+    retrieval_timing = retrieval_details.get("timing", {})
+
+    return {
+        "question": question,
+        "is_thai": is_thai,
+        "fallback_text": fallback_text,
+        "chat_history_str": chat_history_str,
+        "contexts": contexts,
+        "sources": sources,
+        "citations": citations,
+        "scored_contexts": scored_contexts,
+        "retrieval_details": retrieval_details,
+        "intent": intent,
+        "filters": filters,
+        "retrieval_errors": retrieval_errors,
+        "retrieval_timing": retrieval_timing,
+    }
+
+
+def answer_question(question: str, session_id: Optional[str] = None) -> dict[str, object]:
+    """Synchronous Question Answering with In-Memory Session Memory."""
+    prep = _prepare_rag_context(question, session_id=session_id)
+
+    contexts = prep["contexts"]
+    is_thai = prep["is_thai"]
+    fallback_text = prep["fallback_text"]
+    retrieval_details = prep["retrieval_details"]
+    retrieval_timing = prep["retrieval_timing"]
+    retrieval_errors = prep["retrieval_errors"]
+    intent = prep["intent"]
+    scored_contexts = prep["scored_contexts"]
+    sources = prep["sources"]
+    citations = prep["citations"]
+    chat_history_str = prep["chat_history_str"]
 
     if not contexts and retrieval_errors:
-        retrieval_timing = retrieval_details["timing"]
-        error_msg = "การดึงข้อมูลล้มเหลว: ไม่สามารถเชื่อมต่อกับ Qdrant ได้" if is_thai else "Retrieval failed: unable to fetch documents from Qdrant right now."
+        error_msg = (
+            "การดึงข้อมูลล้มเหลว: ไม่สามารถเชื่อมต่อกับ Qdrant ได้"
+            if is_thai
+            else "Retrieval failed: unable to fetch documents from Qdrant right now."
+        )
         return {
             "question": question,
+            "session_id": session_id,
             "answer": error_msg,
+            "intent": intent,
             "contexts": [],
             "sources": [],
+            "citations": [],
             "scored_contexts": [],
-            "normalized_query": retrieval_details["normalized_query"],
-            "query_variants": retrieval_details["query_variants"],
-            "retrieved_count": retrieval_details["retrieved_count"],
+            "normalized_query": retrieval_details.get("normalized_query", question),
+            "filters": prep["filters"],
+            "query_variants": retrieval_details.get("query_variants", []),
+            "retrieved_count": 0,
             "errors": retrieval_errors,
             "timing": {
-                "retrieval_seconds": retrieval_timing["retrieval_seconds"],
-                "rerank_seconds": retrieval_timing["rerank_seconds"],
+                "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+                "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+                "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
                 "llm_seconds": 0.0,
-                "total_seconds": retrieval_timing["total_seconds"],
+                "total_seconds": retrieval_timing.get("total_seconds", 0.0),
             },
         }
 
+    # Add user message to session history
+    session_manager.add_user_message(session_id, question)
+
     llm_start = time.perf_counter()
-    answer = get_llm_response(question, contexts, intent=intent)
+    answer = get_llm_response(
+        question, contexts, intent=intent, chat_history=chat_history_str
+    )
     llm_seconds = time.perf_counter() - llm_start
 
     if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
         answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
-    retrieval_timing = retrieval_details["timing"]
-    total_seconds = retrieval_timing["total_seconds"] + llm_seconds
+    # Add assistant response to session history
+    session_manager.add_assistant_message(session_id, answer)
+
+    total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
 
     return {
         "question": question,
+        "session_id": session_id,
         "answer": answer,
         "intent": intent,
         "contexts": contexts,
         "sources": sources,
+        "citations": citations,
         "scored_contexts": scored_contexts,
-        "normalized_query": retrieval_details["normalized_query"],
-        "filters": retrieval_details.get("filters", {}),
-        "query_variants": retrieval_details["query_variants"],
-        "retrieved_count": retrieval_details["retrieved_count"],
+        "normalized_query": retrieval_details.get("normalized_query", question),
+        "filters": prep["filters"],
+        "query_variants": retrieval_details.get("query_variants", []),
+        "retrieved_count": retrieval_details.get("retrieved_count", len(scored_contexts)),
         "errors": retrieval_errors,
         "timing": {
             "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
-            "retrieval_seconds": retrieval_timing["retrieval_seconds"],
-            "rerank_seconds": retrieval_timing["rerank_seconds"],
+            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
             "llm_seconds": llm_seconds,
             "total_seconds": total_seconds,
+        },
+    }
+
+
+def stream_answer_question(
+    question: str, session_id: Optional[str] = None
+) -> Generator[dict[str, Any], None, None]:
+    """
+    Streaming Generator for Real-Time SSE Tokens + Citations & Timing.
+    
+    Yields structured events:
+      - {"event": "metadata", "data": {...}} : Query intent, filters, sources, citations, retrieval timing
+      - {"event": "token", "data": {"token": "..."}} : Live token chunks as they are generated
+      - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations
+      - {"event": "error", "data": {"error": "..."}} : If error occurs
+    """
+    prep = _prepare_rag_context(question, session_id=session_id)
+
+    contexts = prep["contexts"]
+    is_thai = prep["is_thai"]
+    fallback_text = prep["fallback_text"]
+    retrieval_details = prep["retrieval_details"]
+    retrieval_timing = prep["retrieval_timing"]
+    retrieval_errors = prep["retrieval_errors"]
+    intent = prep["intent"]
+    scored_contexts = prep["scored_contexts"]
+    sources = prep["sources"]
+    citations = prep["citations"]
+    chat_history_str = prep["chat_history_str"]
+
+    # 1. Yield Initial Metadata Event (Instant feedback on intent and retrieved documents)
+    metadata_payload = {
+        "question": question,
+        "session_id": session_id,
+        "intent": intent,
+        "normalized_query": retrieval_details.get("normalized_query", question),
+        "filters": prep["filters"],
+        "sources": sources,
+        "citations": citations,
+        "retrieved_count": len(scored_contexts),
+        "timing": {
+            "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        },
+    }
+    yield {"event": "metadata", "data": metadata_payload}
+
+    if not contexts and retrieval_errors:
+        error_msg = (
+            "การดึงข้อมูลล้มเหลว: ไม่สามารถเชื่อมต่อกับ Qdrant ได้"
+            if is_thai
+            else "Retrieval failed: unable to fetch documents from Qdrant right now."
+        )
+        yield {"event": "error", "data": {"error": error_msg, "errors": retrieval_errors}}
+        yield {
+            "event": "done",
+            "data": {
+                "answer": error_msg,
+                "session_id": session_id,
+                "sources": [],
+                "citations": [],
+                "timing": {
+                    "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+                    "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+                    "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+                    "llm_seconds": 0.0,
+                    "total_seconds": retrieval_timing.get("total_seconds", 0.0),
+                },
+            },
+        }
+        return
+
+    # Add user query to session manager
+    session_manager.add_user_message(session_id, question)
+
+    # 2. Stream Tokens from LLM
+    full_tokens: list[str] = []
+    llm_start = time.perf_counter()
+
+    for token in stream_llm_response(
+        question, contexts, intent=intent, chat_history=chat_history_str
+    ):
+        full_tokens.append(token)
+        yield {"event": "token", "data": {"token": token}}
+
+    llm_seconds = time.perf_counter() - llm_start
+    raw_full_answer = "".join(full_tokens)
+    cleaned_answer = clean_answer(raw_full_answer, is_thai=is_thai)
+
+    if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
+        cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
+
+    # Add assistant response to session manager
+    session_manager.add_assistant_message(session_id, cleaned_answer)
+
+    total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
+
+    # 3. Yield Final Done Event with Timing & Citations
+    yield {
+        "event": "done",
+        "data": {
+            "answer": cleaned_answer,
+            "session_id": session_id,
+            "intent": intent,
+            "sources": sources,
+            "citations": citations,
+            "timing": {
+                "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+                "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+                "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+                "llm_seconds": llm_seconds,
+                "total_seconds": total_seconds,
+            },
         },
     }

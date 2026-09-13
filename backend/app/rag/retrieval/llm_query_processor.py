@@ -114,10 +114,13 @@ OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
 }}"""
 
 
-def _call_ollama_for_query_parsing(raw_query: str) -> Optional[dict[str, Any]]:
-    """เรียก Ollama Local API เพื่อประมวลผล Query"""
+def _call_ollama_for_query_parsing(raw_query: str, chat_history: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """เรียก Ollama Local API เพื่อประมวลผล Query โดยนำบริบทสนทนาก่อนหน้า (chat_history) มาร่วมวิเคราะห์"""
     system_prompt = _build_dynamic_system_prompt()
-    user_prompt = f"User Query: \"{raw_query}\"\nJSON Output:"
+    if chat_history and chat_history.strip():
+        user_prompt = f"Recent Conversation History:\n{chat_history.strip()}\n\nCurrent User Query: \"{raw_query}\"\n(Note: Resolve any pronouns like 'โปรเจกต์นี้', 'เขา', 'it', 'this project', 'his/her' using the recent conversation history to find the referenced project/advisor/year)\nJSON Output:"
+    else:
+        user_prompt = f"User Query: \"{raw_query}\"\nJSON Output:"
 
     try:
         payload = {
@@ -219,7 +222,7 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
     return None
 
 
-def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
+def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -> tuple[str, dict[str, Any], str]:
     """
     ฟังก์ชันหลักสำหรับเรียกใช้งาน:
     รับคำถามดิบของผู้ใช้ -> คืนค่า (clean_query_for_vector, filters_dict_for_qdrant, query_intent)
@@ -236,7 +239,7 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
         return fast_result
 
     # 1. เรียก Ollama วิเคราะห์คำถามแบบ Dynamic
-    llm_result = _call_ollama_for_query_parsing(raw_query)
+    llm_result = _call_ollama_for_query_parsing(raw_query, chat_history=chat_history)
 
     if llm_result:
         norm_query = llm_result.get("normalized_query", "").strip() or raw_query
