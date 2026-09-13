@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from typing import Any, cast
+import app.models
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
