@@ -54,6 +54,8 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "COMPARISON"
     if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
+    if any(adv_word in q for adv_word in ["advisor", "advised", "ที่ปรึกษา", "ดูแล"]) and any(proj_word in q for proj_word in ["project", "projects", "โครงงาน", "โปรเจกต์"]) and not project_title_present:
+        return "EXPLORATORY"
     if any(k in q for k in ["มีอะไรบ้าง", "ขอเอกสาร", "แนะนำ", "any project", "list", "survey", "further", "ต่อยอด", "บ้าง", "projects", "โครงงานไหน", "which project"]):
         return "EXPLORATORY"
     if project_title_present:
@@ -112,10 +114,13 @@ OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
 }}"""
 
 
-def _call_ollama_for_query_parsing(raw_query: str) -> Optional[dict[str, Any]]:
-    """เรียก Ollama Local API เพื่อประมวลผล Query"""
+def _call_ollama_for_query_parsing(raw_query: str, chat_history: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """เรียก Ollama Local API เพื่อประมวลผล Query โดยนำบริบทสนทนาก่อนหน้า (chat_history) มาร่วมวิเคราะห์"""
     system_prompt = _build_dynamic_system_prompt()
-    user_prompt = f"User Query: \"{raw_query}\"\nJSON Output:"
+    if chat_history and chat_history.strip():
+        user_prompt = f"Recent Conversation History:\n{chat_history.strip()}\n\nCurrent User Query: \"{raw_query}\"\n(Note: Resolve any pronouns like 'โปรเจกต์นี้', 'เขา', 'it', 'this project', 'his/her' using the recent conversation history to find the referenced project/advisor/year)\nJSON Output:"
+    else:
+        user_prompt = f"User Query: \"{raw_query}\"\nJSON Output:"
 
     try:
         payload = {
@@ -212,12 +217,12 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
     if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร"]):
         filters = {"advisor": matched_advisor}
         norm_q = f"senior projects advised by {matched_advisor}"
-        return norm_q, filters, intent
+        return norm_q, filters, "EXPLORATORY"
 
     return None
 
 
-def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
+def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -> tuple[str, dict[str, Any], str]:
     """
     ฟังก์ชันหลักสำหรับเรียกใช้งาน:
     รับคำถามดิบของผู้ใช้ -> คืนค่า (clean_query_for_vector, filters_dict_for_qdrant, query_intent)
@@ -234,7 +239,7 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
         return fast_result
 
     # 1. เรียก Ollama วิเคราะห์คำถามแบบ Dynamic
-    llm_result = _call_ollama_for_query_parsing(raw_query)
+    llm_result = _call_ollama_for_query_parsing(raw_query, chat_history=chat_history)
 
     if llm_result:
         norm_query = llm_result.get("normalized_query", "").strip() or raw_query
@@ -300,6 +305,9 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
         if intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
 
+        if filters.get("advisor") and any(w in raw_query.lower() for w in ["project", "projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "who", "ใคร", "ที่ปรึกษา", "ดูแล"]) and not filters.get("project_title"):
+            intent = "EXPLORATORY"
+
         # Multi-project modes must not lock to a single project filter
         if intent in {"EXPLORATORY", "COMPARISON"}:
             filters.pop("project_title", None)
@@ -311,6 +319,8 @@ def process_query_with_llm(raw_query: str) -> tuple[str, dict[str, Any], str]:
     processor = QueryFilterProcessor(clean_norm)
     clean_q, fallback_filters = processor.parse()
     fallback_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(fallback_filters.get("project_title")))
+    if fallback_filters.get("advisor") and any(w in raw_query.lower() for w in ["project", "projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "who", "ใคร", "ที่ปรึกษา", "ดูแล"]) and not fallback_filters.get("project_title"):
+        fallback_intent = "EXPLORATORY"
     if fallback_intent in {"EXPLORATORY", "COMPARISON"}:
         fallback_filters.pop("project_title", None)
     return clean_q, fallback_filters, fallback_intent
