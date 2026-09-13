@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
 from app.core.database import get_db
 from app.schemas.document import DocumentResponse
 from app.services.document_service import (
-    process_document_upload,
+    process_document_upload_auto,
     get_all_documents,
     get_document_by_id,
     delete_document_by_id,
@@ -15,16 +15,12 @@ router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"]
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
-    project_title: str = Form(...),
-    academic_year: int | None = Form(None),
-    advisor: str | None = Form(None),
-    authors: str | None = Form(None),
-    supervisory_committee: str | None = Form(None),
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint สำหรับอัปโหลดไฟล์ PDF + Metadata (สำหรับ Administrator)
-    ระบบจะทำการสกัด Text, Chunking และ Embed ลง Qdrant Vector Database อัตโนมัติ
+    Endpoint สำหรับอัปโหลดไฟล์ PDF (Automated Flow)
+    ผู้ใช้ส่งเพียงไฟล์ PDF เข้ามา ระบบจะทำการสกัด Metadata (Title, Author, Advisor, Year)
+    พร้อมทำ Chunking และ Embed ลง Qdrant ให้อัตโนมัติ 100%
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -34,19 +30,14 @@ async def upload_document(
 
     try:
         return await run_in_threadpool(
-            process_document_upload,
+            process_document_upload_auto,
             db=db,
-            file=file,
-            project_title=project_title,
-            academic_year=academic_year,
-            advisor=advisor,
-            authors=authors,
-            supervisory_committee=supervisory_committee
+            file=file
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Document Ingestion Error: {str(e)}"
+            detail=f"Document Auto-Ingestion Error: {str(e)}"
         )
 
 @router.get("", response_model=list[DocumentResponse])
@@ -55,9 +46,6 @@ def list_documents(
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint ดึงรายการเอกสารทั้งหมด พร้อมติดตามสถานะการประมวลผล (COMPLETED, PROCESSING, FAILED)
-    """
     return get_all_documents(db=db, skip=skip, limit=limit)
 
 @router.get("/{document_id}", response_model=DocumentResponse)
@@ -65,9 +53,6 @@ def get_document_detail(
     document_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint ดึงรายละเอียดเอกสารรายชิ้นตาม ID
-    """
     doc = get_document_by_id(db=db, document_id=document_id)
     if not doc:
         raise HTTPException(
@@ -81,9 +66,6 @@ def remove_document(
     document_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint สำหรับลบเอกสารออกจากระบบ (PostgreSQL + Physical File)
-    """
     success = delete_document_by_id(db=db, document_id=document_id)
     if not success:
         raise HTTPException(
