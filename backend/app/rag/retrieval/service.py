@@ -30,12 +30,12 @@ def _get_routing_params(intent: str) -> tuple[int, int]:
     return DEFAULT_TOP_K, DEFAULT_TOP_N
 
 
-def search(query: str) -> list[str]:
+def search(query: str, chat_history: str | None = None) -> list[str]:
     print("\n" + "=" * 60)
     print("ORIGINAL QUERY:", query)
 
     # 1. Use LLM Query Normalizer & Filter Extractor & Intent Classifier
-    clean_query, filters, intent = process_query_with_llm(query)
+    clean_query, filters, intent = process_query_with_llm(query, chat_history=chat_history)
     top_k, top_n = _get_routing_params(intent)
     print("NORMALIZED / CLEAN QUERY:", clean_query)
     print("INTENT:", intent)
@@ -57,7 +57,7 @@ def search(query: str) -> list[str]:
     return [result["text"] for result in reranked]
 
 
-def search_with_details(query: str) -> dict:
+def search_with_details(query: str, chat_history: str | None = None) -> dict:
     """Search and return detailed results with scores, timing, and dynamic routing intent."""
     total_start = time.perf_counter()
     try:
@@ -66,7 +66,7 @@ def search_with_details(query: str) -> dict:
 
         # 1. Use LLM Query Normalizer & Filter Extractor & Intent Classifier
         query_proc_start = time.perf_counter()
-        normalized_query, filters, intent = process_query_with_llm(query)
+        normalized_query, filters, intent = process_query_with_llm(query, chat_history=chat_history)
         query_proc_seconds = time.perf_counter() - query_proc_start
         clean_query = normalized_query
         top_k, top_n = _get_routing_params(intent)

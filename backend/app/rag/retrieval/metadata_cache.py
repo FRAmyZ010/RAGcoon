@@ -17,6 +17,31 @@ _NON_NAME_WORDS = {
     "wlan",
 }
 
+_TITLE_WORDS = {
+    "prof",
+    "professor",
+    "asst",
+    "assoc",
+    "lecturer",
+    "doctor",
+    "dr",
+    "aj",
+    "phd",
+    "wg",
+    "cdr",
+}
+
+
+def _clean_name_spacing(name: str | None) -> str | None:
+    """Clean missing spaces after dots and in CamelCase/TitleCase words from OCR/PDF."""
+    if not name or not isinstance(name, str):
+        return name
+    cleaned = name.strip(" .:-()[]")
+    cleaned = re.sub(r"\.([A-Za-z])", r". \1", cleaned)
+    cleaned = re.sub(r"([a-z])([A-Z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .:-")
+    return cleaned or None
+
 
 def _is_likely_author_name(value: str) -> bool:
     words = re.findall(r"[A-Za-z]+", value)
@@ -47,6 +72,75 @@ class MetadataCache:
         if cls._instance is None:
             cls._instance = MetadataCache()
         return cls._instance
+
+    def resolve_advisor_variants(self, advisor_input: str) -> set[str]:
+        """
+        Map any advisor string (e.g. 'Aj. Surapol Vorapatratorn', 'Dr. Surapol', 'Surapol')
+        to all matching advisor name variants stored in Qdrant payloads.
+        """
+        self.load_metadata()
+        if not advisor_input or not str(advisor_input).strip():
+            return set()
+
+        adv_clean = _clean_name_spacing(str(advisor_input).strip()) or str(advisor_input).strip()
+        raw_words = re.findall(r"[A-Za-z]+", adv_clean)
+        core_words = [
+            w.lower() for w in raw_words
+            if len(w) >= 3 and w.lower() not in _TITLE_WORDS
+        ]
+
+        matching_variants: set[str] = set()
+
+        if core_words:
+            for known_adv in self.advisors:
+                known_clean = _clean_name_spacing(known_adv) or known_adv
+                known_raw_words = re.findall(r"[A-Za-z]+", known_clean)
+                known_core_words = {
+                    w.lower() for w in known_raw_words
+                    if len(w) >= 3 and w.lower() not in _TITLE_WORDS
+                }
+                if all(cw in known_core_words for cw in core_words):
+                    matching_variants.add(known_adv)
+                elif len(core_words) == 1 and any(cw in known_core_words for cw in core_words):
+                    matching_variants.add(known_adv)
+                elif any(cw in known_adv.lower() for cw in core_words):
+                    matching_variants.add(known_adv)
+
+        if matching_variants:
+            return matching_variants
+
+        mapped = self.advisor_to_full.get(adv_clean) or self.advisor_to_full.get(adv_clean.lower())
+        if mapped:
+            return set(mapped)
+
+        return {adv_clean}
+
+    def resolve_author_variants(self, author_input: str) -> set[str]:
+        """
+        Map author query/input to all matching author string payloads in Qdrant.
+        """
+        self.load_metadata()
+        if not author_input or not str(author_input).strip():
+            return set()
+
+        auth_clean = str(author_input).strip()
+        direct = self.author_to_full.get(auth_clean) or self.author_to_full.get(auth_clean.lower())
+        if direct:
+            return set(direct)
+
+        raw_words = re.findall(r"[A-Za-z]+", auth_clean)
+        core_words = [
+            w.lower() for w in raw_words
+            if len(w) >= 3 and w.lower() not in _NON_NAME_WORDS
+        ]
+        matches: set[str] = set()
+        for cw in core_words:
+            mapped = self.author_to_full.get(cw)
+            if mapped:
+                matches.update(mapped)
+
+        return matches or {auth_clean}
+
 
     def refresh(self):
         """Force refresh the metadata cache directly from Qdrant."""
@@ -121,22 +215,26 @@ class MetadataCache:
 
                     # Advisor
                     if payload.get("advisor"):
-                        full_advisor = payload["advisor"].strip()
-                        self.advisors.add(full_advisor)
-                        for key in (full_advisor, full_advisor.lower()):
+                        raw_advisor = payload["advisor"].strip()
+                        cleaned_advisor = _clean_name_spacing(raw_advisor) or raw_advisor
+                        self.advisors.add(raw_advisor)
+                        self.advisors.add(cleaned_advisor)
+                        for key in (raw_advisor, raw_advisor.lower(), cleaned_advisor, cleaned_advisor.lower()):
                             if key not in self.advisor_to_full:
                                 self.advisor_to_full[key] = set()
-                            self.advisor_to_full[key].add(full_advisor)
+                            self.advisor_to_full[key].add(raw_advisor)
+                            self.advisor_to_full[key].add(cleaned_advisor)
 
                         name_words = [
                             w.strip().lower()
-                            for w in re.findall(r"[A-Za-z]+", full_advisor)
-                            if len(w.strip()) > 3 and w.lower() not in {"prof", "asst", "assoc", "lecturer", "doctor", "aj"}
+                            for w in re.findall(r"[A-Za-z]+", cleaned_advisor)
+                            if len(w.strip()) >= 3 and w.lower() not in _TITLE_WORDS
                         ]
                         for nw in name_words:
                             if nw not in self.advisor_to_full:
                                 self.advisor_to_full[nw] = set()
-                            self.advisor_to_full[nw].add(full_advisor)
+                            self.advisor_to_full[nw].add(raw_advisor)
+                            self.advisor_to_full[nw].add(cleaned_advisor)
 
                     # Keywords
                     if payload.get("keywords"):
