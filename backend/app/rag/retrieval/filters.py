@@ -25,12 +25,9 @@ def build_qdrant_filter(filters: dict | None) -> Filter | None:
                 auth_str = str(auth).strip()
                 if not auth_str:
                     continue
-                full_authors = (
-                    metadata_cache.author_to_full.get(auth_str)
-                    or metadata_cache.author_to_full.get(auth_str.lower())
-                )
-                if full_authors:
-                    all_matching_payloads.update(full_authors)
+                resolved = metadata_cache.resolve_author_variants(auth_str)
+                if resolved:
+                    all_matching_payloads.update(resolved)
                 else:
                     all_matching_payloads.add(auth_str)
 
@@ -46,12 +43,9 @@ def build_qdrant_filter(filters: dict | None) -> Filter | None:
                 adv_str = str(adv).strip()
                 if not adv_str:
                     continue
-                full_advisors = (
-                    metadata_cache.advisor_to_full.get(adv_str)
-                    or metadata_cache.advisor_to_full.get(adv_str.lower())
-                )
-                if full_advisors:
-                    all_matching_advisors.update(full_advisors)
+                resolved = metadata_cache.resolve_advisor_variants(adv_str)
+                if resolved:
+                    all_matching_advisors.update(resolved)
                 else:
                     all_matching_advisors.add(adv_str)
 

@@ -1,8 +1,13 @@
 import sys
 from pathlib import Path
 from typing import Any, cast
+import app.models
 
-# HELLO
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 BACKEND_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_ROOT.parent
