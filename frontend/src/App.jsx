@@ -10,7 +10,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
-  const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("บทสนทนาใหม่");
+  const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New Workspace");
 
   // UI Responsive & Menu States
   const [showSettings, setShowSettings] = useState(false);
@@ -54,11 +54,11 @@ export default function App() {
   const handleNewWorkspace = () => {
     const newWorkspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
     setActiveWorkspaceId(newWorkspaceId);
-    setActiveWorkspaceTitle("บทสนทนาใหม่");
+    setActiveWorkspaceTitle("New Workspace");
     setMessages([
       {
         role: "bot",
-        text: "สวัสดีครับ! ผมคือ RAGcoon AI Assistant 🦝 พร้อมช่วยค้นหาและตอบคำถามจากคลังเอกสารโครงงานแล้วครับ",
+        text: "Hi! I am RAGcoon AI Assistant 🦝 . I am ready to help searching for CE senior project",
         meta: "RAGcoon Engine Ready",
         citations: [],
       },
@@ -122,7 +122,7 @@ export default function App() {
         role: "bot",
         text: "",
         citations: [],
-        meta: "กำลังค้นหาข้อมูล...",
+        meta: "Searching...",
       },
     ]);
 
@@ -201,7 +201,7 @@ export default function App() {
         const updated = [...prev];
         updated[botMsgIndex] = {
           ...updated[botMsgIndex],
-          text: "เกิดข้อผิดพลาดในการเชื่อมต่อกับ RAG Engine กรุณาลองใหม่อีกครั้ง",
+          text: "Failed to connect RAG Engine. Please try again!",
         };
         return updated;
       });
@@ -308,7 +308,7 @@ export default function App() {
         </div>
 
         {/* SIDEBAR FOOTER */}
-        <div className="mt-4 pt-3 border-t border-gray-700 space-y-2">
+        {/* <div className="mt-4 pt-3 border-t border-gray-700 space-y-2">
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs md:text-sm text-gray-300 hover:bg-white/10 hover:text-white"
@@ -331,7 +331,7 @@ export default function App() {
             <span>Log Out</span>
             <span>↪</span>
           </button>
-        </div>
+        </div> */}
       </aside>
 
       {/* ===================================================
@@ -413,7 +413,7 @@ export default function App() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="rounded-2xl rounded-tl-sm bg-gray-50 border border-gray-200 px-4 sm:px-5 py-4 text-xs sm:text-sm leading-relaxed text-gray-800 shadow-sm">
-                        <div className="whitespace-pre-wrap">{msg.text || "กำลังพิมพ์คำตอบ..."}</div>
+                        <div className="whitespace-pre-wrap">{msg.text || "Thinking . . ."}</div>
                       </div>
 
                       {/* ACTION BAR */}
@@ -479,7 +479,7 @@ export default function App() {
               <div className="flex items-center gap-3 text-xs sm:text-sm text-gray-500">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">🦝</div>
                 <div className="flex items-center gap-1">
-                  <span>RAGcoon กำลังค้นหาข้อมูลและประมวลผล</span>
+                  <span>RAGcoon are searching for documents!</span>
                   <span className="animate-pulse">...</span>
                 </div>
               </div>
@@ -499,8 +499,8 @@ export default function App() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={loading}
-              placeholder="ถามคำถามเกี่ยวกับโครงงาน senior project..."
-              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-gray-800 outline-none placeholder:text-gray-400"
+              placeholder="Ask RAGcoon"
+              className="min-w-1 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-gray-800 outline-none placeholder:text-gray-400"
             />
             <button
               type="submit"
