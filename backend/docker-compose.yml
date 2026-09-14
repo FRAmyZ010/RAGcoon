@@ -35,11 +35,23 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ragcoon-ollama
-    restart: always
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    # เพิ่ม entrypoint เพื่อสั่ง pull โมเดลอัตโนมัติขณะเริ่มรัน Container
+    entrypoint: >
+      /bin/sh -c "
+      ollama serve &
+      PID=$$!;
+      echo '⏳ Waiting for Ollama service to start...';
+      sleep 5;
+      echo '📥 Pulling model qwen2.5:7b...';
+      ollama pull qwen2.5:7b;
+      echo '✅ Model pulled successfully!';
+      wait $$PID
+      "
+    restart: always
 
   # Backend Service: FastAPI
   backend:
