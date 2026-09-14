@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
 export default function App() {
   // =========================================================
@@ -13,7 +14,6 @@ export default function App() {
   const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New Workspace");
 
   // UI Responsive & Menu States
-  const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCitationsIndex, setShowCitationsIndex] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false); // ปิดใน Mobile เป็น Default
@@ -215,7 +215,7 @@ export default function App() {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(idx);
       setTimeout(() => setCopiedIndex(null), 1500);
-    } catch (error) {
+    } catch {
       console.log("Copy failed");
     }
   };
@@ -307,31 +307,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* SIDEBAR FOOTER */}
-        {/* <div className="mt-4 pt-3 border-t border-gray-700 space-y-2">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
+        <div className="mt-4 pt-3 border-t border-gray-700">
+          <Link
+            to="/documents"
             className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs md:text-sm text-gray-300 hover:bg-white/10 hover:text-white"
           >
-            <span className="flex items-center gap-2">⚙ Settings</span>
-            <span>{showSettings ? "▲" : "▼"}</span>
-          </button>
-
-          {showSettings && (
-            <div className="rounded-lg bg-[#222222] p-2 text-xs text-gray-300 space-y-1">
-              <button className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10">Appearance</button>
-              <button className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10">RAG Configuration</button>
-            </div>
-          )}
-
-          <button
-            onClick={() => window.confirm("คุณต้องการออกจากระบบหรือไม่?") && alert("Logout สำเร็จ")}
-            className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-xs md:text-sm font-bold text-[#2d2d2d] transition hover:bg-gray-200"
-          >
-            <span>Log Out</span>
-            <span>↪</span>
-          </button>
-        </div> */}
+            <span>📁 Documents</span>
+            <span>→</span>
+          </Link>
+        </div>
       </aside>
 
       {/* ===================================================

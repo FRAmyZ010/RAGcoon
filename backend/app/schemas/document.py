@@ -12,6 +12,7 @@ class DocumentBase(BaseModel):
     filename: str
     title: str | None = None
     supervisory_committee: str | None = None
+    keywords: str | None = None
 
 class DocumentCreate(DocumentBase):
     file_path: str
@@ -25,3 +26,4 @@ class DocumentResponse(DocumentBase):
     file_path: str
     status: ProcessingStatus
     upload_date: datetime
+    academic_year: int | None = None

@@ -12,7 +12,12 @@ class Document(Base):
     file_path = Column(String(500), nullable=False)
     title = Column(String(255), nullable=True)
     supervisory_committee = Column(Text, nullable=True)
+    keywords = Column(Text, nullable=True)
     status = Column(String(50), nullable=False, default="PENDING")
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="documents")
+
+    @property
+    def academic_year(self) -> int | None:
+        return self.project.academic_year if self.project else None

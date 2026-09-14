@@ -11,6 +11,10 @@ from app.api.v1.router import api_router
 # สร้างตารางใน PostgreSQL หากยังไม่มี
 Base.metadata.create_all(bind=engine)
 
+# Soft-migrate: เพิ่มคอลัมน์ใหม่บน DB ที่มีอยู่แล้ว (create_all ไม่แก้ตารางเก่า)
+with engine.begin() as conn:
+    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="Backend API for RAGcoon Senior Project Management System",

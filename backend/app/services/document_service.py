@@ -1,7 +1,7 @@
 import os
 import shutil
 from fastapi import UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.project import Project
 from app.models.document import Document
 from app.schemas.document import ProcessingStatus
@@ -45,6 +45,11 @@ def process_document_upload_auto(
         advisor = extracted_meta.get("advisor")
         authors = extracted_meta.get("author")
         supervisory_committee = extracted_meta.get("committee")
+        if isinstance(supervisory_committee, list):
+            supervisory_committee = ", ".join(str(item) for item in supervisory_committee if item)
+        keywords = extracted_meta.get("keywords")
+        if isinstance(keywords, list):
+            keywords = ", ".join(str(item) for item in keywords if item)
 
         # 3. ตรวจสอบโครงงานซ้ำ (Duplicate Check) จาก project_title ที่สกัดได้
         existing_project = db.query(Project).filter(Project.title == project_title).first()
@@ -81,6 +86,7 @@ def process_document_upload_auto(
             file_path=final_file_path,
             title=project_title,
             supervisory_committee=supervisory_committee,
+            keywords=keywords,
             status=ProcessingStatus.PROCESSING.value
         )
         db.add(document)
@@ -106,10 +112,22 @@ def process_document_upload_auto(
     return document
 
 def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Document]:
-    return db.query(Document).order_by(Document.upload_date.desc()).offset(skip).limit(limit).all()
+    return (
+        db.query(Document)
+        .options(joinedload(Document.project))
+        .order_by(Document.upload_date.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 def get_document_by_id(db: Session, document_id: int) -> Document | None:
-    return db.query(Document).filter(Document.id == document_id).first()
+    return (
+        db.query(Document)
+        .options(joinedload(Document.project))
+        .filter(Document.id == document_id)
+        .first()
+    )
 
 def delete_document_by_id(db: Session, document_id: int) -> bool:
     document = db.query(Document).filter(Document.id == document_id).first()
