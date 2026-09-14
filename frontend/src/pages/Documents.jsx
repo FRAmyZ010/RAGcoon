@@ -1,210 +1,313 @@
-import { useState } from 'react';
-import { 
-  MoreVertical, Upload, FileText, ChevronDown, Search, 
-  MessageCircle, Send, Bot, User, Sparkles, X 
-} from 'lucide-react';
-import Button from '../components/ui/Button';
-import Table from '../components/ui/Table';
-import FileActionMenu from '../components/ui/FileActionMenu';
-import UploadModal from '../components/ui/UploadModal';
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  FileText,
+  MoreVertical,
+  Plus,
+  ChevronDown,
+  LayoutDashboard,
+  FolderClosed,
+  MessageSquare,
+  LogOut,
+  Bell,
+  PanelLeftClose,
+  Paperclip,
+  Download,
+  Copy,
+  Edit2,
+  Trash2,
+  X,
+  UploadCloud,
+} from "lucide-react";
 
-export default function Documents() {
+export default function DocumentsManagement() {
+  // State ควบคุม Dropdown Menu และ Modals
   const [activeMenuIndex, setActiveMenuIndex] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [inputMessage, setInputMessage] = useState('');
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'ai',
-      text: 'สวัสดีครับ! ผม RAGcoon AI มีเอกสารชุดไหนในคลังที่ต้องการให้ค้นหาหรือสรุปข้อมูลให้ไหมครับ?',
-      sources: []
-    }
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [newFileName, setNewFileName] = useState("");
+
+  // ข้อมูลรายการไฟล์ (ใช้ State เพื่อรองรับ Dynamic Actions)
+  const [filesData, setFilesData] = useState([
+    { id: 1, title: "ProjectPetFeeder", year: "2022", category: "IOT", status: "Processing", date: "12 Jan 2025" },
+    { id: 2, title: "ProjectWebapplication", year: "2023", category: "Web Application", status: "Ready", date: "12 Jan 2025" },
+    { id: 3, title: "Networkmonitoring", year: "2023", category: "Network", status: "Processing", date: "12 Jan 2025" },
+    { id: 4, title: "Preprojectnetwork", year: "2022", category: "Network", status: "Failed", date: "12 Jan 2025" },
+    { id: 5, title: "ProjectFulldocument", year: "2021", category: "IOT", status: "Processing", date: "12 Jan 2025" },
+    { id: 6, title: "Embeddedsystemproject", year: "2020", category: "IOT", status: "Processing", date: "12 Jan 2025" },
+    { id: 7, title: "ProjectMachine", year: "2022", category: "Machine Learning", status: "Ready", date: "11 Jan 2025" },
+    { id: 8, title: "Pre-project_MFU-WIFI", year: "2021", category: "Network", status: "Processing", date: "11 Jan 2025" },
+    { id: 9, title: "ProjectPetFeeder", year: "2022", category: "IOT", status: "Processing", date: "10 Jan 2025" },
   ]);
 
-  const files = [
-    { title: 'ProjectPetFeeder', year: '2022', category: 'IOT', status: 'Processing', date: '12 Jan 2025' },
-    { title: 'ProjectWebapplication', year: '2023', category: 'Web Application', status: 'Ready', date: '12 Jan 2025' },
-    { title: 'Networkmonitoring', year: '2023', category: 'Network', status: 'Processing', date: '12 Jan 2025' },
-    { title: 'Preprojectnetwork', year: '2022', category: 'Network', status: 'Failed', date: '12 Jan 2025' },
-    { title: 'ProjectFulldocument', year: '2021', category: 'IOT', status: 'Processing', date: '12 Jan 2025' },
-    { title: 'Embeddedsystemproject', year: '2020', category: 'IOT', status: 'Processing', date: '12 Jan 2025' },
-    { title: 'ProjectMachine', year: '2022', category: 'Machine Learning', status: 'Ready', date: '11 Jan 2025' },
+  const recentFiles = [
+    { id: 1, name: "PROJECT-PetFeeder-Finalize", size: "228 KB pdf" },
+    { id: 2, name: "PROJECT-PetFeeder-Finalize", size: "228 KB pdf" },
+    { id: 3, name: "PROJECT-PetFeeder-Finalize", size: "228 KB pdf" },
   ];
 
-  const filteredFiles = files.filter(f => 
-    f.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // ================= Action Handlers =================
+  const toggleActionMenu = (index) => {
+    setActiveMenuIndex(activeMenuIndex === index ? null : index);
+  };
 
-  const headers = ['Title', 'Year', 'Category', 'Status', 'Date', ''];
+  const handleRemove = (id) => {
+    setFilesData(filesData.filter((file) => file.id !== id));
+    setActiveMenuIndex(null);
+  };
 
-  const handleSendMessage = (e) => {
+  const handleOpenRename = (file) => {
+    setSelectedFile(file);
+    setNewFileName(file.title);
+    setIsRenameModalOpen(true);
+    setActiveMenuIndex(null);
+  };
+
+  const handleSaveRename = (e) => {
     e.preventDefault();
-    if (!inputMessage.trim()) return;
-
-    const userMsg = { id: Date.now(), sender: 'user', text: inputMessage };
-    setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
-
-    setTimeout(() => {
-      const aiMsg = {
-        id: Date.now() + 1,
-        sender: 'ai',
-        text: `สืบค้นข้อมูลเกี่ยวกับ "${inputMessage}" จากเอกสารในคลังเรียบร้อยแล้วครับ`,
-        sources: [{ name: 'ProjectPetFeeder.pdf', page: 'หน้า 2' }]
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-    }, 800);
+    setFilesData(
+      filesData.map((f) => (f.id === selectedFile.id ? { ...f, title: newFileName } : f))
+    );
+    setIsRenameModalOpen(false);
   };
 
   return (
-    <div className="relative space-y-6 font-mono">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xs text-gray-600 font-semibold">Desktop - doc management</h2>
-        <div className="flex gap-2">
-          <Button 
-            variant="dark" 
-            onClick={() => setIsChatOpen(!isChatOpen)}
-          >
-            <MessageCircle size={14} /> {isChatOpen ? 'Close AI Chat' : 'Open AI Chat'}
-          </Button>
-          <Button variant="primary" onClick={() => setIsModalOpen(true)}>
-            <Upload size={14} /> Upload file
-          </Button>
-        </div>
-      </div>
+    <div className="flex h-screen w-full bg-[#C8C8C8] font-mono text-xs text-[#353535]">
+      {/* ---------------- SIDEBAR ---------------- */}
+      <aside className="flex w-60 flex-col justify-between bg-[#353535] p-4 text-white flex-shrink-0">
+        <div>
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-200 text-black">
+                🦝
+              </div>
+              <span className="text-sm font-bold tracking-wide">RAGcoon</span>
+            </div>
+            <PanelLeftClose className="h-4 w-4 cursor-pointer text-gray-400 hover:text-white" />
+          </div>
 
-      <div className="flex gap-6">
-        <div className="flex-1 space-y-6">
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-gray-800">Recently modified</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {[1, 2, 3].map((_, i) => (
-                <div key={i} className="bg-white p-4 rounded-xl flex justify-between items-start shadow-sm border border-gray-100">
-                  <div className="flex gap-3">
-                    <FileText size={18} className="text-gray-700 mt-0.5" />
-                    <div className="text-xs space-y-1">
-                      <p className="font-bold text-gray-800">PROJECT-PetFeeder-Finalize</p>
-                      <p className="text-[10px] text-gray-400">228 KB pdf</p>
-                    </div>
+          <nav className="space-y-1.5">
+            <Link to="/dashboard" className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-gray-700">
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Dashboard</span>
+            </Link>
+            <Link to="/documents" className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 font-bold text-[#353535]">
+              <FolderClosed className="h-4 w-4" />
+              <span>Documents Management</span>
+            </Link>
+            <Link to="/chat" className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-gray-700">
+              <MessageSquare className="h-4 w-4" />
+              <span>Feedback</span>
+            </Link>
+          </nav>
+        </div>
+
+        <button className="flex w-full items-center justify-between rounded-md bg-white px-3 py-1.5 font-bold text-[#353535] hover:bg-gray-100">
+          <span>Log Out</span>
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
+      </aside>
+
+      {/* ---------------- MAIN CONTENT ---------------- */}
+      <main className="flex-1 overflow-y-auto p-8">
+        {/* Top Header */}
+        <header className="mb-6 flex items-center justify-end gap-3">
+          <Bell className="h-4 w-4 cursor-pointer text-gray-700 hover:text-black" />
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-5 rounded-full bg-[#800000]" />
+            <span className="font-bold text-[#353535]">Marry Jann</span>
+          </div>
+        </header>
+
+        {/* Recently Modified Section */}
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-bold text-[#353535]">Recently modified</h2>
+            
+            <div className="flex items-center gap-2">
+              <Link
+                to="/chat"
+                title="เปิดหน้าต่าง Chat"
+                className="flex items-center justify-center rounded bg-white p-1.5 text-gray-700 hover:bg-gray-100 shadow-sm"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Link>
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="flex items-center gap-1.5 rounded bg-[#1D61E7] px-3 py-1.5 font-bold text-white hover:bg-blue-700 shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Upload file</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            {recentFiles.map((file) => (
+              <div key={file.id} className="flex items-center justify-between rounded bg-white p-3 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-gray-700" />
+                  <div>
+                    <div className="font-bold text-[#353535]">{file.name}</div>
+                    <div className="text-[10px] text-gray-400">{file.size}</div>
                   </div>
-                  <MoreVertical size={14} className="text-gray-400 cursor-pointer hover:text-black" />
                 </div>
+                <MoreVertical className="h-4 w-4 cursor-pointer text-gray-400 hover:text-gray-600" />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* All Files Section */}
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-bold text-[#353535]">All files</h2>
+            <div className="flex gap-2">
+              {["Category", "Modified", "Years"].map((filter) => (
+                <button key={filter} className="flex items-center gap-1 rounded bg-[#E5E5E5] px-2.5 py-1 text-gray-700 hover:bg-gray-300">
+                  <span>{filter}</span>
+                  <ChevronDown className="h-3 w-3" />
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <div className="relative w-64">
-                <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+          {/* Table */}
+          <div className="overflow-visible rounded bg-white shadow-sm">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-[#E5E5E5] text-gray-900 font-bold">
+                <tr>
+                  <th className="py-2.5 pl-4">Title</th>
+                  <th className="py-2.5">Year</th>
+                  <th className="py-2.5">Category</th>
+                  <th className="py-2.5">Status</th>
+                  <th className="py-2.5">Date</th>
+                  <th className="py-2.5 pr-4"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-[#353535]">
+                {filesData.map((row, idx) => (
+                  <tr key={row.id} className="hover:bg-gray-50 relative">
+                    <td className="flex items-center gap-2 py-2.5 pl-4 font-bold">
+                      <FileText className="h-4 w-4 text-[#800000]" />
+                      <span>{row.title}</span>
+                    </td>
+                    <td className="py-2.5">{row.year}</td>
+                    <td className="py-2.5">{row.category}</td>
+                    <td className="py-2.5">{row.status}</td>
+                    <td className="py-2.5">{row.date}</td>
+                    <td className="py-2.5 pr-4 text-right relative">
+                      <button onClick={() => toggleActionMenu(idx)} className="p-1 rounded hover:bg-gray-200">
+                        <MoreVertical className="h-4 w-4 text-gray-500" />
+                      </button>
+
+                      {/* Dropdown Action Menu */}
+                      {activeMenuIndex === idx && (
+                        <div className="absolute right-4 top-8 z-20 w-44 rounded bg-[#E5E7EB] p-1 shadow-lg text-left border border-gray-300">
+                          <button className="flex w-full items-center gap-2 rounded px-3 py-1.5 font-bold text-gray-800 hover:bg-gray-300">
+                            <Download className="h-3.5 w-3.5" />
+                            <span>Download</span>
+                          </button>
+                          <button className="flex w-full items-center gap-2 rounded px-3 py-1.5 font-bold text-gray-800 hover:bg-gray-300">
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Copy</span>
+                          </button>
+                          <button onClick={() => handleOpenRename(row)} className="flex w-full items-center gap-2 rounded px-3 py-1.5 font-bold text-gray-800 hover:bg-gray-300">
+                            <Edit2 className="h-3.5 w-3.5" />
+                            <span>Rename</span>
+                          </button>
+                          <button onClick={() => handleRemove(row.id)} className="flex w-full items-center gap-2 rounded px-3 py-1.5 font-bold text-red-600 hover:bg-gray-300">
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      {/* ---------------- MODAL 1: UPLOAD FILE ---------------- */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between border-b pb-3">
+              <h3 className="text-sm font-bold text-gray-800">Upload New File</h3>
+              <button onClick={() => setIsUploadModalOpen(false)}>
+                <X className="h-4 w-4 text-gray-500 hover:text-black" />
+              </button>
+            </div>
+            
+            <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8 hover:bg-gray-50 cursor-pointer">
+              <UploadCloud className="h-10 w-10 text-gray-400 mb-2" />
+              <p className="font-bold text-gray-600">Drag and drop files here</p>
+              <p className="text-[10px] text-gray-400">Supported formats: PDF, DOCX, TXT</p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setIsUploadModalOpen(false)}
+                className="rounded border border-gray-300 px-4 py-1.5 font-bold text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setIsUploadModalOpen(false)}
+                className="rounded bg-[#1D61E7] px-4 py-1.5 font-bold text-white hover:bg-blue-700"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- MODAL 2: RENAME FILE ---------------- */}
+      {isRenameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between border-b pb-3">
+              <h3 className="text-sm font-bold text-gray-800">Rename File</h3>
+              <button onClick={() => setIsRenameModalOpen(false)}>
+                <X className="h-4 w-4 text-gray-500 hover:text-black" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRename}>
+              <div className="mb-4">
+                <label className="mb-1 block text-[11px] font-bold text-gray-600">File Title</label>
                 <input
                   type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search documents..."
-                  className="w-full bg-white text-xs pl-9 pr-4 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:border-gray-400"
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  className="w-full rounded border border-gray-300 p-2 text-xs outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="flex gap-2">
-                {['Category', 'Modified', 'Years'].map((filter, i) => (
-                  <button key={i} className="bg-gray-200 px-3 py-1.5 rounded text-[11px] font-semibold flex items-center gap-1 text-gray-700 hover:bg-gray-300">
-                    {filter} <ChevronDown size={12} />
-                  </button>
-                ))}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRenameModalOpen(false)}
+                  className="rounded border border-gray-300 px-4 py-1.5 font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded bg-[#1D61E7] px-4 py-1.5 font-bold text-white hover:bg-blue-700"
+                >
+                  Save
+                </button>
               </div>
-            </div>
-
-            <h3 className="text-xs font-bold text-gray-800">All files</h3>
-
-            <Table
-              headers={headers}
-              data={filteredFiles}
-              renderRow={(file, idx) => (
-                <tr key={idx} className="hover:bg-gray-50 border-b border-gray-100 relative">
-                  <td className="p-4 flex items-center gap-2 font-bold text-gray-800 text-xs">
-                    <FileText size={16} className="text-red-700" />
-                    {file.title}
-                  </td>
-                  <td className="p-4 text-xs text-gray-600">{file.year}</td>
-                  <td className="p-4 text-xs text-gray-600">{file.category}</td>
-                  <td className="p-4 text-xs font-semibold text-gray-800">{file.status}</td>
-                  <td className="p-4 text-xs text-gray-500">{file.date}</td>
-                  <td className="p-4 text-right relative">
-                    <MoreVertical
-                      size={14}
-                      className="cursor-pointer text-gray-400 hover:text-black inline"
-                      onClick={() => setActiveMenuIndex(activeMenuIndex === idx ? null : idx)}
-                    />
-                    <FileActionMenu
-                      isOpen={activeMenuIndex === idx}
-                      onClose={() => setActiveMenuIndex(null)}
-                    />
-                  </td>
-                </tr>
-              )}
-            />
-          </div>
-        </div>
-
-        {isChatOpen && (
-          <div className="w-80 bg-white rounded-xl border border-gray-200 shadow-xl flex flex-col h-[calc(100vh-10rem)] transition-all">
-            <div className="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} className="text-blue-600" />
-                <span className="text-xs font-bold text-gray-800">RAGcoon Assistant</span>
-              </div>
-              <button onClick={() => setIsChatOpen(false)} className="text-gray-400 hover:text-black">
-                <X size={14} />
-              </button>
-            </div>
-
-            <div className="flex-1 p-3 overflow-y-auto space-y-3">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex gap-2 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] shrink-0 ${
-                    msg.sender === 'user' ? 'bg-gray-800' : 'bg-[#2563EB]'
-                  }`}>
-                    {msg.sender === 'user' ? <User size={12} /> : <Bot size={12} />}
-                  </div>
-                  <div className="max-w-[85%] space-y-1">
-                    <div className={`p-2.5 rounded-lg text-[11px] leading-relaxed ${
-                      msg.sender === 'user' 
-                        ? 'bg-[#2563EB] text-white rounded-tr-none' 
-                        : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                    }`}>
-                      {msg.text}
-                    </div>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="text-[9px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-semibold">
-                        📍 {msg.sources[0].name}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleSendMessage} className="p-2 border-t border-gray-100 bg-gray-50 flex gap-1 rounded-b-xl">
-              <input
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Ask AI..."
-                className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-              />
-              <button type="submit" className="bg-[#2563EB] text-white p-2 rounded-lg hover:bg-blue-700">
-                <Send size={12} />
-              </button>
             </form>
           </div>
-        )}
-      </div>
-
-      <UploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+        </div>
+      )}
     </div>
   );
 }
