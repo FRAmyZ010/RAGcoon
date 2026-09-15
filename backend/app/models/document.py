@@ -21,3 +21,11 @@ class Document(Base):
     @property
     def academic_year(self) -> int | None:
         return self.project.academic_year if self.project else None
+
+    @property
+    def authors(self) -> str | None:
+        return self.project.authors if self.project else None
+
+    @property
+    def advisor(self) -> str | None:
+        return self.project.advisor if self.project else None

@@ -20,7 +20,7 @@ def process_document_upload_auto(
     4. บันทึกข้อมูลลง PostgreSQL และ Vector Store (Qdrant)
     """
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    
+
     # 1. บันทึกไฟล์ PDF ชั่วคราวเข้า Storage เพื่อให้ RAG Engine อ่านได้
     safe_filename = file.filename.replace(" ", "_") if file.filename else "uploaded.pdf"
     temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{safe_filename}")
@@ -54,7 +54,14 @@ def process_document_upload_auto(
         # 3. ตรวจสอบโครงงานซ้ำ (Duplicate Check) จาก project_title ที่สกัดได้
         existing_project = db.query(Project).filter(Project.title == project_title).first()
         if existing_project:
+            from app.rag.embedding.vector_store import delete_from_qdrant
+
             for doc in existing_project.documents:
+                delete_from_qdrant(
+                    project_title=existing_project.title or doc.title,
+                    filename=doc.filename,
+                    file_path=doc.file_path,
+                )
                 if doc.file_path and os.path.exists(doc.file_path):
                     try:
                         os.remove(doc.file_path)
@@ -78,6 +85,12 @@ def process_document_upload_auto(
         final_file_path = os.path.join(UPLOAD_DIR, f"{project.id}_{safe_filename}")
         if os.path.exists(temp_file_path):
             os.rename(temp_file_path, final_file_path)
+
+        # อัปเดต source ใน metadata ให้ตรงกับชื่อไฟล์จริง (ไม่ใช้ temp_*)
+        for page in pages:
+            page_meta = page.get("metadata")
+            if isinstance(page_meta, dict):
+                page_meta["source"] = os.path.basename(final_file_path)
 
         # 6. บันทึก Record ในตาราง documents
         document = Document(
@@ -130,9 +143,27 @@ def get_document_by_id(db: Session, document_id: int) -> Document | None:
     )
 
 def delete_document_by_id(db: Session, document_id: int) -> bool:
-    document = db.query(Document).filter(Document.id == document_id).first()
+    document = (
+        db.query(Document)
+        .options(joinedload(Document.project))
+        .filter(Document.id == document_id)
+        .first()
+    )
     if not document:
         return False
+
+    from app.rag.embedding.vector_store import delete_from_qdrant
+
+    project_title = document.title
+    if document.project and document.project.title:
+        project_title = document.project.title
+
+    # ลบ vectors ก่อน แล้วค่อยลบไฟล์/DB
+    delete_from_qdrant(
+        project_title=project_title,
+        filename=document.filename,
+        file_path=document.file_path,
+    )
 
     if document.file_path and os.path.exists(document.file_path):
         try:

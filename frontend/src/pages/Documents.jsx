@@ -229,10 +229,12 @@ export default function DocumentsManagement() {
 
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+            <table className="w-full text-left border-collapse min-w-[1200px]">
               <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-xs">
                 <tr>
                   <th className="py-3 px-4">Title</th>
+                  <th className="py-3 px-3">Authors</th>
+                  <th className="py-3 px-3">Advisor</th>
                   <th className="py-3 px-3">Academic Year</th>
                   <th className="py-3 px-3">Keywords</th>
                   <th className="py-3 px-3">Supervisory Committee</th>
@@ -244,7 +246,7 @@ export default function DocumentsManagement() {
               <tbody className="divide-y divide-gray-100 text-xs sm:text-sm">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={9} className="py-10 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Loading documents...
@@ -255,7 +257,7 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={9} className="py-10 text-center text-gray-500">
                       ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
                     </td>
                   </tr>
@@ -267,17 +269,29 @@ export default function DocumentsManagement() {
                       <td className="py-3 px-4 font-bold text-gray-900">
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-[#800000] shrink-0" />
-                          <span className="truncate max-w-[180px] sm:max-w-none">{row.title}</span>
+                          <span className="truncate max-w-[200px]" title={row.title}>
+                            {row.title}
+                          </span>
                         </div>
+                      </td>
+                      <td className="py-3 px-3 text-gray-600">
+                        <span className="line-clamp-2 max-w-[160px]" title={row.authors}>
+                          {row.authors}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-gray-600">
+                        <span className="line-clamp-2 max-w-[160px]" title={row.advisor}>
+                          {row.advisor}
+                        </span>
                       </td>
                       <td className="py-3 px-3 text-gray-600 whitespace-nowrap">{row.year}</td>
                       <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[220px]" title={row.keywords}>
+                        <span className="line-clamp-2 max-w-[180px]" title={row.keywords}>
                           {row.keywords}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[220px]" title={row.supervisoryCommittee}>
+                        <span className="line-clamp-2 max-w-[180px]" title={row.supervisoryCommittee}>
                           {row.supervisoryCommittee}
                         </span>
                       </td>

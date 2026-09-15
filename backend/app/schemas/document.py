@@ -27,3 +27,5 @@ class DocumentResponse(DocumentBase):
     status: ProcessingStatus
     upload_date: datetime
     academic_year: int | None = None
+    authors: str | None = None
+    advisor: str | None = None

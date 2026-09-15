@@ -64,6 +64,8 @@ export function mapDocumentToRow(doc) {
     id: doc.id,
     title: doc.title || doc.filename || "Untitled",
     filename: doc.filename,
+    authors: doc.authors || "—",
+    advisor: doc.advisor || "—",
     year: doc.academic_year != null ? String(doc.academic_year) : "—",
     keywords: doc.keywords || "—",
     supervisoryCommittee: doc.supervisory_committee || "—",
