@@ -14,6 +14,7 @@ from app.schemas.chat import (
     WorkspaceQueryResult,
 )
 from app.rag.retrieval import stream_answer_question
+from app.services.document_service import enrich_citations_with_document_ids
 
 def process_rag_query(
     db: Session,
@@ -41,6 +42,7 @@ def process_rag_query(
         }]
         timing_data = {"retrieval_seconds": 0.1, "llm_seconds": 1.2, "total_seconds": 1.3}
 
+    citations_data = enrich_citations_with_document_ids(db, citations_data)
     citations = [DocumentCitation(**c) if isinstance(c, dict) else c for c in citations_data]
     timing = TimingMetrics(**timing_data) if isinstance(timing_data, dict) else timing_data
 
@@ -97,7 +99,9 @@ def process_rag_stream(
         event_data = item.get("data", {})
 
         if event_type == "metadata":
-            citations_data = event_data.get("citations", [])
+            citations_data = enrich_citations_with_document_ids(
+                db, event_data.get("citations", [])
+            )
         elif event_type == "token":
             token_text = event_data.get("token", "")
             full_answer += token_text
@@ -109,7 +113,9 @@ def process_rag_stream(
             yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
         elif event_type == "done":
             full_answer = event_data.get("answer", full_answer)
-            citations_data = event_data.get("citations", citations_data)
+            citations_data = enrich_citations_with_document_ids(
+                db, event_data.get("citations", citations_data)
+            )
             execution_time_data = event_data.get("timing", {})
 
     metadata_payload = {

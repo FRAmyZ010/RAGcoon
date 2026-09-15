@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  ExternalLink,
   FileText,
   FolderClosed,
   Menu,
@@ -15,6 +16,7 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react";
+import { openDocumentPreview } from "./services/documentsApi";
 
 const SUGGESTIONS = [
   "What senior projects used IoT or Bluetooth?",
@@ -489,26 +491,50 @@ export default function App() {
                             msg.citations.length > 0 && (
                               <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3.5 text-xs text-gray-700 shadow-sm">
                                 <div className="font-bold text-gray-900">Sources</div>
-                                {msg.citations.map((c, i) => (
-                                  <div
-                                    key={i}
-                                    className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
-                                  >
-                                    <div className="font-semibold text-[#800000]">
-                                      {c.project_title || c.source}
-                                      {c.page ? (
-                                        <span className="ml-1 font-normal text-gray-500">
-                                          · page {c.page}
-                                        </span>
-                                      ) : null}
+                                {msg.citations.map((c, i) => {
+                                  const canPreview = Boolean(c.document_id);
+                                  return (
+                                    <div
+                                      key={i}
+                                      className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-[#800000]">
+                                            {c.project_title || c.source}
+                                            {c.page ? (
+                                              <span className="ml-1 font-normal text-gray-500">
+                                                · page {c.page}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                          {c.content_snippet && (
+                                            <p className="mt-1 line-clamp-3 text-gray-500 italic">
+                                              "{c.content_snippet}"
+                                            </p>
+                                          )}
+                                        </div>
+                                        {canPreview ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openDocumentPreview(c.document_id, c.page)
+                                            }
+                                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                                            title="Open PDF preview"
+                                          >
+                                            <ExternalLink className="h-3.5 w-3.5" />
+                                            Preview
+                                          </button>
+                                        ) : (
+                                          <span className="shrink-0 text-[11px] text-gray-400">
+                                            No file
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                    {c.content_snippet && (
-                                      <p className="mt-1 line-clamp-3 text-gray-500 italic">
-                                        "{c.content_snippet}"
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                         </div>

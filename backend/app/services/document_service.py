@@ -142,6 +142,107 @@ def get_document_by_id(db: Session, document_id: int) -> Document | None:
         .first()
     )
 
+def resolve_document_file_path(
+    db: Session,
+    document_id: int,
+) -> tuple[str | None, str | None]:
+    """Return (absolute_or_relative_path, download_filename) if the PDF exists on disk."""
+    document = get_document_by_id(db=db, document_id=document_id)
+    if not document or not document.file_path:
+        return None, None
+    if not os.path.exists(document.file_path):
+        return None, None
+    return document.file_path, document.filename or os.path.basename(document.file_path)
+
+def find_document_for_citation(
+    db: Session,
+    *,
+    source: str | None = None,
+    project_title: str | None = None,
+) -> Document | None:
+    """Resolve a citation payload back to a Document row."""
+    if source:
+        source_name = os.path.basename(source.strip())
+        if source_name:
+            doc = (
+                db.query(Document)
+                .filter(
+                    (Document.filename == source_name)
+                    | (Document.file_path.endswith(source_name))
+                )
+                .order_by(Document.id.desc())
+                .first()
+            )
+            if doc:
+                return doc
+
+            # Older uploads may have used temp_{filename} as Qdrant source
+            if source_name.startswith("temp_"):
+                original = source_name[len("temp_"):]
+                doc = (
+                    db.query(Document)
+                    .filter(
+                        (Document.filename == original)
+                        | (Document.file_path.endswith(original))
+                        | (Document.file_path.contains(f"_{original}"))
+                    )
+                    .order_by(Document.id.desc())
+                    .first()
+                )
+                if doc:
+                    return doc
+
+    if project_title and project_title.strip():
+        title = project_title.strip()
+        doc = (
+            db.query(Document)
+            .filter(Document.title == title)
+            .order_by(Document.id.desc())
+            .first()
+        )
+        if doc:
+            return doc
+
+        project = db.query(Project).filter(Project.title == title).first()
+        if project and project.documents:
+            return max(project.documents, key=lambda d: d.id)
+
+    return None
+
+def enrich_citations_with_document_ids(
+    db: Session,
+    citations: list[dict] | None,
+) -> list[dict]:
+    """Attach document_id (and a single page) so the Chat UI can open PDF preview."""
+    if not citations:
+        return []
+
+    enriched: list[dict] = []
+    for raw in citations:
+        citation = dict(raw) if isinstance(raw, dict) else {}
+        source = citation.get("source")
+        project_title = citation.get("project_title")
+        document = find_document_for_citation(
+            db,
+            source=source,
+            project_title=project_title,
+        )
+        if document:
+            citation["document_id"] = document.id
+
+        # Normalize page for frontend: prefer explicit page, else first of pages list
+        if citation.get("page") is None:
+            pages = citation.get("pages")
+            if isinstance(pages, list) and pages:
+                try:
+                    citation["page"] = int(pages[0])
+                except (TypeError, ValueError):
+                    pass
+
+        enriched.append(citation)
+
+    return enriched
+
 def delete_document_by_id(db: Session, document_id: int) -> bool:
     document = (
         db.query(Document)

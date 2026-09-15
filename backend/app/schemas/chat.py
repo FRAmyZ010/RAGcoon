@@ -17,6 +17,15 @@ class DocumentCitation(BaseModel):
     source: str
     page: int | None = None
     content_snippet: str | None = None
+    document_id: int | None = None
+    # Extra fields from retrieval payload (ignored by UI if unused)
+    pages: list | None = None
+    pages_formatted: str | None = None
+    author: str | None = None
+    advisor: str | None = None
+    year: str | int | None = None
+
+    model_config = ConfigDict(extra="ignore")
 
 class ChatResponse(BaseModel):
     query_id: int | None = None

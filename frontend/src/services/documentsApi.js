@@ -50,6 +50,21 @@ export async function deleteDocument(documentId) {
   return res.json();
 }
 
+/** Open PDF preview in a new browser tab (optionally jump to page). */
+export function openDocumentPreview(documentId, page) {
+  if (!documentId) return;
+  const pageNum = page && Number(page) > 0 ? Number(page) : null;
+  const url = pageNum
+    ? `${DOCUMENTS_BASE}/${documentId}/file#page=${pageNum}`
+    : `${DOCUMENTS_BASE}/${documentId}/file`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+export function getDocumentFileUrl(documentId) {
+  if (!documentId) return null;
+  return `${DOCUMENTS_BASE}/${documentId}/file`;
+}
+
 export function mapDocumentToRow(doc) {
   const statusMap = {
     COMPLETED: "Ready",
