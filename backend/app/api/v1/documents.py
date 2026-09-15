@@ -10,6 +10,7 @@ from app.services.document_service import (
     get_document_by_id,
     delete_document_by_id,
     resolve_document_file_path,
+    DocumentUploadError,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
@@ -36,6 +37,8 @@ async def upload_document(
             db=db,
             file=file
         )
+    except DocumentUploadError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -7,6 +7,50 @@ from app.models.document import Document
 from app.schemas.document import ProcessingStatus
 
 UPLOAD_DIR = "storage/documents"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB
+
+
+class DocumentUploadError(Exception):
+    """Controlled upload validation error mapped to HTTP 4xx by the API layer."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+class DuplicateDocumentError(DocumentUploadError):
+    def __init__(self, project_title: str):
+        super().__init__(
+            message=(
+                f"พบเอกสารชื่อโครงงานซ้ำ: \"{project_title}\" "
+                "กรุณาลบเอกสารเดิมก่อน หรืออัปโหลดไฟล์คนละโครงงาน"
+            ),
+            status_code=409,
+        )
+        self.project_title = project_title
+
+
+def _assert_pdf_file(temp_file_path: str, filename: str | None) -> None:
+    size = os.path.getsize(temp_file_path)
+    if size <= 0:
+        raise DocumentUploadError("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้")
+    if size > MAX_UPLOAD_BYTES:
+        raise DocumentUploadError(
+            f"ไฟล์ใหญ่เกิน {MAX_UPLOAD_BYTES // (1024 * 1024)}MB "
+            f"(ขนาดปัจจุบัน {size / (1024 * 1024):.1f}MB)"
+        )
+
+    with open(temp_file_path, "rb") as fh:
+        header = fh.read(5)
+    if not header.startswith(b"%PDF"):
+        raise DocumentUploadError(
+            "ไฟล์ไม่ใช่ PDF ที่ถูกต้อง หรือไฟล์เสียหาย (ต้องขึ้นต้นด้วย %PDF)"
+        )
+
+    if filename and not filename.lower().endswith(".pdf"):
+        raise DocumentUploadError("รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น")
+
 
 def process_document_upload_auto(
     db: Session,
@@ -15,30 +59,39 @@ def process_document_upload_auto(
     """
     Automated Ingestion Flow:
     1. จัดเก็บไฟล์ PDF ชั่วคราวลง Disk Storage
-    2. เรียก RAG Pipeline เพื่อสกัด Metadata (Title, Advisor, Author, Year) จากตัวไฟล์โดยอัตโนมัติ
-    3. เช็ค Duplicate ใน PostgreSQL ผ่าน project_title ที่สกัดได้
-    4. บันทึกข้อมูลลง PostgreSQL และ Vector Store (Qdrant)
+    2. ตรวจสอบขนาด / PDF header
+    3. เรียก RAG Pipeline เพื่อสกัด Metadata
+    4. ปฏิเสธถ้า project_title ซ้ำ (409)
+    5. บันทึก PostgreSQL + Qdrant
     """
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    # 1. บันทึกไฟล์ PDF ชั่วคราวเข้า Storage เพื่อให้ RAG Engine อ่านได้
     safe_filename = file.filename.replace(" ", "_") if file.filename else "uploaded.pdf"
     temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{safe_filename}")
 
     with open(temp_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 2. Trigger AI Pipeline เพื่อสกัด Metadata จาก PDF 5 หน้าแรก
     try:
+        _assert_pdf_file(temp_file_path, file.filename)
+
         from app.rag.embedding.pdf_scanning import scan_pdf_document
         from app.rag.embedding.text_processor import chunk_extracted_data
         from app.rag.embedding.vector_store import upload_to_qdrant
 
         pages = scan_pdf_document(temp_file_path)
         if not pages:
-            raise ValueError("ไม่พบข้อความในไฟล์ PDF หรือไฟล์ชำรุด")
+            raise DocumentUploadError("ไม่พบข้อความในไฟล์ PDF หรือไฟล์ชำรุด")
 
-        # ดึง Metadata ที่ RAG Engine สกัดได้จากหน้าแรก
+        has_text = any(
+            isinstance(page.get("content"), str) and page["content"].strip()
+            for page in pages
+        )
+        if not has_text:
+            raise DocumentUploadError(
+                "อ่านข้อความจาก PDF ไม่ได้ (อาจเป็นสแกนภาพอย่างเดียว หรือไฟล์เสีย)"
+            )
+
         extracted_meta = pages[0].get("metadata", {})
         project_title = extracted_meta.get("project_title") or file.filename or "Untitled Project"
         academic_year = int(extracted_meta["year"]) if extracted_meta.get("year") and str(extracted_meta["year"]).isdigit() else None
@@ -51,26 +104,10 @@ def process_document_upload_auto(
         if isinstance(keywords, list):
             keywords = ", ".join(str(item) for item in keywords if item)
 
-        # 3. ตรวจสอบโครงงานซ้ำ (Duplicate Check) จาก project_title ที่สกัดได้
         existing_project = db.query(Project).filter(Project.title == project_title).first()
         if existing_project:
-            from app.rag.embedding.vector_store import delete_from_qdrant
+            raise DuplicateDocumentError(project_title)
 
-            for doc in existing_project.documents:
-                delete_from_qdrant(
-                    project_title=existing_project.title or doc.title,
-                    filename=doc.filename,
-                    file_path=doc.file_path,
-                )
-                if doc.file_path and os.path.exists(doc.file_path):
-                    try:
-                        os.remove(doc.file_path)
-                    except OSError:
-                        pass
-            db.delete(existing_project)
-            db.commit()
-
-        # 4. บันทึก Record ในตาราง projects
         project = Project(
             title=project_title,
             academic_year=academic_year,
@@ -81,18 +118,15 @@ def process_document_upload_auto(
         db.commit()
         db.refresh(project)
 
-        # 5. เปลี่ยนชื่อและย้ายไฟล์ไปยัง Path จริงประจำ Project ID
         final_file_path = os.path.join(UPLOAD_DIR, f"{project.id}_{safe_filename}")
         if os.path.exists(temp_file_path):
             os.rename(temp_file_path, final_file_path)
 
-        # อัปเดต source ใน metadata ให้ตรงกับชื่อไฟล์จริง (ไม่ใช้ temp_*)
         for page in pages:
             page_meta = page.get("metadata")
             if isinstance(page_meta, dict):
                 page_meta["source"] = os.path.basename(final_file_path)
 
-        # 6. บันทึก Record ในตาราง documents
         document = Document(
             project_id=project.id,
             filename=file.filename or "uploaded.pdf",
@@ -106,19 +140,29 @@ def process_document_upload_auto(
         db.commit()
         db.refresh(document)
 
-        # 7. ทำการ Chunking และ Upload Vector Embeddings เข้า Qdrant
         chunks = chunk_extracted_data(pages)
         success = upload_to_qdrant(chunks)
 
         document.status = ProcessingStatus.COMPLETED.value if success else ProcessingStatus.FAILED.value
 
+    except DocumentUploadError:
+        if os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+        raise
     except Exception as e:
         if os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
             except OSError:
                 pass
-        raise e
+        # Normalize common PDF parse failures to 400
+        message = str(e)
+        if any(token in message.lower() for token in ("pdf", "syntax", "decrypt", "trailer", "eof")):
+            raise DocumentUploadError(f"ไฟล์ PDF เสียหรืออ่านไม่ได้: {message}") from e
+        raise
 
     db.commit()
     db.refresh(document)
