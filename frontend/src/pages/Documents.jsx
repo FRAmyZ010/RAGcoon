@@ -23,6 +23,7 @@ import {
   mapDocumentToRow,
   openDocumentPreview,
   uploadDocument,
+  MAX_UPLOAD_BYTES,
 } from "../services/documentsApi";
 
 export default function DocumentsManagement() {
@@ -99,8 +100,7 @@ export default function DocumentsManagement() {
       return;
     }
 
-    const maxBytes = 25 * 1024 * 1024;
-    if (file.size > maxBytes) {
+    if (file.size > MAX_UPLOAD_BYTES) {
       setUploadError("ไฟล์ใหญ่เกิน 25MB");
       return;
     }

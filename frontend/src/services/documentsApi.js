@@ -1,4 +1,5 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function listDocuments() {
   const res = await fetch(DOCUMENTS_BASE);
@@ -9,6 +10,16 @@ export async function listDocuments() {
 }
 
 export async function uploadDocument(file) {
+  if (!file) {
+    throw new Error("ไม่ได้เลือกไฟล์");
+  }
+  if (!file.name?.toLowerCase().endsWith(".pdf")) {
+    throw new Error("รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น");
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error("ไฟล์ใหญ่เกิน 25MB");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
 
@@ -21,11 +32,15 @@ export async function uploadDocument(file) {
     let detail = `Upload failed (${res.status})`;
     try {
       const data = await res.json();
-      if (data?.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      if (data?.detail) {
+        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      }
     } catch {
       // keep default message
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = res.status;
+    throw error;
   }
 
   return res.json();
