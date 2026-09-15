@@ -10,6 +10,8 @@ import {
   LogOut,
   Bell,
   Trash2,
+  Download,
+  ExternalLink,
   X,
   UploadCloud,
   Loader2,
@@ -19,6 +21,7 @@ import {
   deleteDocument,
   listDocuments,
   mapDocumentToRow,
+  openDocumentPreview,
   uploadDocument,
 } from "../services/documentsApi";
 
@@ -70,6 +73,22 @@ export default function DocumentsManagement() {
     } finally {
       setActionBusyId(null);
     }
+  };
+
+  const handlePreview = (id) => {
+    setActiveMenuIndex(null);
+    openDocumentPreview(id);
+  };
+
+  const handleDownload = (id, filename) => {
+    setActiveMenuIndex(null);
+    const link = document.createElement("a");
+    link.href = `/api/v1/documents/${id}/file?download=true`;
+    link.download = filename || `document-${id}.pdf`;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   const handleUploadFile = async (file) => {
@@ -323,7 +342,21 @@ export default function DocumentsManagement() {
                         </button>
 
                         {activeMenuIndex === idx && (
-                          <div className="absolute right-4 top-10 z-20 w-36 rounded-xl bg-white p-1 shadow-xl border border-gray-200 text-left text-xs">
+                          <div className="absolute right-4 top-10 z-20 w-40 rounded-xl bg-white p-1 shadow-xl border border-gray-200 text-left text-xs">
+                            <button
+                              onClick={() => handlePreview(row.id)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              <span>Preview</span>
+                            </button>
+                            <button
+                              onClick={() => handleDownload(row.id, row.filename)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              <span>Download</span>
+                            </button>
                             <button
                               onClick={() => handleRemove(row.id)}
                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-red-600 hover:bg-red-50"

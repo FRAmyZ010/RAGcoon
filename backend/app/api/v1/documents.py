@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
 from app.core.database import get_db
@@ -8,6 +9,7 @@ from app.services.document_service import (
     get_all_documents,
     get_document_by_id,
     delete_document_by_id,
+    resolve_document_file_path,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
@@ -47,6 +49,27 @@ def list_documents(
     db: Session = Depends(get_db)
 ):
     return get_all_documents(db=db, skip=skip, limit=limit)
+
+@router.get("/{document_id}/file")
+def download_document_file(
+    document_id: int,
+    download: bool = False,
+    db: Session = Depends(get_db)
+):
+    """Serve the original PDF for browser preview / download."""
+    file_path, filename = resolve_document_file_path(db=db, document_id=document_id)
+    if not file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบไฟล์เอกสารรหัส: {document_id}"
+        )
+
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=filename,
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 @router.get("/{document_id}", response_model=DocumentResponse)
 def get_document_detail(
