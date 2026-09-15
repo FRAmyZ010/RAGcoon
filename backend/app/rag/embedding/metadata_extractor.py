@@ -9,6 +9,20 @@ _TITLE_WORDS = {
 }
 
 
+def _clean_name_spacing(name: str | None) -> str | None:
+    """Clean missing spaces after dots and in CamelCase/TitleCase words from OCR/PDF."""
+    if not name or not isinstance(name, str):
+        return name
+    cleaned = name.strip(" .:-()[]")
+    # 1. Add space between dot and following letter (e.g. "Asst.Prof." -> "Asst. Prof.")
+    cleaned = re.sub(r"\.([A-Za-z])", r". \1", cleaned)
+    # 2. Add space between lowercase and uppercase letter (e.g. "SurapolVorapatratorn" -> "Surapol Vorapatratorn")
+    cleaned = re.sub(r"([a-z])([A-Z])", r"\1 \2", cleaned)
+    # 3. Clean multiple whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .:-")
+    return cleaned or None
+
+
 def _looks_like_author_name(line: str) -> bool:
     if _NAME_PREFIX_PATTERN.fullmatch(line):
         return True
@@ -78,10 +92,10 @@ def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]
 
         name = next(
             (
-                candidate
+                _clean_name_spacing(candidate)
                 for candidate in candidates
-                if len(candidate) > 3
-                and re.fullmatch(r"[A-Za-z][A-Za-z .,'()&-]*", candidate)
+                if candidate and len(_clean_name_spacing(candidate) or "") > 3
+                and re.fullmatch(r"[A-Za-z][A-Za-z .,'()&-]*", _clean_name_spacing(candidate) or "")
             ),
             None,
         )
@@ -211,9 +225,14 @@ def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
         found_advisor = approval_advisor
         found_committee = approval_committee
 
-    metadata["advisor"] = found_advisor
+    cleaned_advisor = _clean_name_spacing(found_advisor)
+    metadata["advisor"] = cleaned_advisor
     if found_committee:
-        metadata["committee"] = ", ".join(dict.fromkeys(found_committee))
+        cleaned_committee_list = [
+            _clean_name_spacing(c) for c in found_committee
+            if _clean_name_spacing(c)
+        ]
+        metadata["committee"] = ", ".join(dict.fromkeys(cleaned_committee_list))
 
     # --- ส่วน Keywords (Logic ใหม่: สแกนทีละบรรทัด) ---
     lines = [line.strip() for line in first_page_text.split('\n') if line.strip()]

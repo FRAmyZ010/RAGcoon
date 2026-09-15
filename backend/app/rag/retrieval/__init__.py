@@ -23,13 +23,16 @@ if TYPE_CHECKING:
     from .filters import build_qdrant_filter
     from .normalizer import normalize_user_query as normalize_query
     from .performance import format_performance_summary
-    from .prompt import answer_question
+    from .prompt import answer_question, stream_answer_question, stream_llm_response
     from .rerank import normalize_scores, rerank
     from .semantic import semantic_search
     from .service import hybrid_search, search, search_with_details
+    from .session_manager import SessionChatManager, session_manager
 
 _EXPORTS = {
     "answer_question": (".prompt", "answer_question"),
+    "stream_answer_question": (".prompt", "stream_answer_question"),
+    "stream_llm_response": (".prompt", "stream_llm_response"),
     "build_qdrant_filter": (".filters", "build_qdrant_filter"),
     "extract_query_and_filters": (".extractor", "extract_query_and_filters"),
     "format_performance_summary": (".performance", "format_performance_summary"),
@@ -41,6 +44,8 @@ _EXPORTS = {
     "search": (".service", "search"),
     "search_with_details": (".service", "search_with_details"),
     "semantic_search": (".semantic", "semantic_search"),
+    "session_manager": (".session_manager", "session_manager"),
+    "SessionChatManager": (".session_manager", "SessionChatManager"),
     "COLLECTION_NAME": (".config", "COLLECTION_NAME"),
     "DEFAULT_TOP_K": (".config", "DEFAULT_TOP_K"),
     "DEFAULT_TOP_N": (".config", "DEFAULT_TOP_N"),
@@ -60,6 +65,8 @@ __all__ = (
     "QDRANT_API_KEY",
     "QDRANT_URL",
     "answer_question",
+    "stream_answer_question",
+    "stream_llm_response",
     "build_qdrant_filter",
     "client",
     "extract_query_and_filters",
@@ -74,6 +81,8 @@ __all__ = (
     "search",
     "search_with_details",
     "semantic_search",
+    "session_manager",
+    "SessionChatManager",
 )
 
 
