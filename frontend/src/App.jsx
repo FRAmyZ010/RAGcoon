@@ -1,35 +1,45 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  FileText,
+  FolderClosed,
+  Menu,
+  MessageSquarePlus,
+  PanelLeftClose,
+  Search,
+  SendHorizontal,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from "lucide-react";
+
+const SUGGESTIONS = [
+  "What senior projects used IoT or Bluetooth?",
+  "List projects advised by Surapol",
+  "Summarize projects about web applications",
+];
 
 export default function App() {
-  // =========================================================
-  // STATE MANAGEMENT
-  // =========================================================
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
-  const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New Workspace");
-
-  // UI Responsive & Menu States
-  const [showSettings, setShowSettings] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New chat");
   const [showCitationsIndex, setShowCitationsIndex] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // ปิดใน Mobile เป็น Default
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [feedback, setFeedback] = useState({});
   const [copiedIndex, setCopiedIndex] = useState(null);
 
   const chatEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-  // =========================================================
-  // INITIAL SETUP: LOAD WORKSPACES ONLY (NO AUTO-NEW WORKSPACE)
-  // =========================================================
   useEffect(() => {
     fetchWorkspaces();
-    // นำ handleNewWorkspace(); ออกจากตรงนี้ เพื่อไม่ให้สร้างแชทใหม่อัตโนมัติเมื่อเปิดหน้าแรก
-
-    // Auto Open Sidebar บนหน้าจอ Desktop
     if (window.innerWidth >= 1024) {
       setSidebarOpen(true);
     }
@@ -43,8 +53,7 @@ export default function App() {
     try {
       const res = await fetch("/api/v1/chat/workspaces");
       if (res.ok) {
-        const data = await res.json();
-        setWorkspaces(data);
+        setWorkspaces(await res.json());
       }
     } catch (err) {
       console.error("Failed to load workspaces:", err);
@@ -54,23 +63,19 @@ export default function App() {
   const handleNewWorkspace = () => {
     const newWorkspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
     setActiveWorkspaceId(newWorkspaceId);
-    setActiveWorkspaceTitle("New Workspace");
-    setMessages([
-      {
-        role: "bot",
-        text: "Hi! I am RAGcoon AI Assistant 🦝 . I am ready to help searching for CE senior project",
-        meta: "RAGcoon Engine Ready",
-        citations: [],
-      },
-    ]);
+    setActiveWorkspaceTitle("New chat");
+    setMessages([]);
+    setShowCitationsIndex(null);
+    setFeedback({});
+    inputRef.current?.focus();
   };
 
   const handleSelectWorkspace = async (ws) => {
     setActiveWorkspaceId(ws.workspace_id);
     setActiveWorkspaceTitle(ws.title);
     setLoading(true);
+    setShowCitationsIndex(null);
 
-    // บนหน้าจอมือถือ ให้ปิด Sidebar หลังเลือกห้องแชท
     if (window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
@@ -88,7 +93,7 @@ export default function App() {
             text: q.response_text,
             citations: q.retrieved_docs?.citations || [],
             meta: q.retrieved_docs?.timing
-              ? `Total: ${q.retrieved_docs.timing.total_seconds}s`
+              ? `Total ${q.retrieved_docs.timing.total_seconds}s`
               : "",
           });
         });
@@ -102,28 +107,14 @@ export default function App() {
     }
   };
 
-  // =========================================================
-  // SSE REAL-TIME STREAMING QUERY HANDLER
-  // =========================================================
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
-
-    const userQuery = input.trim();
-    setInput("");
-
-    setMessages((prev) => [...prev, { role: "user", text: userQuery }]);
+  const streamQuery = async (userQuery, workspaceId = activeWorkspaceId) => {
     setLoading(true);
 
     const botMsgIndex = messages.length + 1;
     setMessages((prev) => [
       ...prev,
-      {
-        role: "bot",
-        text: "",
-        citations: [],
-        meta: "Searching...",
-      },
+      { role: "user", text: userQuery },
+      { role: "bot", text: "", citations: [], meta: "Searching..." },
     ]);
 
     try {
@@ -132,7 +123,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query_text: userQuery,
-          workspace_id: activeWorkspaceId,
+          workspace_id: workspaceId,
         }),
       });
 
@@ -161,7 +152,7 @@ export default function App() {
 
             if (data.type === "answer_chunk") {
               currentText += data.content;
-              if (data.workspace_id && !activeWorkspaceId) {
+              if (data.workspace_id && !workspaceId) {
                 setActiveWorkspaceId(data.workspace_id);
                 fetchWorkspaces();
               }
@@ -171,6 +162,7 @@ export default function App() {
                 updated[botMsgIndex] = {
                   ...updated[botMsgIndex],
                   text: currentText,
+                  meta: "Generating...",
                 };
                 return updated;
               });
@@ -183,7 +175,7 @@ export default function App() {
                   ...updated[botMsgIndex],
                   citations: data.citations || [],
                   meta: data.timing
-                    ? `Total: ${data.timing.total_seconds || 0}s | Retrieval: ${data.timing.retrieval_seconds || 0}s`
+                    ? `Total ${data.timing.total_seconds || 0}s · Retrieval ${data.timing.retrieval_seconds || 0}s`
                     : "Completed",
                 };
                 return updated;
@@ -201,7 +193,8 @@ export default function App() {
         const updated = [...prev];
         updated[botMsgIndex] = {
           ...updated[botMsgIndex],
-          text: "Failed to connect RAG Engine. Please try again!",
+          text: "Failed to connect to the RAG engine. Please try again.",
+          meta: "Error",
         };
         return updated;
       });
@@ -210,12 +203,41 @@ export default function App() {
     }
   };
 
+  const handleSend = async (e) => {
+    e?.preventDefault();
+    if (!input.trim() || loading) return;
+
+    const userQuery = input.trim();
+    setInput("");
+
+    let workspaceId = activeWorkspaceId;
+    if (!workspaceId) {
+      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      setActiveWorkspaceId(workspaceId);
+      setActiveWorkspaceTitle("New chat");
+    }
+
+    await streamQuery(userQuery, workspaceId);
+  };
+
+  const handleSuggestion = async (text) => {
+    if (loading) return;
+    setInput("");
+    let workspaceId = activeWorkspaceId;
+    if (!workspaceId) {
+      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      setActiveWorkspaceId(workspaceId);
+      setActiveWorkspaceTitle("New chat");
+    }
+    await streamQuery(text, workspaceId);
+  };
+
   const handleCopy = async (text, idx) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(idx);
       setTimeout(() => setCopiedIndex(null), 1500);
-    } catch (error) {
+    } catch {
       console.log("Copy failed");
     }
   };
@@ -224,298 +246,327 @@ export default function App() {
     item.title.toLowerCase().includes(search.toLowerCase())
   );
 
+  const showEmptyState = messages.length === 0 && !loading;
+
   return (
-    <div className="flex h-screen w-screen bg-white font-sans text-sm overflow-hidden relative">
-      {/* MOBILE BACKDROP OVERLAY */}
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-sm text-gray-800">
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity"
+          className="fixed inset-0 z-30 bg-black/50 transition-opacity lg:hidden"
         />
       )}
 
-      {/* ===================================================
-          SIDEBAR (RESPONSIVE DRAWER)
-      ==================================================== */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 flex w-72 lg:w-64 shrink-0 flex-col justify-between bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ease-in-out border-r border-gray-700 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-gray-700 bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ease-in-out lg:static lg:w-64 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
-        <div className="flex flex-col h-full min-h-0">
-          {/* BRAND HEADER */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 font-bold text-base md:text-lg">
-              <span className="text-xl">🦝</span>
-              <span>RAGcoon</span>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"
-            >
-              ✕
-            </button>
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-base font-bold md:text-lg">
+            <span className="text-xl" aria-hidden>
+              🦝
+            </span>
+            <span>RAGcoon</span>
           </div>
-
-          {/* SEARCH BOX */}
-          <div className="relative mb-3">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Workspaces..."
-              className="h-9 w-full rounded-lg bg-white/10 pl-9 pr-3 text-xs md:text-sm text-white outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-gray-500"
-            />
-          </div>
-
-          {/* NEW WORKSPACE BUTTON */}
           <button
-            onClick={handleNewWorkspace}
-            className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs md:text-sm font-medium text-gray-200 transition hover:bg-white/20 hover:text-white border border-dashed border-gray-600"
+            onClick={() => setSidebarOpen(false)}
+            className="rounded p-1.5 text-gray-400 hover:bg-white/10 hover:text-white lg:hidden"
+            aria-label="Close sidebar"
           >
-            <span className="text-base">+</span>
-            <span>New Workspace</span>
+            <X className="h-4 w-4" />
           </button>
-
-          {/* RECENTS LIST */}
-          <div className="flex-1 overflow-y-auto min-h-0 space-y-1 pr-1">
-            <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-              Recents
-            </div>
-            {filteredWorkspaces.map((ws) => (
-              <button
-                key={ws.workspace_id}
-                onClick={() => handleSelectWorkspace(ws)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs md:text-sm transition ${
-                  activeWorkspaceId === ws.workspace_id
-                    ? "bg-white/20 font-semibold text-white"
-                    : "text-gray-300 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="text-gray-500 text-xs">▸</span>
-                  <span className="truncate">{ws.title}</span>
-                </span>
-              </button>
-            ))}
-
-            {filteredWorkspaces.length === 0 && (
-              <div className="px-2 py-4 text-center text-xs text-gray-500">
-                No recent workspace found
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* SIDEBAR FOOTER */}
-        {/* <div className="mt-4 pt-3 border-t border-gray-700 space-y-2">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs md:text-sm text-gray-300 hover:bg-white/10 hover:text-white"
-          >
-            <span className="flex items-center gap-2">⚙ Settings</span>
-            <span>{showSettings ? "▲" : "▼"}</span>
-          </button>
+        <button
+          onClick={handleNewWorkspace}
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 bg-white/10 px-3 py-2.5 text-xs font-medium text-gray-100 transition hover:bg-white/20 hover:text-white md:text-sm"
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          <span>New chat</span>
+        </button>
 
-          {showSettings && (
-            <div className="rounded-lg bg-[#222222] p-2 text-xs text-gray-300 space-y-1">
-              <button className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10">Appearance</button>
-              <button className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10">RAG Configuration</button>
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search chats..."
+            className="h-9 w-full rounded-lg bg-white/10 pl-9 pr-3 text-xs text-white outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-gray-500 md:text-sm"
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+            Recents
+          </div>
+          {filteredWorkspaces.map((ws) => (
+            <button
+              key={ws.workspace_id}
+              onClick={() => handleSelectWorkspace(ws)}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition md:text-sm ${
+                activeWorkspaceId === ws.workspace_id
+                  ? "bg-white/20 font-semibold text-white"
+                  : "text-gray-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+              <span className="truncate">{ws.title}</span>
+            </button>
+          ))}
+
+          {filteredWorkspaces.length === 0 && (
+            <div className="px-2 py-6 text-center text-xs text-gray-500">
+              No chats yet. Start a new conversation.
             </div>
           )}
+        </div>
 
-          <button
-            onClick={() => window.confirm("คุณต้องการออกจากระบบหรือไม่?") && alert("Logout สำเร็จ")}
-            className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-xs md:text-sm font-bold text-[#2d2d2d] transition hover:bg-gray-200"
+        <div className="mt-4 space-y-1 border-t border-gray-700 pt-3">
+          <Link
+            to="/documents"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-300 transition hover:bg-white/10 hover:text-white md:text-sm"
           >
-            <span>Log Out</span>
-            <span>↪</span>
+            <FolderClosed className="h-4 w-4" />
+            <span>Documents</span>
+          </Link>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="hidden w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-400 transition hover:bg-white/10 hover:text-white lg:flex md:text-sm"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+            <span>Hide sidebar</span>
           </button>
-        </div> */}
+        </div>
       </aside>
 
-      {/* ===================================================
-          MAIN CONTENT AREA
-      ==================================================== */}
-      <main className="flex flex-1 flex-col h-full min-w-0 bg-white">
-        {/* HEADER TOP BAR */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-4 md:px-6 bg-white">
-          <div className="flex items-center gap-3 min-w-0">
+      <main className="flex h-full min-w-0 flex-1 flex-col bg-white">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white/90 px-4 backdrop-blur md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="rounded-lg p-1.5 hover:bg-gray-100 text-gray-700"
-              title="Toggle Sidebar"
+              className="rounded-lg p-1.5 text-gray-700 hover:bg-gray-100"
+              title="Toggle sidebar"
             >
-              ☰
+              <Menu className="h-5 w-5" />
             </button>
-            <h1 className="font-bold text-sm md:text-base text-gray-800 truncate">
-              {activeWorkspaceTitle}
-            </h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold text-gray-900 md:text-base">
+                {activeWorkspaceTitle}
+              </h1>
+              <p className="hidden text-[11px] text-gray-400 sm:block">
+                Ask about CE senior project archives
+              </p>
+            </div>
           </div>
 
-          {/* USER PROFILE */}
-          <div className="relative flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => setShowProfile(!showProfile)}
-              className="flex items-center gap-2 rounded-full p-1 hover:bg-gray-100"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#800000] text-xs font-bold text-white shadow-sm">
-                MJ
-              </div>
-              <span className="hidden text-xs md:text-sm font-semibold text-gray-700 sm:block">
-                Marry Jann
-              </span>
-            </button>
-
-            {showProfile && (
-              <div className="absolute right-0 top-12 z-50 w-44 rounded-xl border border-gray-200 bg-white p-2 shadow-xl text-xs">
-                <div className="border-b border-gray-100 px-3 py-2">
-                  <div className="font-bold text-gray-800">Marry Jann</div>
-                  <div className="text-gray-400">General User</div>
-                </div>
-                <button onClick={() => setShowProfile(false)} className="mt-1 w-full rounded-md px-3 py-2 text-left hover:bg-gray-100">
-                  Profile
-                </button>
-                <button onClick={() => setShowProfile(false)} className="w-full rounded-md px-3 py-2 text-left hover:bg-gray-100 text-red-600">
-                  Close
-                </button>
-              </div>
-            )}
+          <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
+              G
+            </span>
+            <span className="hidden sm:inline">Guest</span>
           </div>
         </header>
 
-        {/* CHAT MESSAGES PANEL */}
-        <section className="flex-1 overflow-y-auto px-3 sm:px-6 py-6 min-h-0">
-          <div className="mx-auto w-full max-w-3xl space-y-6">
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {msg.role === "user" ? (
-                  /* USER BUBBLE */
-                  <div className="max-w-[85%] sm:max-w-[75%]">
-                    <div className="mb-1 flex items-center justify-end gap-1.5 text-xs text-gray-500">
-                      <span>Marry Jann</span>
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
-                        MJ
+        <section className="min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-6">
+          <div className="mx-auto w-full max-w-3xl">
+            {showEmptyState ? (
+              <div className="flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2d2d2d] text-2xl shadow-sm">
+                  🦝
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
+                  How can RAGcoon help?
+                </h2>
+                <p className="mt-2 max-w-md text-sm text-gray-500">
+                  Search and summarize Computer Engineering senior project documents with citations.
+                </p>
+
+                <div className="mt-8 grid w-full max-w-xl gap-2 sm:grid-cols-1">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => handleSuggestion(suggestion)}
+                      className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {messages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {msg.role === "user" ? (
+                      <div className="max-w-[85%] sm:max-w-[75%]">
+                        <div className="rounded-2xl rounded-tr-md bg-[#2d2d2d] px-4 py-3 text-xs leading-relaxed text-white shadow-sm sm:text-sm">
+                          {msg.text}
+                        </div>
                       </div>
-                    </div>
-                    <div className="rounded-2xl rounded-tr-sm bg-[#e9ecef] px-4 py-3 text-xs sm:text-sm leading-relaxed text-gray-800 shadow-sm">
-                      {msg.text}
-                    </div>
+                    ) : (
+                      <div className="flex w-full max-w-[95%] gap-3 sm:max-w-[90%]">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base shadow-sm">
+                          🦝
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-xs leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-sm">
+                            <div className="whitespace-pre-wrap">
+                              {msg.text || (
+                                <span className="inline-flex items-center gap-2 text-gray-400">
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-400" />
+                                  Thinking...
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {(msg.text || (msg.citations && msg.citations.length > 0)) && (
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleCopy(msg.text, index)}
+                                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-gray-100 hover:text-gray-700"
+                                  title="Copy message"
+                                >
+                                  {copiedIndex === index ? (
+                                    <>
+                                      <Check className="h-3.5 w-3.5 text-green-600" />
+                                      Copied
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="h-3.5 w-3.5" />
+                                      Copy
+                                    </>
+                                  )}
+                                </button>
+
+                                {msg.citations && msg.citations.length > 0 && (
+                                  <button
+                                    onClick={() =>
+                                      setShowCitationsIndex(
+                                        showCitationsIndex === index ? null : index
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-gray-100 hover:text-gray-700"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" />
+                                    Sources ({msg.citations.length})
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => setFeedback({ ...feedback, [index]: "like" })}
+                                  className={`rounded-md p-1.5 hover:bg-gray-100 ${
+                                    feedback[index] === "like" ? "text-green-600" : ""
+                                  }`}
+                                  aria-label="Like"
+                                >
+                                  <ThumbsUp className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setFeedback({ ...feedback, [index]: "dislike" })}
+                                  className={`rounded-md p-1.5 hover:bg-gray-100 ${
+                                    feedback[index] === "dislike" ? "text-red-600" : ""
+                                  }`}
+                                  aria-label="Dislike"
+                                >
+                                  <ThumbsDown className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                              {msg.meta && (
+                                <span className="text-[11px] text-gray-400">{msg.meta}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {showCitationsIndex === index &&
+                            msg.citations &&
+                            msg.citations.length > 0 && (
+                              <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3.5 text-xs text-gray-700 shadow-sm">
+                                <div className="font-bold text-gray-900">Sources</div>
+                                {msg.citations.map((c, i) => (
+                                  <div
+                                    key={i}
+                                    className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                                  >
+                                    <div className="font-semibold text-[#800000]">
+                                      {c.project_title || c.source}
+                                      {c.page ? (
+                                        <span className="ml-1 font-normal text-gray-500">
+                                          · page {c.page}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {c.content_snippet && (
+                                      <p className="mt-1 line-clamp-3 text-gray-500 italic">
+                                        "{c.content_snippet}"
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  /* BOT BUBBLE */
-                  <div className="flex w-full gap-3 max-w-[95%] sm:max-w-[90%]">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg shadow-sm">
+                ))}
+
+                {loading && messages[messages.length - 1]?.role === "bot" && !messages[messages.length - 1]?.text && (
+                  <div className="flex items-center gap-3 text-xs text-gray-500 sm:text-sm">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
                       🦝
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="rounded-2xl rounded-tl-sm bg-gray-50 border border-gray-200 px-4 sm:px-5 py-4 text-xs sm:text-sm leading-relaxed text-gray-800 shadow-sm">
-                        <div className="whitespace-pre-wrap">{msg.text || "Thinking . . ."}</div>
-                      </div>
-
-                      {/* ACTION BAR */}
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleCopy(msg.text, index)}
-                            className="rounded p-1 hover:bg-gray-100 hover:text-gray-700"
-                            title="Copy message"
-                          >
-                            {copiedIndex === index ? "✓ Copied" : "▣ Copy"}
-                          </button>
-                          {msg.citations && msg.citations.length > 0 && (
-                            <button
-                              onClick={() =>
-                                setShowCitationsIndex(showCitationsIndex === index ? null : index)
-                              }
-                              className="rounded p-1 hover:bg-gray-100 hover:text-gray-700 font-medium"
-                            >
-                              📎 Citations ({msg.citations.length})
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setFeedback({ ...feedback, [index]: "like" })}
-                            className={`rounded p-1 hover:bg-gray-100 ${feedback[index] === "like" ? "text-green-600 font-bold" : ""}`}
-                          >
-                            👍
-                          </button>
-                          <button
-                            onClick={() => setFeedback({ ...feedback, [index]: "dislike" })}
-                            className={`rounded p-1 hover:bg-gray-100 ${feedback[index] === "dislike" ? "text-red-600 font-bold" : ""}`}
-                          >
-                            👎
-                          </button>
-                        </div>
-                        {msg.meta && <span className="text-[11px] text-gray-400">{msg.meta}</span>}
-                      </div>
-
-                      {/* CITATIONS SECTION */}
-                      {showCitationsIndex === index && msg.citations && msg.citations.length > 0 && (
-                        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3.5 text-xs text-gray-700 shadow-sm">
-                          <div className="font-bold text-gray-900 mb-2">📄 เอกสารอ้างอิง (Citations):</div>
-                          <ul className="list-disc pl-4 space-y-1.5">
-                            {msg.citations.map((c, i) => (
-                              <li key={i}>
-                                <span className="font-semibold text-blue-700">{c.project_title || c.source}</span>
-                                {c.page && ` (หน้า ${c.page})`}
-                                {c.content_snippet && (
-                                  <p className="text-gray-500 italic mt-0.5 text-xs">"{c.content_snippet}"</p>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                    <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+                      <span className="flex gap-1">
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.2s]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.1s]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
+                      </span>
+                      <span>Searching documents...</span>
                     </div>
                   </div>
                 )}
-              </div>
-            ))}
-
-            {loading && (
-              <div className="flex items-center gap-3 text-xs sm:text-sm text-gray-500">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">🦝</div>
-                <div className="flex items-center gap-1">
-                  <span>RAGcoon are searching for documents!</span>
-                  <span className="animate-pulse">...</span>
-                </div>
+                <div ref={chatEndRef} />
               </div>
             )}
-            <div ref={chatEndRef} />
           </div>
         </section>
 
-        {/* INPUT FORM (BOTTOM) */}
-        <div className="shrink-0 px-4 py-3 sm:px-6 border-t border-gray-100 bg-white">
+        <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3 sm:px-6">
           <form
             onSubmit={handleSend}
-            className="mx-auto flex max-w-3xl items-center rounded-full border border-gray-300 bg-gray-100 px-4 py-1.5 shadow-sm focus-within:border-gray-500 focus-within:bg-white transition"
+            className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm transition focus-within:border-gray-400 focus-within:bg-white"
           >
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={loading}
-              placeholder="Ask RAGcoon"
-              className="min-w-1 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-gray-800 outline-none placeholder:text-gray-400"
+              placeholder="Ask about a senior project..."
+              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-xs text-gray-800 outline-none placeholder:text-gray-400 sm:text-sm"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold transition ${
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
                 loading || !input.trim()
-                  ? "cursor-not-allowed text-gray-400 bg-gray-200"
+                  ? "cursor-not-allowed bg-gray-200 text-gray-400"
                   : "bg-[#2d2d2d] text-white hover:bg-black active:scale-95"
               }`}
+              aria-label="Send message"
             >
-              ➤
+              <SendHorizontal className="h-4 w-4" />
             </button>
           </form>
-          <div className="mt-2 text-center text-[10px] sm:text-xs text-gray-400">
-            RAGcoon Search Engine - Powered by FastAPI & Vector Qdrant
+          <div className="mt-2 text-center text-[10px] text-gray-400 sm:text-xs">
+            Answers are grounded in uploaded senior project PDFs · Citations included when available
           </div>
         </div>
       </main>
