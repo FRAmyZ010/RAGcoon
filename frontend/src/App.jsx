@@ -1,825 +1,372 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-
-const initialBotMessage = {
-  role: "bot",
-  text: `The PLC (Programmable Logic Controller) is an industrial digital computer designed to automate control processes in machinery and production systems. It enables real-time monitoring and control by receiving input signals, processing them based on programmed logic, and generating corresponding outputs.
-
-• Input Acquisition: The PLC collects signals from input devices such as sensors, switches, and buttons to determine the current state of the system.
-
-• Logic Processing: The collected data is processed according to a predefined control program, written in Ladder Diagram (LD) or other PLC programming languages.
-
-• Output Execution: Based on the processed logic, the PLC sends commands to output devices such as motors, relays, valves, or indicator lights.
-
-• Continuous Operation (Scan Cycle): The PLC continuously repeats the cycle of input, processing, and output at high speed to ensure real-time system response.`,
-  meta: "qwen2.5:7b-instruct - 30.52s (9.01 tok/s) - Mar 13, 1:09 AM",
-};
-
-const workspaces = [
-  "ฐานข้อมูลไม่มีเอกสาร PLC",
-  "ฐานข้อมูลเอกสารการทดลอง PLC",
-  "สรุปเกี่ยวกับ PetFeeder",
-  "Methodology ของ RAGcoon",
+const INITIAL_DOCS = [
+  { id: 'demo-1', title: 'ProjectPetFeeder', year: '2022', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'ProjectPetFeeder.pdf', size: '228 KB', demo: true },
+  { id: 'demo-2', title: 'ProjectWebapplication', year: '2023', category: 'Web Application', status: 'Ready', date: '12 Jan 2025', fileName: 'ProjectWebapplication.pdf', size: '228 KB', demo: true },
+  { id: 'demo-3', title: 'Networkmonitoring', year: '2023', category: 'Network', status: 'Processing', date: '12 Jan 2025', fileName: 'Networkmonitoring.pdf', size: '228 KB', demo: true },
+  { id: 'demo-4', title: 'Preprojectnetwork', year: '2022', category: 'Network', status: 'Failed', date: '12 Jan 2025', fileName: 'Preprojectnetwork.pdf', size: '228 KB', demo: true },
+  { id: 'demo-5', title: 'ProjectFulldocument', year: '2021', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'ProjectFulldocument.pdf', size: '228 KB', demo: true },
+  { id: 'demo-6', title: 'Embeddedsystemproject', year: '2020', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'Embeddedsystemproject.pdf', size: '228 KB', demo: true },
+  { id: 'demo-7', title: 'ProjectMachine', year: '2022', category: 'Machine Learning', status: 'Ready', date: '11 Jan 2025', fileName: 'ProjectMachine.pdf', size: '228 KB', demo: true },
+  { id: 'demo-8', title: 'Pre-project_NU-WIFI', year: '2021', category: 'Network', status: 'Processing', date: '11 Jan 2025', fileName: 'Pre-project_NU-WIFI.pdf', size: '228 KB', demo: true },
+  { id: 'demo-9', title: 'ProjectPetFeeder', year: '2022', category: 'IOT', status: 'Processing', date: '10 Jan 2025', fileName: 'ProjectPetFeeder-final.pdf', size: '228 KB', demo: true },
 ];
 
+const DB_NAME = 'ragcoon-docs-db';
+const STORE = 'files';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveFile(file) {
+  const db = await openDB();
+  const record = { id: file.id, blob: file.blob };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getFile(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(id);
+    req.onsuccess = () => resolve(req.result?.blob || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function removeStoredFile(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function readDocs() {
+  try {
+    return JSON.parse(localStorage.getItem('ragcoon-documents')) || INITIAL_DOCS;
+  } catch {
+    return INITIAL_DOCS;
+  }
+}
+
+function writeDocs(docs) {
+  localStorage.setItem('ragcoon-documents', JSON.stringify(docs));
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 KB';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function formatDate(date = new Date()) {
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function fileTitle(name) {
+  return name.replace(/\.[^/.]+$/, '');
+}
+
+function Icon({ name, size = 16 }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const paths = {
+    home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></>,
+    file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></>,
+    message: <><path d="M20 15a3 3 0 0 1-3 3H8l-4 3v-9a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></>,
+    upload: <><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
+    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+    download: <><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>,
+    copy: <><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></>,
+    edit: <><path d="m4 16-.8 4.8L8 20l11-11-4-4z"/><path d="m13 6 4 4"/></>,
+    trash: <><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="m6 7 1 14h10l1-14M9 7V4h6v3"/></>,
+    logout: <><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 4v16"/></>,
+    chevron: <path d="m6 9 6 6 6-6"/>,
+    check: <path d="m5 12 4 4L19 6"/>,
+  };
+  return <svg {...common}>{paths[name]}</svg>;
+}
+
 export default function App() {
-  // =========================================================
-  // CHAT STATE
-  // =========================================================
+  const [docs, setDocs] = useState(readDocs);
+  const [menuId, setMenuId] = useState(null);
+  const [filterCategory, setFilterCategory] = useState('Category');
+  const [filterModified, setFilterModified] = useState('Modified');
+  const [filterYear, setFilterYear] = useState('Years');
+  const [activeNav, setActiveNav] = useState('Documents Management');
+  const [toast, setToast] = useState('');
+  const [recent, setRecent] = useState(() => readDocs().filter(d => !d.demo).slice(0, 3));
+  const inputRef = useRef(null);
 
-  const [input, setInput] = useState("");
-
-  const [messages, setMessages] = useState([initialBotMessage]);
-
-  const [loading, setLoading] = useState(false);
-
-  const [search, setSearch] = useState("");
-
-  const [activeWorkspace, setActiveWorkspace] =
-    useState("ฐานข้อมูลไม่มีเอกสาร PLC");
-
-  // =========================================================
-  // UI STATE
-  // =========================================================
-
-  const [showSettings, setShowSettings] = useState(false);
-
-  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
-
-  const [showProfile, setShowProfile] = useState(false);
-
-  const [showCitations, setShowCitations] = useState(false);
-
-  const [showMore, setShowMore] = useState(false);
-
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  const [feedback, setFeedback] = useState(null);
-
-  const [copied, setCopied] = useState(false);
-
-  const chatEndRef = useRef(null);
-
-  // =========================================================
-  // AUTO SCROLL
-  // =========================================================
+  useEffect(() => writeDocs(docs), [docs]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages, loading]);
+    const close = () => setMenuId(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, []);
 
-  // =========================================================
-  // SEND MESSAGE
-  // =========================================================
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  const handleSend = (e) => {
-    e.preventDefault();
+  const categories = useMemo(() => ['Category', ...new Set(docs.map(d => d.category))], [docs]);
+  const years = useMemo(() => ['Years', ...new Set(docs.map(d => d.year))], [docs]);
 
-    if (!input.trim() || loading) return;
+  const filteredDocs = useMemo(() => docs.filter(d =>
+    (filterCategory === 'Category' || d.category === filterCategory) &&
+    (filterYear === 'Years' || d.year === filterYear)
+  ), [docs, filterCategory, filterYear]);
 
-    const userQuery = input.trim();
+  function notify(message) {
+    setToast(message);
+  }
 
-    // User message
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        text: userQuery,
-      },
-    ]);
+  async function handleUpload(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
 
-    setInput("");
-    setLoading(true);
+    const newDocs = [];
+    for (const file of files) {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const category = ext === 'pdf' ? 'PDF' : ['doc', 'docx'].includes(ext) ? 'Document' : 'Other';
+      const doc = {
+        id,
+        title: fileTitle(file.name),
+        year: String(new Date().getFullYear()),
+        category,
+        status: 'Processing',
+        date: formatDate(),
+        fileName: file.name,
+        size: formatBytes(file.size),
+        demo: false
+      };
+      await saveFile({ id, blob: file });
+      newDocs.push(doc);
+    }
 
-    // Mock RAG response
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "bot",
-          text: `Based on the RAGcoon knowledge base:
+    setDocs(prev => [...newDocs, ...prev]);
+    setRecent(prev => [...newDocs, ...prev].slice(0, 3));
+    notify(`${files.length} file${files.length > 1 ? 's' : ''} uploaded successfully`);
+    event.target.value = '';
+  }
 
-Your question is "${userQuery}"
+  async function handleDownload(doc) {
+    const blob = await getFile(doc.id);
+    if (!blob) {
+      notify('This sample file has no local file data');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName || doc.title;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    notify('Download started');
+  }
 
-The system searched the selected document workspace and generated this response from the available project documents.
-
-This is currently a frontend mock response. Later, this section can be connected to your FastAPI + Qdrant RAG backend.`,
-          meta:
-            "qwen2.5:7b-instruct - 1.2s - Mar 13, 1:10 AM",
-        },
-      ]);
-
-      setLoading(false);
-    }, 1000);
-  };
-
-  // =========================================================
-  // NEW WORKSPACE
-  // =========================================================
-
-  const handleNewWorkspace = () => {
-    const newName = prompt("ตั้งชื่อ Workspace ใหม่");
-
-    if (!newName?.trim()) return;
-
-    setActiveWorkspace(newName.trim());
-
-    setMessages([]);
-
-    setShowSettings(false);
-  };
-
-  // =========================================================
-  // COPY
-  // =========================================================
-
-  const handleCopy = async (text) => {
+  async function handleCopy(doc) {
     try {
-      await navigator.clipboard.writeText(text);
-
-      setCopied(true);
-
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch (error) {
-      console.log("Copy failed");
+      await navigator.clipboard.writeText(doc.fileName || doc.title);
+      notify('File name copied');
+    } catch {
+      notify('Copy is not available in this browser');
     }
-  };
+  }
 
-  // =========================================================
-  // REGENERATE
-  // =========================================================
+  function handleRename(doc) {
+    const next = window.prompt('Rename document', doc.title);
+    if (!next?.trim()) return;
+    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, title: next.trim() } : d));
+    setRecent(prev => prev.map(d => d.id === doc.id ? { ...d, title: next.trim() } : d));
+    setMenuId(null);
+    notify('Document renamed');
+  }
 
-  const handleRegenerate = (index) => {
-    const currentMessage = messages[index];
+  async function handleRemove(doc) {
+    const ok = window.confirm(`Remove "${doc.title}"?`);
+    if (!ok) return;
+    setDocs(prev => prev.filter(d => d.id !== doc.id));
+    setRecent(prev => prev.filter(d => d.id !== doc.id));
+    if (!doc.demo) await removeStoredFile(doc.id);
+    setMenuId(null);
+    notify('Document removed');
+  }
 
-    if (!currentMessage) return;
-
-    setLoading(true);
-
-    setTimeout(() => {
-      setMessages((prev) => {
-        const updated = [...prev];
-
-        updated[index] = {
-          ...updated[index],
-          text:
-            updated[index].text +
-            "\n\n[RAGcoon regenerated this response from the knowledge base.]",
-        };
-
-        return updated;
-      });
-
-      setLoading(false);
-    }, 800);
-  };
-
-  // =========================================================
-  // LOGOUT
-  // =========================================================
-
-  const handleLogout = () => {
-    const confirmLogout = window.confirm(
-      "คุณต้องการออกจากระบบหรือไม่?"
-    );
-
-    if (confirmLogout) {
-      alert("Logout สำเร็จ");
-    }
-  };
-
-  // =========================================================
-  // FILTER WORKSPACES
-  // =========================================================
-
-  const filteredWorkspaces = workspaces.filter((item) =>
-    item.toLowerCase().includes(search.toLowerCase())
-  );
+  function resetDemo() {
+    setDocs(INITIAL_DOCS);
+    setRecent([]);
+    notify('Demo documents restored');
+  }
 
   return (
-    <div className="min-h-screen w-full bg-[#858585] p-3 md:p-8 font-mono text-[12px]">
+    <div className="app-shell" onClick={() => setMenuId(null)}>
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">🦝</div>
+          <div className="brand-name">RAGcoon</div>
+          <div className="collapse-icon">▯</div>
+        </div>
 
-      {/* =====================================================
-          APP CONTAINER
-      ====================================================== */}
+        <nav className="nav">
+          {[
+            ['Dashboard', 'home'],
+            ['Documents Management', 'file'],
+            ['Feedback', 'message']
+          ].map(([label, icon]) => (
+            <button
+              key={label}
+              className={`nav-item ${activeNav === label ? 'active' : ''}`}
+              onClick={(e) => { e.stopPropagation(); setActiveNav(label); notify(`${label} selected`); }}
+            >
+              <Icon name={icon} size={13} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
-      <div className="mx-auto flex h-[calc(100vh-24px)] max-w-[1450px] overflow-hidden rounded-sm bg-white shadow-xl md:h-[calc(100vh-64px)]">
+        <button className="logout" onClick={() => notify('Logged out (demo)')}>
+          <span>Log Out</span>
+          <Icon name="logout" size={13} />
+        </button>
+      </aside>
 
-        {/* ===================================================
-            SIDEBAR
-        ==================================================== */}
+      <main className="main">
+        <header className="topbar">
+          <div />
+          <div className="account">
+            <button className="icon-button" onClick={() => notify('No new notifications')}>
+              <Icon name="bell" size={15} />
+            </button>
+            <span className="avatar-dot" />
+            <span className="username">Harry Jann</span>
+          </div>
+        </header>
 
-        {sidebarOpen && (
-          <aside className="flex w-[250px] shrink-0 flex-col justify-between bg-[#343434] px-3 py-3 text-white">
-
-            {/* TOP SIDEBAR */}
-            <div>
-
-              {/* LOGO */}
-              <div className="mb-4 flex items-center justify-between">
-
-                <button
-                  onClick={() => setShowHeaderMenu(!showHeaderMenu)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1 text-[14px] font-bold transition hover:bg-white/10"
-                >
-                  <span className="text-base">🦝</span>
-                  <span>RAGcoon</span>
-                </button>
-
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-white"
-                  title="Close sidebar"
-                >
-                  ◀
-                </button>
-              </div>
-
-              {/* SEARCH */}
-              <div className="relative mb-4">
-
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  🔍
-                </span>
-
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search"
-                  className="h-7 w-full rounded-full bg-white pl-8 pr-3 text-[11px] text-gray-800 outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-gray-400"
-                />
-
-              </div>
-
-              {/* NEW WORKSPACE */}
-              <button
-                onClick={handleNewWorkspace}
-                className="mb-5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-gray-200 transition hover:bg-white/10 hover:text-white"
-              >
-                <span className="text-sm">✚</span>
-                <span>New Workspace</span>
+        {activeNav !== 'Documents Management' ? (
+          <section className="empty-section">
+            <h2>{activeNav}</h2>
+            <p>This navigation item is ready for your next page.</p>
+            <button className="primary" onClick={() => setActiveNav('Documents Management')}>Back to Documents</button>
+          </section>
+        ) : (
+          <section className="content">
+            <div className="page-heading">
+              <h1>Documents Management</h1>
+              <button className="upload-button" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>
+                <Icon name="upload" size={14} />
+                Upload file
               </button>
-
-              {/* RECENTS */}
-              <div>
-
-                <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Recents
-                </div>
-
-                <div className="space-y-1">
-
-                  {filteredWorkspaces.map((workspace, index) => (
-                    <button
-                      key={workspace}
-                      onClick={() => {
-                        setActiveWorkspace(workspace);
-
-                        if (index === 0) {
-                          setMessages([initialBotMessage]);
-                        } else {
-                          setMessages([]);
-                        }
-                      }}
-                      className={`group flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition ${
-                        activeWorkspace === workspace
-                          ? "bg-white/15 text-white"
-                          : "text-gray-300 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-
-                      <span className="flex min-w-0 items-center gap-2">
-
-                        <span className="text-[9px] text-gray-500">
-                          {index === 0 ? "▸" : "└"}
-                        </span>
-
-                        <span className="truncate">
-                          {workspace}
-                        </span>
-
-                      </span>
-
-                      <span className="ml-2 text-gray-500 group-hover:text-white">
-                        +
-                      </span>
-
-                    </button>
-                  ))}
-
-                  {filteredWorkspaces.length === 0 && (
-                    <div className="px-2 py-3 text-[10px] text-gray-500">
-                      No workspace found
-                    </div>
-                  )}
-
-                </div>
-              </div>
-
+              <input ref={inputRef} type="file" multiple hidden accept=".pdf,.doc,.docx,.txt,.csv,.ppt,.pptx,.xlsx,.zip" onChange={handleUpload} />
             </div>
 
-            {/* SIDEBAR FOOTER */}
-            <div className="space-y-2">
-
-              {/* SETTINGS */}
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="flex w-full items-center justify-between rounded-md px-2 py-2 text-gray-300 transition hover:bg-white/10 hover:text-white"
-              >
-                <span className="flex items-center gap-2">
-                  ⚙ Settings
-                </span>
-
-                <span>
-                  {showSettings ? "⌃" : "⌄"}
-                </span>
-              </button>
-
-              {/* SETTINGS PANEL */}
-              {showSettings && (
-                <div className="rounded-md bg-[#292929] p-2 text-[10px] text-gray-300">
-
-                  <button className="mb-1 w-full rounded px-2 py-1.5 text-left hover:bg-white/10">
-                    Appearance
-                  </button>
-
-                  <button className="mb-1 w-full rounded px-2 py-1.5 text-left hover:bg-white/10">
-                    RAG Configuration
-                  </button>
-
-                  <button className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10">
-                    Account
-                  </button>
-
-                </div>
-              )}
-
-              {/* LOGOUT */}
-              <button
-                onClick={handleLogout}
-                className="flex w-full items-center justify-between rounded-md bg-white px-3 py-2 font-bold text-[#343434] transition hover:bg-gray-200 active:scale-[0.98]"
-              >
-                <span>Log Out</span>
-                <span>↪</span>
-              </button>
-
+            <div className="recent-header">
+              <h2>Recently modified</h2>
+              <div className="sparkles" aria-hidden="true"><span>✦</span><span>✦</span></div>
             </div>
 
-          </aside>
-        )}
-
-        {/* ===================================================
-            MAIN AREA
-        ==================================================== */}
-
-        <main className="relative flex min-w-0 flex-1 flex-col bg-white">
-
-          {/* =================================================
-              HEADER
-          ================================================== */}
-
-          <header className="flex h-[55px] shrink-0 items-center justify-between border-b border-gray-100 px-5">
-
-            {/* LEFT */}
-            <div className="relative">
-
-              {!sidebarOpen && (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="mr-3 rounded-md px-2 py-1 hover:bg-gray-100"
-                >
-                  ☰
-                </button>
-              )}
-
-              <button
-                onClick={() =>
-                  setShowHeaderMenu(!showHeaderMenu)
-                }
-                className="font-bold text-[#333] hover:text-black"
-              >
-                RAGcoon
-                <span className="ml-1 text-[9px]">
-                  {showHeaderMenu ? "▲" : "▼"}
-                </span>
-              </button>
-
-              {/* HEADER DROPDOWN */}
-              {showHeaderMenu && (
-                <div className="absolute left-0 top-8 z-50 w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-
-                  <button
-                    onClick={() => setShowHeaderMenu(false)}
-                    className="w-full rounded-md px-3 py-2 text-left text-[11px] hover:bg-gray-100"
-                  >
-                    Rename workspace
-                  </button>
-
-                  <button
-                    onClick={() => setMessages([])}
-                    className="w-full rounded-md px-3 py-2 text-left text-[11px] hover:bg-gray-100"
-                  >
-                    Clear conversation
-                  </button>
-
-                  <button
-                    onClick={() => setShowHeaderMenu(false)}
-                    className="w-full rounded-md px-3 py-2 text-left text-[11px] text-red-500 hover:bg-red-50"
-                  >
-                    Delete workspace
-                  </button>
-
-                </div>
-              )}
-
-            </div>
-
-            {/* RIGHT */}
-            <div className="relative flex items-center gap-3">
-
-              <button
-                onClick={() => alert("ไม่มีการแจ้งเตือนใหม่")}
-                className="rounded-full p-1 hover:bg-gray-100"
-                title="Notifications"
-              >
-                ♧
-              </button>
-
-              <button
-                onClick={() => setShowProfile(!showProfile)}
-                className="flex items-center gap-2 rounded-full px-2 py-1 hover:bg-gray-100"
-              >
-
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#8c0808] text-[9px] font-bold text-white">
-                  MJ
-                </div>
-
-                <span className="hidden text-[10px] font-bold text-gray-700 sm:block">
-                  Marry Jann
-                </span>
-
-              </button>
-
-              {/* PROFILE MENU */}
-              {showProfile && (
-                <div className="absolute right-0 top-10 z-50 w-40 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-
-                  <div className="border-b border-gray-100 px-2 py-2">
-                    <div className="font-bold">
-                      Marry Jann
-                    </div>
-
-                    <div className="text-[9px] text-gray-400">
-                      General User
-                    </div>
+            <div className="recent-grid">
+              {(recent.length ? recent : docs.slice(0, 3)).map(doc => (
+                <div className="recent-card" key={doc.id}>
+                  <Icon name="file" size={13} />
+                  <div className="recent-text">
+                    <div className="recent-title">{doc.title}</div>
+                    <div className="recent-meta">{doc.size} &nbsp; {doc.fileName?.split('.').pop()?.toUpperCase() || 'PDF'}</div>
                   </div>
-
-                  <button
-                    onClick={() => alert("Open Profile")}
-                    className="mt-1 w-full rounded px-2 py-2 text-left hover:bg-gray-100"
-                  >
-                    Profile
+                  <button className="card-more" onClick={(e) => { e.stopPropagation(); setMenuId(menuId === doc.id ? null : doc.id); }}>
+                    <Icon name="more" size={14} />
                   </button>
-
-                  <button
-                    onClick={() => setShowProfile(false)}
-                    className="w-full rounded px-2 py-2 text-left hover:bg-gray-100"
-                  >
-                    Close
-                  </button>
-
                 </div>
-              )}
-
+              ))}
             </div>
 
-          </header>
-
-          {/* =================================================
-              CHAT
-          ================================================== */}
-
-          <section className="min-h-0 flex-1 overflow-y-auto">
-
-            <div className="mx-auto w-full max-w-[820px] px-5 py-6">
-
-              {/* ACTIVE WORKSPACE */}
-              <div className="mb-8 text-center text-[9px] text-gray-400">
-                {activeWorkspace}
+            <div className="files-header">
+              <h2>All files</h2>
+              <div className="filters" onClick={(e) => e.stopPropagation()}>
+                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+                  {categories.map(c => <option key={c}>{c}</option>)}
+                </select>
+                <select value={filterModified} onChange={e => setFilterModified(e.target.value)}>
+                  <option>Modified</option>
+                  <option>Newest</option>
+                  <option>Oldest</option>
+                </select>
+                <select value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                  {years.map(y => <option key={y}>{y}</option>)}
+                </select>
               </div>
+            </div>
 
-              {messages.map((msg, index) => (
-
-                <div
-                  key={index}
-                  className={`mb-8 flex ${
-                    msg.role === "user"
-                      ? "justify-end"
-                      : "justify-start"
-                  }`}
-                >
-
-                  {/* ===============================
-                      USER MESSAGE
-                  ================================ */}
-
-                  {msg.role === "user" ? (
-
-                    <div className="max-w-[75%]">
-
-                      <div className="mb-1 flex items-center justify-end gap-2">
-
-                        <span className="text-[9px] text-gray-500">
-                          Marry Jann
-                        </span>
-
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#8c0808] text-[7px] font-bold text-white">
-                          MJ
-                        </div>
-
-                      </div>
-
-                      <div className="rounded-2xl rounded-tr-md bg-[#dedede] px-4 py-2.5 text-[11px] leading-relaxed text-[#333]">
-                        {msg.text}
-                      </div>
-
-                    </div>
-
-                  ) : (
-
-                    /* ===============================
-                       BOT MESSAGE
-                    ================================ */
-
-                    <div className="flex w-full gap-3">
-
-                      {/* RACCOON ICON */}
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm">
-                        🦝
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-
-                        {/* BOT TEXT */}
-                        <div className="rounded-2xl rounded-tl-md bg-[#dedede] px-5 py-4 text-[11px] leading-[1.55] text-[#333] shadow-sm">
-
-                          <div className="whitespace-pre-wrap">
-                            {msg.text}
-                          </div>
-
-                        </div>
-
-                        {/* ACTION BAR */}
-                        <div className="mt-2 flex items-center justify-between">
-
-                          <div className="flex items-center gap-3 text-[11px] text-gray-400">
-
-                            {/* COPY */}
-                            <button
-                              onClick={() =>
-                                handleCopy(msg.text)
-                              }
-                              className="rounded p-1 hover:bg-gray-100 hover:text-gray-700"
-                              title="Copy"
-                            >
-                              {copied ? "✓" : "▣"}
-                            </button>
-
-                            {/* ATTACHMENT */}
-                            <button
-                              onClick={() =>
-                                alert("Citation document")
-                              }
-                              className="rounded p-1 hover:bg-gray-100 hover:text-gray-700"
-                              title="Source"
-                            >
-                              📎
-                            </button>
-
-                            {/* REGENERATE */}
-                            <button
-                              onClick={() =>
-                                handleRegenerate(index)
-                              }
-                              className="rounded p-1 hover:bg-gray-100 hover:text-gray-700"
-                              title="Regenerate"
-                            >
-                              ↻
-                            </button>
-
-                            {/* LIKE */}
-                            <button
-                              onClick={() => setFeedback("like")}
-                              className={`rounded p-1 hover:bg-gray-100 hover:text-gray-700 ${
-                                feedback === "like"
-                                  ? "text-green-600"
-                                  : ""
-                              }`}
-                            >
-                              ♡
-                            </button>
-
-                            {/* DISLIKE */}
-                            <button
-                              onClick={() => setFeedback("dislike")}
-                              className={`rounded p-1 hover:bg-gray-100 hover:text-gray-700 ${
-                                feedback === "dislike"
-                                  ? "text-red-600"
-                                  : ""
-                              }`}
-                            >
-                              ♧
-                            </button>
-
-                            {/* MORE */}
-                            <div className="relative">
-
-                              <button
-                                onClick={() =>
-                                  setShowMore(!showMore)
-                                }
-                                className="rounded p-1 hover:bg-gray-100 hover:text-gray-700"
-                              >
-                                ⋮
-                              </button>
-
-                              {showMore && (
-                                <div className="absolute bottom-7 left-0 z-30 w-32 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
-
-                                  <button
-                                    onClick={() =>
-                                      alert("Report response")
-                                    }
-                                    className="w-full rounded px-2 py-2 text-left text-[10px] hover:bg-gray-100"
-                                  >
-                                    Report
-                                  </button>
-
-                                  <button
-                                    onClick={() =>
-                                      alert("Response saved")
-                                    }
-                                    className="w-full rounded px-2 py-2 text-left text-[10px] hover:bg-gray-100"
-                                  >
-                                    Save response
-                                  </button>
-
-                                </div>
-                              )}
-
-                            </div>
-
-                          </div>
-
-                          {/* META */}
-                          {msg.meta && (
-                            <span className="hidden text-[8px] text-gray-400 sm:block">
-                              {msg.meta}
-                            </span>
-                          )}
-
-                        </div>
-
-                        {/* CITATIONS */}
-                        <button
-                          onClick={() =>
-                            setShowCitations(!showCitations)
-                          }
-                          className="mt-2 text-[10px] text-gray-500 hover:text-gray-800"
-                        >
-                          Show citations{" "}
-                          {showCitations ? "⌃" : "›"}
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Year</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDocs.length ? filteredDocs.map(doc => (
+                    <tr key={doc.id}>
+                      <td><div className="title-cell"><span className="pdf-mark">▧</span>{doc.title}</div></td>
+                      <td>{doc.year}</td>
+                      <td>{doc.category}</td>
+                      <td><span className={`status ${doc.status.toLowerCase()}`}>{doc.status}</span></td>
+                      <td>{doc.date}</td>
+                      <td className="menu-cell">
+                        <button className="row-more" onClick={(e) => { e.stopPropagation(); setMenuId(menuId === doc.id ? null : doc.id); }}>
+                          <Icon name="more" size={15} />
                         </button>
-
-                        {showCitations && (
-                          <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[9px] text-gray-500">
-
-                            <div className="font-bold text-gray-700">
-                              Sources
-                            </div>
-
-                            <div className="mt-2">
-                              📄 PLC_Project_Final.pdf
-                            </div>
-
-                            <div>
-                              📄 PLC_Methodology.pdf
-                            </div>
-
-                            <div>
-                              📄 Senior_Project_Database.pdf
-                            </div>
-
+                        {menuId === doc.id && (
+                          <div className="context-menu" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => handleDownload(doc)}><Icon name="download" size={14} />Download</button>
+                            <button onClick={() => handleCopy(doc)}><Icon name="copy" size={14} />Copy</button>
+                            <button onClick={() => handleRename(doc)}><Icon name="edit" size={14} />Rename</button>
+                            <button className="danger" onClick={() => handleRemove(doc)}><Icon name="trash" size={14} />Remove</button>
                           </div>
                         )}
-
-                      </div>
-
-                    </div>
-
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="6" className="no-files">No documents found.</td></tr>
                   )}
-
-                </div>
-
-              ))}
-
-              {/* LOADING */}
-              {loading && (
-                <div className="mb-5 flex items-center gap-3 text-[10px] text-gray-400">
-
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100">
-                    🦝
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <span>RAGcoon is searching</span>
-                    <span className="animate-pulse">...</span>
-                  </div>
-
-                </div>
-              )}
-
-              <div ref={chatEndRef} />
-
+                </tbody>
+              </table>
             </div>
 
+            <div className="bottom-actions">
+              <span>{filteredDocs.length} document{filteredDocs.length !== 1 ? 's' : ''}</span>
+              <button onClick={resetDemo}>Restore demo data</button>
+            </div>
           </section>
+        )}
 
-          {/* =================================================
-              INPUT
-          ================================================== */}
-
-          <div className="shrink-0 px-5 pb-5 pt-3">
-
-            <form
-              onSubmit={handleSend}
-              className="mx-auto flex max-w-[720px] items-center rounded-full border border-gray-300 bg-[#dedede] px-4 py-1 shadow-sm focus-within:border-gray-400"
-            >
-
-              {/* INPUT */}
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                disabled={loading}
-                placeholder="Ask anything"
-                className="min-w-0 flex-1 bg-transparent px-2 py-2 text-[11px] text-gray-700 outline-none placeholder:text-gray-400"
-              />
-
-              {/* RIGHT BUTTONS */}
-              <div className="flex items-center gap-2">
-
-                {/* MICROPHONE */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    alert("Microphone feature ยังไม่ได้เชื่อม Backend")
-                  }
-                  className="rounded-full p-1 text-gray-500 transition hover:bg-white hover:text-gray-800"
-                  title="Voice input"
-                >
-                  🎙
-                </button>
-
-                {/* SEND */}
-                <button
-                  type="submit"
-                  disabled={loading || !input.trim()}
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-sm transition ${
-                    loading || !input.trim()
-                      ? "cursor-not-allowed text-gray-400"
-                      : "bg-[#333] text-white hover:bg-black active:scale-90"
-                  }`}
-                  title="Send"
-                >
-                  ➤
-                </button>
-
-              </div>
-
-            </form>
-
-            <div className="mt-2 text-center text-[8px] text-gray-400">
-              RAGcoon can make mistakes. Check important information.
-            </div>
-
-          </div>
-
-        </main>
-
-      </div>
-      
-      {/* TOAST */}
-      {copied && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-[#333] px-4 py-2 text-[10px] text-white shadow-lg">
-          Copied to clipboard
-        </div>
-      )}
-
+        {toast && <div className="toast"><Icon name="check" size={15} />{toast}</div>}
+      </main>
     </div>
   );
 }
