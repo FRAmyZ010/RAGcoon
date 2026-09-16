@@ -21,13 +21,31 @@ from .llm_query_processor import process_query_with_llm
 
 def _get_routing_params(intent: str) -> tuple[int, int]:
     """Return adaptive (top_k, top_n) based on query intent."""
-    if intent in {"EXPLORATORY", "COMPARISON"}:
+    if intent == "RECOMMENDATION":
+        return 60, 15
+    elif intent == "EXPLORATORY":
+        return 50, 15
+    elif intent == "COMPARISON":
         return 30, 10
     elif intent == "DEEP_DIVE":
         return 20, 8
     elif intent == "CODE":
         return 20, 7
     return DEFAULT_TOP_K, DEFAULT_TOP_N
+
+
+def _diversify_candidates_by_project(results: list[dict], max_per_project: int = 2) -> list[dict]:
+    """Ensure candidate pool has diverse representation across distinct projects."""
+    proj_counts: dict[str, int] = {}
+    diversified: list[dict] = []
+    for item in results:
+        payload = item.get("payload", {}) or {}
+        proj_key = str(payload.get("project_title") or payload.get("title") or payload.get("source", "")).strip()
+        count = proj_counts.get(proj_key, 0)
+        if count < max_per_project:
+            diversified.append(item)
+            proj_counts[proj_key] = count + 1
+    return diversified if len(diversified) >= 6 else results
 
 
 def search(query: str, chat_history: str | None = None) -> list[str]:
@@ -48,6 +66,9 @@ def search(query: str, chat_history: str | None = None) -> list[str]:
     if not results:
         print("No results after semantic + filter")
         return []
+
+    if intent in {"RECOMMENDATION", "EXPLORATORY"}:
+        results = _diversify_candidates_by_project(results, max_per_project=2)
 
     print(f"Retrieved (before rerank): {len(results)} docs")
 
@@ -94,6 +115,10 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         else:
             results = semantic_search(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
+
+        if intent in {"RECOMMENDATION", "EXPLORATORY"} and results:
+            results = _diversify_candidates_by_project(results, max_per_project=2)
+
         print(f"Retrieved (before rerank): {len(results)} results")
 
         if not results:

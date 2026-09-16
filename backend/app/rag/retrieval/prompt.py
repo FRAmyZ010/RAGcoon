@@ -19,6 +19,9 @@ NO_ANSWER_TEXT_EN = "No relevant information found in the documents."
 NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร"
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
 
+# Persistent HTTP session for connection pooling & low latency
+_http_session = requests.Session()
+
 
 def _clean_name_spacing(name: str | None) -> str | None:
     """Clean missing spaces after dots and in CamelCase/TitleCase words."""
@@ -122,7 +125,23 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
 def _build_intent_instruction(intent: str, question: str = "") -> str:
     """Return specialized prompt instructions based on dynamic query intent."""
     q_lower = question.lower()
-    if intent == "EXPLORATORY":
+    if intent == "RECOMMENDATION":
+        return """4. Categorical Domain-Based Project Recommendations with Evidence & Actionable Extensions:
+   Group the retrieved projects into clear, academic specialization tracks based on their core engineering domain (e.g. "🤖 Track: AI, Data Science & Machine Learning", "⚡ Track: IoT, Embedded Systems & Hardware Automation", "🛡️ Track: Cybersecurity & Network Infrastructure", "💻 Track: Web Applications & Enterprise Workflow Platforms").
+
+   Under each Domain Track, present the matching recommended project(s) formatted with the following structured sections:
+   ### [Track Name]
+   #### **[Project Title]** ([Academic Year])
+   - 🎯 **Core Problem & Objective**: [Specific real-world problem addressed and core objective based strictly on document].
+   - 🛠️ **Tech Stack & Methodologies**: [Languages, frameworks, microcontrollers, databases, algorithms, or APIs used].
+   - ⭐ **Key Strengths & Evidence**: [Why this project is notable, practical, or well-structured based on its document excerpts, e.g., hospital deployment, live testing, clustering models].
+   - 🚀 **Actionable Future Extensions (For New Students)**: [Concrete, actionable ideas for future students to extend, optimize, or build upon this project based strictly on document limitations or future work sections].
+   - 👥 **Supervision & Team**: Authors: [Author Names] | Advisor: [Advisor Name]
+   - 💡 **Best Suited For**: [Who should choose this project, e.g. students interested in embedded firmware / backend platforms / data pipelines / security sandbox].
+
+5. Conclude with a concise "🧭 Career & Interest Guide" (1-2 sentences) advising students how to choose a track based on their personal technical strengths (e.g. Hardware vs Full-Stack vs Data/AI vs Security).
+6. Do NOT output robotic intros or placeholder tags like '[DOCUMENT 1]' in your final text; use the actual Project Title."""
+    elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
    - Group ALL the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
@@ -234,6 +253,7 @@ Answer:
 
     predict_map = {
         "FACTOID": 384,
+        "RECOMMENDATION": 1024,
         "EXPLORATORY": 768,
         "CODE": 512,
         "COMPARISON": 1024,
@@ -259,13 +279,13 @@ def get_llm_response(
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     try:
-        response = requests.post(
+        response = _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "keep_alive": "15m",
+                "keep_alive": "30m",
                 "options": {
                     "temperature": 0,
                     "num_predict": num_predict,
@@ -298,13 +318,13 @@ def stream_llm_response(
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     try:
-        with requests.post(
+        with _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": True,
-                "keep_alive": "15m",
+                "keep_alive": "30m",
                 "options": {
                     "temperature": 0,
                     "num_predict": num_predict,
@@ -362,10 +382,14 @@ def _prepare_rag_context(
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
-    if intent == "EXPLORATORY":
+    if intent == "RECOMMENDATION":
+        max_chunks_per_project = 2
+        max_total_projects = 5
+        min_score = 0.0001
+    elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
-        max_total_projects = 8
-        min_score = 0.001 if has_filter else 0.03
+        max_total_projects = 6
+        min_score = 0.0001
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
         max_total_projects = 4
