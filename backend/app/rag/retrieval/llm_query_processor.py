@@ -26,7 +26,7 @@ else:
     load_dotenv(find_dotenv(usecwd=True))
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 LLM_TIMEOUT = int(os.getenv("LLM_QUERY_TIMEOUT", "60"))
 
 # Persistent HTTP session for connection pooling & low latency
@@ -61,8 +61,8 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "COMPARISON"
     if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
-    # Factual lookup about a single project's advisor/author/year/status
-    if any(who_word in q for who_word in ["who", "ใคร", "ชื่ออะไร", "what is the advisor", "advisor of", "author of", "creator of"]):
+    # Specific factual questions about a project (microcontroller, sensor, tool, author, advisor, year, objective, etc.)
+    if any(k in q for k in ["what", "who", "when", "which", "how many", "ใคร", "อะไร", "ปีไหน", "เมื่อไหร่", "sensor", "sensors", "microcontroller", "hardware", "tool", "tools", "database", "author", "advisor", "objective"]):
         return "FACTOID"
     if any(adv_word in q for adv_word in ["advisor", "advised", "ที่ปรึกษา", "ดูแล"]) and any(proj_word in q for proj_word in ["project", "projects", "โครงงาน", "โปรเจกต์"]):
         if any(k in q for k in ["มีอะไรบ้าง", "อะไรบ้าง", "list", "which", "recommend", "แนะนำ", "บ้าง", "survey"]):
@@ -72,8 +72,6 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "FACTOID"
     if any(k in q for k in ["มีอะไรบ้าง", "ขอเอกสาร", "any project", "list", "survey", "further", "บ้าง", "projects", "โครงงานไหน", "which project"]):
         return "EXPLORATORY"
-    if project_title_present:
-        return "DEEP_DIVE"
     return "FACTOID"
 
 
@@ -240,7 +238,12 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
             filters["project_title"] = matched_title
         if matched_advisor:
             filters["advisor"] = matched_advisor
-        return matched_title, filters, intent
+        # Extract remaining question keywords to keep search specific to the question asked
+        clean_keywords = q_clean
+        for t in matched_titles:
+            clean_keywords = re.sub(re.escape(t), "", clean_keywords, flags=re.IGNORECASE).strip()
+        norm_q = f"{matched_title} {clean_keywords}".strip() if clean_keywords else matched_title
+        return norm_q, filters, intent
 
     # Fast-path case 2: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
     if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร"]):

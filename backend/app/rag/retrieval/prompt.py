@@ -8,19 +8,26 @@ from typing import Any, Optional
 import requests
 from dotenv import load_dotenv
 
-from .service import search, search_with_details
+from .config import INTENT_CONFIG
+from .service import is_boilerplate_text, search, search_with_details
 from .session_manager import session_manager
 
 load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 NO_ANSWER_TEXT_EN = "No relevant information found in the documents."
 NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร"
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
 
 # Persistent HTTP session for connection pooling & low latency
 _http_session = requests.Session()
+
+
+def _get_intent_config(intent: str) -> dict[str, Any]:
+    """Retrieve configuration settings for a given intent."""
+    normalized = "FACTUAL_LOOKUP" if intent in {"FACTOID", "FACTUAL_LOOKUP"} else intent
+    return INTENT_CONFIG.get(normalized, INTENT_CONFIG.get(intent, INTENT_CONFIG["FACTOID"]))
 
 
 def _clean_name_spacing(name: str | None) -> str | None:
@@ -119,6 +126,13 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
     if any(normalized.startswith(prefix) for prefix in unknown_prefixes):
         return fallback_text
 
+    # Strip trailing reasoning meta-talk or duplicate summary tails
+    cleaned = re.split(
+        r"\n\s*(?:wait,\s*let me|let me check|let me verify|i need to check|to double check|the context shows|the document also mentions|in summary|to summarize|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*สรุป|###\s*notes)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )[0].strip()
+
     return cleaned or fallback_text
 
 
@@ -126,21 +140,23 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     """Return specialized prompt instructions based on dynamic query intent."""
     q_lower = question.lower()
     if intent == "RECOMMENDATION":
-        return """4. Categorical Domain-Based Project Recommendations with Evidence & Actionable Extensions:
-   Group the retrieved projects into clear, academic specialization tracks based on their core engineering domain (e.g. "🤖 Track: AI, Data Science & Machine Learning", "⚡ Track: IoT, Embedded Systems & Hardware Automation", "🛡️ Track: Cybersecurity & Network Infrastructure", "💻 Track: Web Applications & Enterprise Workflow Platforms").
+        return """4. Domain Track Recommendations (Strict Evidence vs AI Projections):
+   Group the retrieved projects into top 3-4 specialization tracks (e.g. "🤖 Track: AI & Data Science", "⚡ Track: IoT & Hardware Automation", "🛡️ Track: Cybersecurity & Infrastructure", "💻 Track: Web & Enterprise Platforms").
 
-   Under each Domain Track, present the matching recommended project(s) formatted with the following structured sections:
+   Under each track, present the project formatted strictly into 2 clearly separated sections:
    ### [Track Name]
    #### **[Project Title]** ([Academic Year])
-   - 🎯 **Core Problem & Objective**: [Specific real-world problem addressed and core objective based strictly on document].
-   - 🛠️ **Tech Stack & Methodologies**: [Languages, frameworks, microcontrollers, databases, algorithms, or APIs used].
-   - ⭐ **Key Strengths & Evidence**: [Why this project is notable, practical, or well-structured based on its document excerpts, e.g., hospital deployment, live testing, clustering models].
-   - 🚀 **Actionable Future Extensions (For New Students)**: [Concrete, actionable ideas for future students to extend, optimize, or build upon this project based strictly on document limitations or future work sections].
-   - 👥 **Supervision & Team**: Authors: [Author Names] | Advisor: [Advisor Name]
-   - 💡 **Best Suited For**: [Who should choose this project, e.g. students interested in embedded firmware / backend platforms / data pipelines / security sandbox].
+   📄 **ข้อมูลจริงจากเอกสาร (Document Evidence)**:
+   - 🎯 **Core Objective & Problem**: [1 concise sentence on core problem and objective strictly from document].
+   - 🛠️ **Tech Stack & Tools**: [List exact languages, frameworks, microcontrollers, sensors, tools (e.g. React, Flask, Arduino Mega 2560, Kali Linux, Docker, MySQL) found in document snippets].
+   - 👥 **Team & Advisor**: Authors: [Author Names] | Advisor: [Advisor Name]
 
-5. Conclude with a concise "🧭 Career & Interest Guide" (1-2 sentences) advising students how to choose a track based on their personal technical strengths (e.g. Hardware vs Full-Stack vs Data/AI vs Security).
-6. Do NOT output robotic intros or placeholder tags like '[DOCUMENT 1]' in your final text; use the actual Project Title."""
+   💡 **ข้อเสนอแนะ & แนวทางต่อยอด (AI Recommendations)**:
+   - 🚀 **Future Extensions**: [1-2 concise, actionable ideas for new students to build upon or optimize this project].
+   - 🎯 **Best Suited For**: [Target student interests/strengths, e.g. Hardware/Embedded, Full-Stack, AI/Data].
+
+5. Conclude with a 1-sentence "🧭 Career & Interest Guide".
+6. Keep each bullet point concise (1-2 sentences maximum). Do not output robotic intros or placeholder tags like '[DOCUMENT 1]'."""
     elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
@@ -153,8 +169,8 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
             return """4. Enumerated Project Overview: Enumerate ALL distinct projects found in the retrieved context without omitting any:
    1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. (Authors: [Author Names], Advisor: [Advisor Name]). Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned if available].
 5. Provide a rich, informative overview covering each retrieved project concisely. Do not output repetitive filler phrases. Do not use '[DOCUMENT 1]' tags."""
-    elif intent == "DEEP_DIVE":
-        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis structured into clear sections:
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis directly addressing the question, structured into clear sections:
    - **Project Overview & Objectives**: Core problem addressed and main goals.
    - **System Architecture & Methodology**: System workflows, design patterns, and operational steps.
    - **Tech Stack, Tools & Hardware**: Exact languages, frameworks, libraries, microcontrollers, or cloud services used.
@@ -192,8 +208,26 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
 5. Do not write robotic intros like 'To determine...', 'From [DOCUMENT 1]...', or 'Based on the documents...'; start directly with the structured comparison."""
     elif intent == "CODE":
         return """4. Technical Code Extraction: Extract and present exact code snippets, SQL queries, algorithms, or API calls from the text in syntax-highlighted code blocks (```). Explain what each code snippet or configuration does."""
-    else:  # FACTOID
-        return """4. Direct Concise Answer: Provide an exact, direct, 1-3 sentence factual answer answering the question precisely without extra filler."""
+    else:  # FACTOID / FACTUAL_LOOKUP
+        if any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
+            return """4. Structured Component Breakdown with Inline Page Citations:
+   Present the components found in the retrieved documents formatted clearly with their exact Page numbers attached directly to each item:
+
+   ### 📋 Component Summary
+   - **Microcontroller**: <exact microcontroller name> [Page X] (Section name if applicable)
+   - **Sensors**:
+     * <sensor 1> [Page X]
+     * <sensor 2> [Page X]
+     * <sensor 3> [Page X]
+   - **Key Associated Hardware**: <list key related modules such as valves, pumps, relays> [Page X]
+
+   CRITICAL RULES:
+   - Always append the exact [Page X] (or [หน้า X] if Thai) directly on the same line as the component name.
+   - Categorize all sensors (e.g. pH sensor, EC sensor, Ultrasonic level/distance sensor) under '**Sensors**'.
+   - Do NOT duplicate the list in a separate section. Stop immediately after the component list."""
+        else:
+            return """4. Direct Answer with Inline Page Citations:
+   Provide an exact, concise factual answer directly answering the question, with the exact Page number (e.g., [Page X] or [หน้า X]) appended directly after the factual statement. Stop immediately."""
 
 
 def _build_full_prompt(
@@ -201,8 +235,8 @@ def _build_full_prompt(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
-) -> tuple[str, bool, str, int]:
-    """Construct prompt and return (prompt, is_thai, fallback_text, num_predict)."""
+) -> tuple[str, bool, str, int, bool, str]:
+    """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill_prefix)."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -215,21 +249,16 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
-    history_block = (
-        f"\nRecent Conversation History:\n{chat_history.strip()}\n"
-        if chat_history and chat_history.strip()
-        else ""
-    )
-
-    prompt = f"""You are an expert AI academic assistant for a university senior project document repository.
+    if intent in {"FACTOID", "FACTUAL_LOOKUP"}:
+        system_content = f"""You are a precise academic document QA assistant. Use ONLY the retrieved context below.
+Answer accurately and structure your response with both a clear direct summary and document evidence citations based strictly on the text.
+Do not output internal reasoning monologue, robotic intros, or personal meta-talk.
+{intent_instruction}
+{lang_instruction}
+If the context contains no relevant information, reply exactly: {insufficient_reply}"""
+    else:
+        system_content = f"""You are an expert AI academic assistant for a university senior project document repository.
 Use ONLY the retrieved context below. Do not invent facts or extrapolate beyond what is stated.
-{history_block}
-Context:
-{context_text}
-
-Question:
-{question}
-
 CRITICAL INSTRUCTIONS:
 1. Strict Document Independence: The context contains numbered documents (e.g. [DOCUMENT 1], [DOCUMENT 2]). You must analyze each document strictly on its own.
 2. ZERO Cross-Contamination: NEVER transfer, duplicate, or copy features, functionalities, equipment, or future plans from one document into another unrelated document. Every single detail for a project must come exclusively from that project's own document block.
@@ -240,27 +269,36 @@ CRITICAL INSTRUCTIONS:
 {intent_instruction}
 6. No Robotic Meta-Talk: Never write boilerplate intros like "To determine which projects...", "From [DOCUMENT 1] : ...", or "Based on the provided documents...". Start directly with the structured answer content.
 7. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, or methodologies, extract only what is mentioned in that specific project.
-8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata:
-   - Academic Title & Rank Variations: Faculty members often appear with different academic titles across different years/projects (e.g. 'Aj.', 'Aj.Dr.', 'Dr.', 'Asst. Prof', 'Assoc. Prof' with the same name refer to the SAME faculty advisor). When listing projects advised by an advisor, include ALL projects in the retrieved context that match that advisor.
-   - Project Reports: Both 'Pre-Project', 'Senior Project', and 'Project Proposal' documents in the context are valid student project reports. Always include them when enumerating projects.
-   - Complete Enumeration: When asked which projects/reports are advised by an advisor, list EVERY distinct project present in the retrieved context documents that matches that advisor. Do NOT omit any matching project.
+8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata.
 9. {lang_instruction}
 10. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
-11. Keep the answer accurate, well-structured, objective, and professional.
+11. Keep the answer accurate, well-structured, objective, and professional."""
 
-Answer:
-"""
+    history_block = (
+        f"Recent Conversation History:\n{chat_history.strip()}\n\n"
+        if chat_history and chat_history.strip()
+        else ""
+    )
 
-    predict_map = {
-        "FACTOID": 384,
-        "RECOMMENDATION": 1024,
-        "EXPLORATORY": 768,
-        "CODE": 512,
-        "COMPARISON": 1024,
-        "DEEP_DIVE": 768,
-    }
-    num_predict = predict_map.get(intent, 512)
-    return prompt, is_thai, fallback_text, num_predict
+    user_content = f"""{history_block}Context:
+{context_text}
+
+Question:
+{question}"""
+
+    intent_cfg = _get_intent_config(intent)
+    num_predict = intent_cfg.get("num_predict", 256)
+    thinking_enabled = intent_cfg.get("thinking", False)
+
+    think_block = "" if thinking_enabled else "<think>\n</think>\n"
+    q_lower = question.lower()
+    prefill = ""
+    if intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
+        prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
+
+    prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
+
+    return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill
 
 
 def get_llm_response(
@@ -268,9 +306,10 @@ def get_llm_response(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
 ) -> str:
-    """Synchronous (non-streaming) LLM call."""
-    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+    """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -278,17 +317,28 @@ def get_llm_response(
         return fallback_text
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    start_t = time.perf_counter()
+    stop_tokens = [
+        "<|im_end|>", "<|im_start|>", "<think>", "</think>",
+        "\n\nWait,", "\n\nI need to check", "\n\nLet me check", "\n\nTo double check",
+        "\n\nThe context shows", "\n\nThe document also mentions", "\n\nIn summary",
+        "\n\nTo summarize", "\n\nSummary:", "\n\nสรุป:", "\n\n### ข้อสังเกต",
+        "\n\n### ตรวจสอบ", "\n\n### สรุป", "\n\n### Notes",
+    ]
     try:
         response = _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
+                "raw": True,
                 "stream": False,
+                "think": thinking_enabled,
                 "keep_alive": "30m",
                 "options": {
-                    "temperature": 0,
+                    "temperature": 0.0,
                     "num_predict": num_predict,
+                    "stop": stop_tokens,
                 },
             },
             timeout=ollama_timeout,
@@ -297,7 +347,26 @@ def get_llm_response(
     except requests.RequestException as exc:
         return f"LLM request failed: {exc}"
 
-    raw_answer = response.json().get("response", "")
+    duration = time.perf_counter() - start_t
+    data = response.json()
+    raw_answer = (prefill + data.get("response", "")) if prefill else data.get("response", "")
+
+    if stats_out is not None:
+        p_eval = data.get("prompt_eval_count", 0)
+        e_count = data.get("eval_count", 0)
+        e_dur_ns = data.get("eval_duration", 0)
+        gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+        stats_out.update({
+            "prompt_eval_count": p_eval,
+            "eval_count": e_count,
+            "eval_duration_ns": e_dur_ns,
+            "gen_speed_tps": gen_speed,
+            "ttft_seconds": duration,
+            "llm_seconds": duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+        })
+
     return clean_answer(raw_answer, is_thai=is_thai)
 
 
@@ -306,9 +375,10 @@ def stream_llm_response(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
 ) -> Generator[str, None, None]:
     """Streaming LLM generator that yields text tokens in real time from Ollama."""
-    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -317,17 +387,34 @@ def stream_llm_response(
         return
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    stream_start = time.perf_counter()
+    ttft: Optional[float] = None
+
+    if prefill:
+        ttft = time.perf_counter() - stream_start
+        yield prefill
+
+    stop_tokens = [
+        "<|im_end|>", "<|im_start|>", "<think>", "</think>",
+        "\n\nWait,", "\n\nI need to check", "\n\nLet me check", "\n\nTo double check",
+        "\n\nThe context shows", "\n\nThe document also mentions", "\n\nIn summary",
+        "\n\nTo summarize", "\n\nSummary:", "\n\nสรุป:", "\n\n### ข้อสังเกต",
+        "\n\n### ตรวจสอบ", "\n\n### สรุป", "\n\n### Notes",
+    ]
     try:
         with _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
+                "raw": True,
                 "stream": True,
+                "think": thinking_enabled,
                 "keep_alive": "30m",
                 "options": {
-                    "temperature": 0,
+                    "temperature": 0.0,
                     "num_predict": num_predict,
+                    "stop": stop_tokens,
                 },
             },
             stream=True,
@@ -340,8 +427,24 @@ def stream_llm_response(
                         chunk = json.loads(line)
                         token = chunk.get("response", "")
                         if token:
+                            if ttft is None:
+                                ttft = time.perf_counter() - stream_start
                             yield token
                         if chunk.get("done", False):
+                            if stats_out is not None:
+                                p_eval = chunk.get("prompt_eval_count", 0)
+                                e_count = chunk.get("eval_count", 0)
+                                e_dur_ns = chunk.get("eval_duration", 0)
+                                gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+                                stats_out.update({
+                                    "prompt_eval_count": p_eval,
+                                    "eval_count": e_count,
+                                    "eval_duration_ns": e_dur_ns,
+                                    "gen_speed_tps": gen_speed,
+                                    "ttft_seconds": ttft or (time.perf_counter() - stream_start),
+                                    "thinking_enabled": thinking_enabled,
+                                    "intent": intent,
+                                })
                             break
                     except json.JSONDecodeError:
                         continue
@@ -350,19 +453,8 @@ def stream_llm_response(
 
 
 def _is_boilerplate_chunk(text: str) -> bool:
-    """Check if snippet is mostly table of contents, committee signatures, or pure acknowledgements."""
-    t = text.lower()
-    if "list of tables" in t or "list of figures" in t or "table of contents" in t:
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        toc_lines = [
-            l for l in lines
-            if any(k in l.lower() for k in ["table", "page", "chapter", "working plan", "acknowledgement"])
-        ]
-        if len(toc_lines) / max(len(lines), 1) > 0.5:
-            return True
-    if "examining committee" in t and len(text) < 400:
-        return True
-    return False
+    """Use centralized robust boilerplate filter."""
+    return is_boilerplate_text(text)
 
 
 def _prepare_rag_context(
@@ -382,9 +474,12 @@ def _prepare_rag_context(
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
+    intent_cfg = _get_intent_config(intent)
+    max_context_chunks = intent_cfg.get("max_context_chunks", 4)
+
     if intent == "RECOMMENDATION":
         max_chunks_per_project = 2
-        max_total_projects = 5
+        max_total_projects = 4
         min_score = 0.0001
     elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
@@ -393,19 +488,19 @@ def _prepare_rag_context(
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
         max_total_projects = 4
-        min_score = 0.001 if has_filter else 0.05
-    elif intent == "DEEP_DIVE":
-        max_chunks_per_project = 6
+        min_score = 0.0001
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 1
-        min_score = 0.001 if has_filter else 0.05
+        min_score = 0.0001
     elif intent == "CODE":
         max_chunks_per_project = 4
         max_total_projects = 2
-        min_score = 0.001 if has_filter else 0.05
-    else:  # FACTOID
-        max_chunks_per_project = 2
+        min_score = 0.0001
+    else:  # FACTOID / FACTUAL_LOOKUP
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 3
-        min_score = 0.001 if has_filter else 0.05
+        min_score = 0.0001
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -421,7 +516,7 @@ def _prepare_rag_context(
         payload = item.get("payload", {}) or {}
         source = payload.get("source", "Unknown source")
         project_title = payload.get("project_title") or payload.get("title") or source
-        proj_key = str(project_title).strip()
+        proj_key = str(source).strip() if source and source != "Unknown source" else str(project_title).strip()
 
         raw_snippet = str(item.get("text", "")).strip()
         raw_snippet = raw_snippet.replace("\r\n", "\n").replace("\r", "\n")
@@ -447,16 +542,45 @@ def _prepare_rag_context(
             projects_data[proj_key]["pages"].add(str(page_number))
 
         if not preserve_same_project_chunks:
-            snippet = " ".join(raw_snippet.split())
+            snippet_body = " ".join(raw_snippet.split())
         else:
-            snippet = raw_snippet
+            snippet_body = raw_snippet
 
-        if snippet not in projects_data[proj_key]["snippets"]:
+        page_tag = f"[Excerpt from Page {page_number}]:\n" if page_number else ""
+        formatted_snippet = f"{page_tag}{snippet_body}"
+
+        if formatted_snippet not in projects_data[proj_key]["snippets"]:
             if len(projects_data[proj_key]["snippets"]) < max_chunks_per_project:
-                projects_data[proj_key]["snippets"].append(snippet)
+                projects_data[proj_key]["snippets"].append(formatted_snippet)
 
         if source not in sources:
             sources.append(source)
+
+    # Multi-Section Enrichment for RECOMMENDATION: ensure each recommended project includes its concrete Tech Stack chunk
+    if intent == "RECOMMENDATION":
+        from .semantic import semantic_search
+        for proj_key in projects_ordered[:max_total_projects]:
+            proj_payload = projects_data[proj_key]["payload"]
+            proj_source = proj_payload.get("source")
+            filter_payload = {"source": proj_source} if proj_source else ({"project_title": proj_key} if proj_key else None)
+            try:
+                tech_candidates = semantic_search(
+                    "Equipment Website React Node.js Express Figma Flask Docker MySQL Hardware Software microcontrollers frameworks tools",
+                    top_k=4,
+                    metadata_filters=filter_payload,
+                )
+                for tc in tech_candidates:
+                    raw_t = str(tc.get("text", "")).strip()
+                    if raw_t and not _is_boilerplate_chunk(raw_t):
+                        t_snippet = " ".join(raw_t.split())
+                        if t_snippet not in projects_data[proj_key]["snippets"]:
+                            projects_data[proj_key]["snippets"].append(t_snippet)
+                            p_num = tc.get("payload", {}).get("page_number")
+                            if p_num:
+                                projects_data[proj_key]["pages"].add(str(p_num))
+                            break
+            except Exception:
+                pass
 
     citations: list[dict[str, Any]] = []
     for proj_key in projects_ordered:
@@ -579,14 +703,16 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
                 "llm_seconds": 0.0,
                 "total_seconds": retrieval_timing.get("total_seconds", 0.0),
             },
+            "performance": {},
         }
 
     # Add user message to session history
     session_manager.add_user_message(session_id, question)
 
     llm_start = time.perf_counter()
+    stats_out: dict[str, Any] = {}
     answer = get_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str
+        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
     )
     llm_seconds = time.perf_counter() - llm_start
 
@@ -597,6 +723,18 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
     session_manager.add_assistant_message(session_id, answer)
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
+    perf_data = {
+        "intent": intent,
+        "thinking_enabled": stats_out.get("thinking_enabled", False),
+        "input_tokens": stats_out.get("prompt_eval_count", 0),
+        "output_tokens": stats_out.get("eval_count", 0),
+        "gen_speed_tps": stats_out.get("gen_speed_tps", 0.0),
+        "ttft_seconds": stats_out.get("ttft_seconds", llm_seconds),
+        "llm_seconds": llm_seconds,
+        "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+        "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        "total_seconds": total_seconds,
+    }
 
     return {
         "question": question,
@@ -619,6 +757,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
             "llm_seconds": llm_seconds,
             "total_seconds": total_seconds,
         },
+        "performance": perf_data,
     }
 
 
@@ -631,7 +770,7 @@ def stream_answer_question(
     Yields structured events:
       - {"event": "metadata", "data": {...}} : Query intent, filters, sources, citations, retrieval timing
       - {"event": "token", "data": {"token": "..."}} : Live token chunks as they are generated
-      - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations
+      - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
     prep = _prepare_rag_context(question, session_id=session_id)
@@ -687,6 +826,7 @@ def stream_answer_question(
                     "llm_seconds": 0.0,
                     "total_seconds": retrieval_timing.get("total_seconds", 0.0),
                 },
+                "performance": {},
             },
         }
         return
@@ -696,10 +836,11 @@ def stream_answer_question(
 
     # 2. Stream Tokens from LLM
     full_tokens: list[str] = []
+    stats_out: dict[str, Any] = {}
     llm_start = time.perf_counter()
 
     for token in stream_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str
+        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
     ):
         full_tokens.append(token)
         yield {"event": "token", "data": {"token": token}}
@@ -715,8 +856,20 @@ def stream_answer_question(
     session_manager.add_assistant_message(session_id, cleaned_answer)
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
+    perf_data = {
+        "intent": intent,
+        "thinking_enabled": stats_out.get("thinking_enabled", False),
+        "input_tokens": stats_out.get("prompt_eval_count", 0),
+        "output_tokens": stats_out.get("eval_count", 0),
+        "gen_speed_tps": stats_out.get("gen_speed_tps", 0.0),
+        "ttft_seconds": stats_out.get("ttft_seconds", llm_seconds),
+        "llm_seconds": llm_seconds,
+        "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+        "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        "total_seconds": total_seconds,
+    }
 
-    # 3. Yield Final Done Event with Timing & Citations
+    # 3. Yield Final Done Event with Timing, Citations & Performance Metrics
     yield {
         "event": "done",
         "data": {
@@ -732,5 +885,6 @@ def stream_answer_question(
                 "llm_seconds": llm_seconds,
                 "total_seconds": total_seconds,
             },
+            "performance": perf_data,
         },
     }

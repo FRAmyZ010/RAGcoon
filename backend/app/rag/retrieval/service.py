@@ -8,7 +8,7 @@ try:
 except Exception:
     pass
 
-from .config import DEFAULT_TOP_K, DEFAULT_TOP_N
+from .config import DEFAULT_TOP_K, DEFAULT_TOP_N, INTENT_CONFIG
 from .extractor import QueryFilterProcessor
 from .filters import build_qdrant_filter
 from .normalizer import normalize_user_query as normalize_query
@@ -20,18 +20,76 @@ from .llm_query_processor import process_query_with_llm
 
 
 def _get_routing_params(intent: str) -> tuple[int, int]:
-    """Return adaptive (top_k, top_n) based on query intent."""
-    if intent == "RECOMMENDATION":
-        return 60, 15
-    elif intent == "EXPLORATORY":
-        return 50, 15
-    elif intent == "COMPARISON":
-        return 30, 10
-    elif intent == "DEEP_DIVE":
-        return 20, 8
-    elif intent == "CODE":
-        return 20, 7
-    return DEFAULT_TOP_K, DEFAULT_TOP_N
+    """Return adaptive (top_k, top_n) based on query intent from INTENT_CONFIG."""
+    cfg = INTENT_CONFIG.get(intent, INTENT_CONFIG.get("FACTOID", {}))
+    top_k = cfg.get("top_k", DEFAULT_TOP_K)
+    top_n = cfg.get("rerank_top_n", DEFAULT_TOP_N)
+    return top_k, top_n
+
+
+def is_boilerplate_text(text: str) -> bool:
+    """
+    Check if snippet is mostly table of contents, pure bibliography/references,
+    pure acknowledgements, appendix title pages, committee signatures, or bare page numbers.
+    Never filters out Technical Sections, Hardware, Methodology, Inputs, or Abstracts.
+    """
+    if not text or not text.strip():
+        return True
+
+    t = text.lower()
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    # 1. Bare page number or ultra short non-technical lines
+    if len(lines) <= 2 and len(text.strip()) < 50:
+        if all(re.match(r"^\d+$|^page\s*\d+$|^[ivxlcdm]+$", l.lower()) for l in lines):
+            return True
+
+    # Critical Guard: Protect abstract, hardware, inputs, equipment, methodology, architecture
+    is_protected = any(k in t for k in [
+        "hardware", "equipment", "microcontroller", "sensor", "sensors", 
+        "arduino", "analog ph", "ec sensor", "ultrasonic", "inputs:", "outputs:",
+        "methodology", "architecture", "system overview", "framework", "database", "abstract"
+    ])
+
+    # 2. Acknowledgement / กิตติกรรมประกาศ (pure gratitude / signatures)
+    if "acknowledgement" in t or "กิตติกรรมประกาศ" in t:
+        if not is_protected or ("support of the advisor" in t or "grateful to our parents" in t or len(text) < 450):
+            return True
+
+    # 3. Pure References / Bibliography / URL lists
+    if any(k in t for k in ["references", "เอกสารอ้างอิง", "bibliography"]):
+        url_count = len(re.findall(r"https?://|www\.|doi\.org|\[\d+\]", t))
+        ref_markers = len(re.findall(r"(?:vol\.|pp\.|accessed:|retrieved from|edition|press|ieee|acm)", t))
+        if (url_count >= 2 or ref_markers >= 2) and not is_protected:
+            return True
+
+    # 4. Table of Contents / List of Tables / List of Figures / Working Plan (Gantt Chart)
+    if any(k in t for k in ["list of tables", "list of figures", "table of contents", "สารบัญ", "working plan"]):
+        toc_lines = [
+            l for l in lines
+            if any(k in l.lower() for k in ["table", "figure", "page", "chapter", "working plan", "acknowledgement", ".....", "....", "week", "month"])
+        ]
+        if len(toc_lines) / max(len(lines), 1) > 0.35 and not is_protected:
+            return True
+
+    # 5. Appendix title pages without technical content
+    if "appendix" in t or "ภาคผนวก" in t:
+        if len(lines) <= 4 and not is_protected:
+            return True
+
+    # 6. Committee signatures & degree requirements boilerplate
+    if "examining committee" in t and len(text) < 500 and not is_protected:
+        return True
+    if "partial fulfillment of the requirements" in t and len(text) < 450 and not is_protected:
+        return True
+
+    return False
+
+
+def _filter_boilerplate_candidates(results: list[dict]) -> list[dict]:
+    """Filter out non-technical boilerplate chunks before passing to Reranker."""
+    filtered = [r for r in results if not is_boilerplate_text(r.get("text", ""))]
+    return filtered if len(filtered) >= 4 else results
 
 
 def _diversify_candidates_by_project(results: list[dict], max_per_project: int = 2) -> list[dict]:
@@ -40,7 +98,7 @@ def _diversify_candidates_by_project(results: list[dict], max_per_project: int =
     diversified: list[dict] = []
     for item in results:
         payload = item.get("payload", {}) or {}
-        proj_key = str(payload.get("project_title") or payload.get("title") or payload.get("source", "")).strip()
+        proj_key = str(payload.get("source") or payload.get("project_title") or payload.get("title", "")).strip()
         count = proj_counts.get(proj_key, 0)
         if count < max_per_project:
             diversified.append(item)
@@ -66,6 +124,8 @@ def search(query: str, chat_history: str | None = None) -> list[str]:
     if not results:
         print("No results after semantic + filter")
         return []
+
+    results = _filter_boilerplate_candidates(results)
 
     if intent in {"RECOMMENDATION", "EXPLORATORY"}:
         results = _diversify_candidates_by_project(results, max_per_project=2)
@@ -115,6 +175,8 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         else:
             results = semantic_search(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
+
+        results = _filter_boilerplate_candidates(results)
 
         if intent in {"RECOMMENDATION", "EXPLORATORY"} and results:
             results = _diversify_candidates_by_project(results, max_per_project=2)
