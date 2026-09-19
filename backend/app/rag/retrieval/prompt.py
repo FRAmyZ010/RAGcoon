@@ -15,7 +15,7 @@ from .session_manager import session_manager
 load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 NO_ANSWER_TEXT_EN = "No relevant information found in the documents."
 NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร"
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
@@ -377,8 +377,17 @@ Question:
         prefill = "### 📌 Project Overview\n" if not is_thai else "### 📌 สรุปภาพรวมโครงงาน\n"
     elif intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
         prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
+    elif intent in {"FACTOID", "FACTUAL_LOOKUP"}:
+        prefill = "จากเอกสารที่เกี่ยวข้อง " if is_thai else "Based on the retrieved document, "
 
-    prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
+    model_name = OLLAMA_MODEL.lower()
+    if "gemma" in model_name:
+        full_user = f"{system_content}\n\n{user_content}"
+        prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
+        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
+    else:
+        prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
+        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"]
 
     prompt_meta = {
         "system_text": system_content,
@@ -387,7 +396,7 @@ Question:
         "question_text": question,
     }
 
-    return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta
+    return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens
 
 
 def get_llm_response(
@@ -398,7 +407,7 @@ def get_llm_response(
     stats_out: Optional[dict[str, Any]] = None,
 ) -> str:
     """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
-    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta = _build_full_prompt(
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -407,9 +416,6 @@ def get_llm_response(
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     start_t = time.perf_counter()
-    stop_tokens = [
-        "<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>",
-    ]
     try:
         response = _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -472,7 +478,7 @@ def stream_llm_response(
     stats_out: Optional[dict[str, Any]] = None,
 ) -> Generator[str, None, None]:
     """Streaming LLM generator that yields text tokens in real time from Ollama."""
-    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta = _build_full_prompt(
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -488,9 +494,6 @@ def stream_llm_response(
         ttft = time.perf_counter() - stream_start
         yield prefill
 
-    stop_tokens = [
-        "<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>",
-    ]
     try:
         with _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",

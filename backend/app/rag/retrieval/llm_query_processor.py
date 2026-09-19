@@ -26,7 +26,7 @@ else:
     load_dotenv(find_dotenv(usecwd=True))
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 LLM_TIMEOUT = int(os.getenv("LLM_QUERY_TIMEOUT", "60"))
 
 # Persistent HTTP session for connection pooling & low latency
@@ -176,10 +176,26 @@ def _call_ollama_for_query_parsing(raw_query: str, chat_history: Optional[str] =
     except Exception:
         pass
 
-def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]]:
+def _extract_last_referenced_project(chat_history: Optional[str]) -> Optional[str]:
+    """Find the most recently discussed project title from the conversation history."""
+    if not chat_history or not chat_history.strip():
+        return None
+    metadata_cache.load_metadata()
+    history_lower = chat_history.lower()
+    last_pos = -1
+    last_title = None
+    for title in metadata_cache.titles:
+        pos = history_lower.rfind(title.lower())
+        if pos > last_pos:
+            last_pos = pos
+            last_title = title
+    return last_title
+
+
+def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Optional[tuple[str, dict[str, Any], str]]:
     """
     Fast-Path Shortcut:
-    ตรวจจับคำถามที่มีชื่อโปรเจกต์ หรือชื่ออาจารย์ที่ปรึกษาชัดเจน เพื่อข้ามการเรียก LLM
+    ตรวจจับคำถามที่มีชื่อโปรเจกต์ หรือชื่ออาจารย์ที่ปรึกษาชัดเจน หรือคำถามต่อเนื่อง (Follow-up) จาก Chat History
     ช่วยลดเวลา Query Processing จาก ~8s เหลือ ~0.001s ทันที
     """
     if not raw_query or not raw_query.strip():
@@ -196,6 +212,21 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
         if t_low in q_lower or (len(t_low) > 8 and t_low[:18] in q_lower):
             if title not in matched_titles:
                 matched_titles.append(title)
+
+    # 1.1 ถ้าไม่มีชื่อในคำถาม แต่เป็นคำถามต่อเนื่อง (Follow-up query) ให้ดึงโปรเจกต์ล่าสุดจาก Chat History
+    if not matched_titles and chat_history and chat_history.strip():
+        follow_up_markers = [
+            "the project", "this project", "this system", "that project", "it", "they", "them",
+            "who carried out", "who did", "who is", "who made", "who created", "who developed",
+            "author", "authors", "advisor", "advisors", "sensor", "sensors", "hardware", "tool", "tools",
+            "limitation", "limitations", "objective", "objectives", "methodology", "feature", "features",
+            "โปรเจกต์นี้", "โครงงานนี้", "ระบบนี้", "นี้", "เขา", "ใครทำ", "ใครเป็นคนทำ", "ใครเป็นผู้จัดทำ",
+            "ข้อจำกัด", "วัตถุประสงค์", "เซนเซอร์", "ที่ปรึกษา", "พัฒนาโดยใคร", "ทำอะไรได้บ้าง"
+        ]
+        if any(marker in q_lower for marker in follow_up_markers):
+            last_proj = _extract_last_referenced_project(chat_history)
+            if last_proj:
+                matched_titles = [last_proj]
 
     # 2. ค้นหาชื่ออาจารย์ที่ปรึกษา (รองรับชื่อเล่น/คำนำหน้าภาษาไทย)
     matched_advisor = None
@@ -267,8 +298,8 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     from .extractor import QueryFilterProcessor
     from .normalizer import normalize_user_query
 
-    # 0. Fast-Path Shortcut check (ประหยัดเวลา ~8 วินาทีเมื่อเจอ Pattern ชัดเจน)
-    fast_result = _fast_path_check(raw_query)
+    # 0. Fast-Path Shortcut check (ประหยัดเวลา ~8 วินาทีเมื่อเจอ Pattern ชัดเจน หรือต่อเนื่องจาก Chat History)
+    fast_result = _fast_path_check(raw_query, chat_history=chat_history)
     if fast_result:
         return fast_result
 

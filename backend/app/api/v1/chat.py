@@ -61,7 +61,7 @@ async def chat_with_rag(payload: ChatRequest):
         sources = cast(list[str], result.get("sources", []))
 
         # ดึงชื่อโมเดลจาก result (ถ้าไม่มีให้ตั้งค่า default fallback ไว้)
-        MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+        MODEL_NAME = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
         return ChatResponse(
             answer=result.get("answer", ""),
