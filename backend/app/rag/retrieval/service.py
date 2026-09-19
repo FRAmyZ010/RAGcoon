@@ -138,6 +138,38 @@ def search(query: str, chat_history: str | None = None) -> list[str]:
     return [result["text"] for result in reranked]
 
 
+def _filter_recommendation_candidates(results: list[dict], target_domains: list[str]) -> list[dict]:
+    """Filter out completely irrelevant projects that don't match target domains for RECOMMENDATION."""
+    if not target_domains or not results:
+        return results
+
+    domain_keywords = {
+        "web": ["web", "platform", "portal", "website", "online", "application", "browser", "dashboard", "frontend", "backend", "react", "html", "php", "javascript", "flask", "django"],
+        "iot": ["iot", "sensor", "hardware", "arduino", "esp32", "microcontroller", "actuator", "device", "rfid", "ble", "bluetooth", "watering", "hydroponic"],
+        "automation": ["automation", "automatic", "automated", "control", "monitoring", "adjust", "mixing", "schedule", "timer"],
+        "machine learning": ["machine learning", "model", "prediction", "predict", "classification", "clustering", "regression", "accuracy", "dataset", "training"],
+        "energy": ["energy", "saving", "power", "access point", "ap", "sleep", "wifi", "wlan", "consumption"],
+        "mobile": ["mobile", "android", "ios", "app", "tracking", "gps", "vehicle", "car", "location"],
+        "healthcare": ["health", "hospital", "patient", "discharge", "medical", "clinic", "nurse", "doctor"],
+        "cybersecurity": ["security", "penetration", "testing", "vulnerability", "attack", "kali", "exploit", "cve"],
+    }
+
+    req_words = set()
+    for d in target_domains:
+        req_words.update(domain_keywords.get(d.lower(), [d.lower()]))
+
+    matched = []
+    unmatched = []
+    for item in results:
+        txt = (item.get("text", "") + " " + str(item.get("payload", {}))).lower()
+        if any(w in txt for w in req_words):
+            matched.append(item)
+        else:
+            unmatched.append(item)
+
+    return matched if matched else results
+
+
 def search_with_details(query: str, chat_history: str | None = None) -> dict:
     """Search and return detailed results with scores, timing, and dynamic routing intent."""
     total_start = time.perf_counter()
@@ -157,28 +189,50 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
 
         retrieval_start = time.perf_counter()
         if intent == "COMPARISON":
-            sub_queries = [p.strip() for p in re.split(r"\s+(?:vs|versus|กับ|and)\s+", clean_query, flags=re.IGNORECASE) if p.strip()]
-            if len(sub_queries) >= 2:
-                split_k = max(15, top_k // len(sub_queries))
+            compared = filters.get("compared_projects", [])
+            if len(compared) >= 2:
+                per_proj_k = max(15, top_k // len(compared))
                 all_results = []
                 seen_texts = set()
-                for sq in sub_queries:
-                    sq_res = semantic_search(sq, split_k, metadata_filters=filters)
-                    for item in sq_res:
+                for p_title in compared:
+                    p_filters = {"project_title": p_title}
+                    p_res = semantic_search(f"{p_title} overview methodology architecture features technology limitations", per_proj_k, metadata_filters=p_filters)
+                    if not p_res:
+                        p_res = semantic_search(p_title, per_proj_k, metadata_filters=p_filters)
+                    for item in p_res:
                         txt = item.get("text")
                         if txt not in seen_texts:
                             seen_texts.add(txt)
                             all_results.append(item)
-                results = all_results if all_results else semantic_search(clean_query, top_k, metadata_filters=filters)
+                results = all_results if all_results else semantic_search(clean_query, top_k)
             else:
-                results = semantic_search(clean_query, top_k, metadata_filters=filters)
+                sub_queries = [p.strip() for p in re.split(r"\s+(?:vs|versus|กับ|and)\s+", clean_query, flags=re.IGNORECASE) if p.strip()]
+                if len(sub_queries) >= 2:
+                    split_k = max(15, top_k // len(sub_queries))
+                    all_results = []
+                    seen_texts = set()
+                    for sq in sub_queries:
+                        sq_res = semantic_search(sq, split_k)
+                        for item in sq_res:
+                            txt = item.get("text")
+                            if txt not in seen_texts:
+                                seen_texts.add(txt)
+                                all_results.append(item)
+                    results = all_results if all_results else semantic_search(clean_query, top_k)
+                else:
+                    results = semantic_search(clean_query, top_k)
         else:
             results = semantic_search(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
 
         results = _filter_boilerplate_candidates(results)
 
-        if intent in {"RECOMMENDATION", "EXPLORATORY"} and results:
+        if intent == "RECOMMENDATION":
+            target_domains = filters.get("target_domains", [])
+            if target_domains:
+                results = _filter_recommendation_candidates(results, target_domains)
+            results = _diversify_candidates_by_project(results, max_per_project=2)
+        elif intent == "EXPLORATORY" and results:
             results = _diversify_candidates_by_project(results, max_per_project=2)
 
         print(f"Retrieved (before rerank): {len(results)} results")

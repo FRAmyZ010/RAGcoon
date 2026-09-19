@@ -89,7 +89,7 @@ def run_interactive_streaming_chat():
                 retrieval_t = timing.get("retrieval_seconds", 0.0) + timing.get("rerank_seconds", 0.0)
 
                 print("\n\n" + "=" * 60)
-                print("📊 [PERFORMANCE METRICS]")
+                print("📊 [PERFORMANCE & TOKEN BREAKDOWN]")
                 print("=" * 60)
                 intent_name = perf.get("intent", event_data.get("intent", "FACTUAL_LOOKUP"))
                 thinking_str = "ON" if perf.get("thinking_enabled", False) else "OFF"
@@ -97,15 +97,21 @@ def run_interactive_streaming_chat():
                 out_tokens = perf.get("output_tokens", 0)
                 gen_speed = perf.get("gen_speed_tps", 0.0)
                 ttft = perf.get("ttft_seconds", 0.0)
+                tb = perf.get("token_breakdown", {})
 
                 print(f"• Intent: {intent_name} (Thinking: {thinking_str})")
-                print(f"• Input Tokens (Prompt): {prompt_tokens}")
-                print(f"• Output Tokens (Answer): {out_tokens}")
-                print(f"• Generation Speed: {gen_speed:.1f} tokens/sec")
-                print(f"• Time to First Token (TTFT): {ttft:.3f}s")
-                print(f"• LLM Generation Time: {llm_t:.3f}s")
-                print(f"• Retrieval & Rerank Time: {retrieval_t:.3f}s")
-                print(f"• Total End-to-End Time: {total_t:.3f}s")
+                if tb:
+                    print(f"• 📜 System Instruction: ~{tb.get('system_instruction_tokens', 0):,} tokens")
+                    print(f"• 💬 Chat History (Memory): ~{tb.get('chat_history_tokens', 0):,} tokens")
+                    print(f"• 📄 Document Context (Qdrant): ~{tb.get('document_context_tokens', 0):,} tokens ({tb.get('context_char_length', 0):,} chars)")
+                    print(f"• ❓ User Question: ~{tb.get('user_question_tokens', 0):,} tokens")
+                print(f"• 📥 Total Input Tokens: {prompt_tokens:,} tokens")
+                print(f"• 📤 Output Tokens (Answer): {out_tokens:,} tokens")
+                print(f"• ⚡ Generation Speed: {gen_speed:.1f} tokens/sec")
+                print(f"• ⏱️ Time to First Token (TTFT): {ttft:.3f}s")
+                print(f"• ⏱️ LLM Generation Time: {llm_t:.3f}s")
+                print(f"• 🔍 Retrieval & Rerank Time: {retrieval_t:.3f}s")
+                print(f"• 🏁 Total End-to-End Time: {total_t:.3f}s")
                 print("=" * 60)
 
                 if citations:

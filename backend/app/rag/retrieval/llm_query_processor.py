@@ -51,15 +51,17 @@ class QueryFilterResult(BaseModel):
 def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False) -> str:
     """Rule-based intent detection fallback."""
     q = raw_query.lower()
+    # 1. COMPARISON has highest priority (e.g. compare, comparison, เปรียบเทียบ, vs, versus, between ... and)
+    # Even if project titles contain words like 'recommendation' or 'code', the user's action is to compare!
+    if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด", "matrix", "แมทริกซ์", "ให้คะแนน", "ประเมิน", "evaluate", "scoring", "score", "between"]):
+        return "COMPARISON"
     if any(k in q for k in ["code", "source code", "sql", "select", "function", "คำสั่ง", "โค้ด", "ฟังก์ชัน", ".php", ".py", ".js", ".java"]):
         return "CODE"
     if any(k in q for k in ["recommend", "recommendation", "suggest", "suggestion", "แนะนำ", "น่าสนใจ", "น่าทำ", "ต่อยอด", "future work", "further study", "ไอเดีย", "เลือกหัวข้อ"]):
         return "RECOMMENDATION"
     if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
         return "EXPLORATORY"
-    if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด", "matrix", "แมทริกซ์", "ให้คะแนน", "ประเมิน", "evaluate", "scoring", "score"]):
-        return "COMPARISON"
-    if any(k in q for k in ["อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
+    if any(k in q for k in ["summary", "summarize", "overview", "สรุป", "ภาพรวม", "อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
     # Specific factual questions about a project (microcontroller, sensor, tool, author, advisor, year, objective, etc.)
     if any(k in q for k in ["what", "who", "when", "which", "how many", "ใคร", "อะไร", "ปีไหน", "เมื่อไหร่", "sensor", "sensors", "microcontroller", "hardware", "tool", "tools", "database", "author", "advisor", "objective"]):
@@ -226,7 +228,7 @@ def _fast_path_check(raw_query: str) -> Optional[tuple[str, dict[str, Any], str]
     if intent == "COMPARISON":
         if len(matched_titles) >= 2:
             norm_q = " vs ".join(matched_titles)
-            return norm_q, {}, intent
+            return norm_q, {"compared_projects": matched_titles}, intent
         # ถ้าจับคู่ได้แค่ 1 ชื่อในโหมดเปรียบเทียบ ให้ส่งต่อ LLM ช่วยแยกแยะ
         return None
 
@@ -346,15 +348,42 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
                 filters[k] = merged if len(merged) > 1 else merged[0]
 
         valid_intents = {"RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"}
-        if intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
-            intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
+        rule_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
+        if rule_intent == "COMPARISON" or intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
+            intent = rule_intent
 
         if filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not filters.get("project_title"):
             intent = "EXPLORATORY"
 
-        # Multi-project modes must not lock to a single project filter
-        if intent in {"RECOMMENDATION", "EXPLORATORY", "COMPARISON"}:
+        # Multi-project modes must not lock to a single project or author filter
+        if intent == "COMPARISON":
             filters.pop("project_title", None)
+            filters.pop("author", None)
+            filters.pop("advisor", None)
+            matched_in_q = [t for t in metadata_cache.titles if t.lower() in raw_query.lower() or (len(t) > 8 and t[:18].lower() in raw_query.lower())]
+            if matched_in_q:
+                filters["compared_projects"] = matched_in_q
+        elif intent in {"RECOMMENDATION", "EXPLORATORY"}:
+            filters.pop("project_title", None)
+            filters.pop("author", None)
+
+        if intent == "RECOMMENDATION":
+            domain_keywords = []
+            domain_map = {
+                "web": ["web", "platform", "เว็บ", "application", "system"],
+                "iot": ["iot", "sensor", "hardware", "arduino", "esp32", "อุปกรณ์", "เซนเซอร์", "watering"],
+                "automation": ["automation", "automatic", "อัตโนมัติ", "control", "monitoring"],
+                "machine learning": ["machine learning", "ai", "deep learning", "prediction", "ทำนาย", "classification"],
+                "energy": ["energy", "saving", "ประหยัดพลังงาน", "access point", "power"],
+                "mobile": ["mobile", "app", "android", "ios", "tracking", "gps", "มือถือ"],
+                "healthcare": ["health", "hospital", "patient", "discharge", "โรงพยาบาล", "คนไข้"],
+                "cybersecurity": ["security", "network", "penetration", "attack", "ความปลอดภัย"],
+            }
+            for d_name, kw_list in domain_map.items():
+                if any(kw in raw_query.lower() for kw in kw_list):
+                    domain_keywords.append(d_name)
+            if domain_keywords:
+                filters["target_domains"] = domain_keywords
 
         return norm_query, filters, intent
 
@@ -365,6 +394,14 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     fallback_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(fallback_filters.get("project_title")))
     if fallback_filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not fallback_filters.get("project_title"):
         fallback_intent = "EXPLORATORY"
-    if fallback_intent in {"RECOMMENDATION", "EXPLORATORY", "COMPARISON"}:
+    if fallback_intent == "COMPARISON":
         fallback_filters.pop("project_title", None)
+        fallback_filters.pop("author", None)
+        fallback_filters.pop("advisor", None)
+        matched_in_q = [t for t in metadata_cache.titles if t.lower() in raw_query.lower() or (len(t) > 8 and t[:18].lower() in raw_query.lower())]
+        if matched_in_q:
+            fallback_filters["compared_projects"] = matched_in_q
+    elif fallback_intent in {"RECOMMENDATION", "EXPLORATORY"}:
+        fallback_filters.pop("project_title", None)
+        fallback_filters.pop("author", None)
     return clean_q, fallback_filters, fallback_intent
