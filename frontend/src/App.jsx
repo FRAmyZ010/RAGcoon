@@ -1,371 +1,512 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-
-const INITIAL_DOCS = [
-  { id: 'demo-1', title: 'ProjectPetFeeder', year: '2022', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'ProjectPetFeeder.pdf', size: '228 KB', demo: true },
-  { id: 'demo-2', title: 'ProjectWebapplication', year: '2023', category: 'Web Application', status: 'Ready', date: '12 Jan 2025', fileName: 'ProjectWebapplication.pdf', size: '228 KB', demo: true },
-  { id: 'demo-3', title: 'Networkmonitoring', year: '2023', category: 'Network', status: 'Processing', date: '12 Jan 2025', fileName: 'Networkmonitoring.pdf', size: '228 KB', demo: true },
-  { id: 'demo-4', title: 'Preprojectnetwork', year: '2022', category: 'Network', status: 'Failed', date: '12 Jan 2025', fileName: 'Preprojectnetwork.pdf', size: '228 KB', demo: true },
-  { id: 'demo-5', title: 'ProjectFulldocument', year: '2021', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'ProjectFulldocument.pdf', size: '228 KB', demo: true },
-  { id: 'demo-6', title: 'Embeddedsystemproject', year: '2020', category: 'IOT', status: 'Processing', date: '12 Jan 2025', fileName: 'Embeddedsystemproject.pdf', size: '228 KB', demo: true },
-  { id: 'demo-7', title: 'ProjectMachine', year: '2022', category: 'Machine Learning', status: 'Ready', date: '11 Jan 2025', fileName: 'ProjectMachine.pdf', size: '228 KB', demo: true },
-  { id: 'demo-8', title: 'Pre-project_NU-WIFI', year: '2021', category: 'Network', status: 'Processing', date: '11 Jan 2025', fileName: 'Pre-project_NU-WIFI.pdf', size: '228 KB', demo: true },
-  { id: 'demo-9', title: 'ProjectPetFeeder', year: '2022', category: 'IOT', status: 'Processing', date: '10 Jan 2025', fileName: 'ProjectPetFeeder-final.pdf', size: '228 KB', demo: true },
-];
-
-const DB_NAME = 'ragcoon-docs-db';
-const STORE = 'files';
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveFile(file) {
-  const db = await openDB();
-  const record = { id: file.id, blob: file.blob };
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(record);
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function getFile(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(id);
-    req.onsuccess = () => resolve(req.result?.blob || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function removeStoredFile(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(id);
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-function readDocs() {
-  try {
-    return JSON.parse(localStorage.getItem('ragcoon-documents')) || INITIAL_DOCS;
-  } catch {
-    return INITIAL_DOCS;
-  }
-}
-
-function writeDocs(docs) {
-  localStorage.setItem('ragcoon-documents', JSON.stringify(docs));
-}
-
-function formatBytes(bytes) {
-  if (!bytes) return '0 KB';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
-}
-
-function formatDate(date = new Date()) {
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function fileTitle(name) {
-  return name.replace(/\.[^/.]+$/, '');
-}
-
-function Icon({ name, size = 16 }) {
-  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
-  const paths = {
-    home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></>,
-    file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></>,
-    message: <><path d="M20 15a3 3 0 0 1-3 3H8l-4 3v-9a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></>,
-    upload: <><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
-    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
-    download: <><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>,
-    copy: <><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></>,
-    edit: <><path d="m4 16-.8 4.8L8 20l11-11-4-4z"/><path d="m13 6 4 4"/></>,
-    trash: <><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="m6 7 1 14h10l1-14M9 7V4h6v3"/></>,
-    logout: <><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 4v16"/></>,
-    chevron: <path d="m6 9 6 6 6-6"/>,
-    check: <path d="m5 12 4 4L19 6"/>,
-  };
-  return <svg {...common}>{paths[name]}</svg>;
-}
+import React, { useState } from 'react';
+import { 
+  Home, 
+  Folder, 
+  MessageSquare, 
+  LogOut, 
+  Search, 
+  Bell, 
+  Calendar, 
+  Eye, 
+  EyeOff, 
+  ArrowRight,
+  TrendingUp,
+  FileText,
+  Activity,
+  Menu,
+  X,
+  ChevronRight
+} from 'lucide-react';
 
 export default function App() {
-  const [docs, setDocs] = useState(readDocs);
-  const [menuId, setMenuId] = useState(null);
-  const [filterCategory, setFilterCategory] = useState('Category');
-  const [filterModified, setFilterModified] = useState('Modified');
-  const [filterYear, setFilterYear] = useState('Years');
-  const [activeNav, setActiveNav] = useState('Documents Management');
-  const [toast, setToast] = useState('');
-  const [recent, setRecent] = useState(() => readDocs().filter(d => !d.demo).slice(0, 3));
-  const inputRef = useRef(null);
+  const [user, setUser] = useState(null);
 
-  useEffect(() => writeDocs(docs), [docs]);
+  const handleLogin = (username) => {
+    setUser(username || "Marry Jann");
+  };
 
-  useEffect(() => {
-    const close = () => setMenuId(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(''), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  const categories = useMemo(() => ['Category', ...new Set(docs.map(d => d.category))], [docs]);
-  const years = useMemo(() => ['Years', ...new Set(docs.map(d => d.year))], [docs]);
-
-  const filteredDocs = useMemo(() => docs.filter(d =>
-    (filterCategory === 'Category' || d.category === filterCategory) &&
-    (filterYear === 'Years' || d.year === filterYear)
-  ), [docs, filterCategory, filterYear]);
-
-  function notify(message) {
-    setToast(message);
-  }
-
-  async function handleUpload(event) {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-
-    const newDocs = [];
-    for (const file of files) {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      const category = ext === 'pdf' ? 'PDF' : ['doc', 'docx'].includes(ext) ? 'Document' : 'Other';
-      const doc = {
-        id,
-        title: fileTitle(file.name),
-        year: String(new Date().getFullYear()),
-        category,
-        status: 'Processing',
-        date: formatDate(),
-        fileName: file.name,
-        size: formatBytes(file.size),
-        demo: false
-      };
-      await saveFile({ id, blob: file });
-      newDocs.push(doc);
-    }
-
-    setDocs(prev => [...newDocs, ...prev]);
-    setRecent(prev => [...newDocs, ...prev].slice(0, 3));
-    notify(`${files.length} file${files.length > 1 ? 's' : ''} uploaded successfully`);
-    event.target.value = '';
-  }
-
-  async function handleDownload(doc) {
-    const blob = await getFile(doc.id);
-    if (!blob) {
-      notify('This sample file has no local file data');
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = doc.fileName || doc.title;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    notify('Download started');
-  }
-
-  async function handleCopy(doc) {
-    try {
-      await navigator.clipboard.writeText(doc.fileName || doc.title);
-      notify('File name copied');
-    } catch {
-      notify('Copy is not available in this browser');
-    }
-  }
-
-  function handleRename(doc) {
-    const next = window.prompt('Rename document', doc.title);
-    if (!next?.trim()) return;
-    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, title: next.trim() } : d));
-    setRecent(prev => prev.map(d => d.id === doc.id ? { ...d, title: next.trim() } : d));
-    setMenuId(null);
-    notify('Document renamed');
-  }
-
-  async function handleRemove(doc) {
-    const ok = window.confirm(`Remove "${doc.title}"?`);
-    if (!ok) return;
-    setDocs(prev => prev.filter(d => d.id !== doc.id));
-    setRecent(prev => prev.filter(d => d.id !== doc.id));
-    if (!doc.demo) await removeStoredFile(doc.id);
-    setMenuId(null);
-    notify('Document removed');
-  }
-
-  function resetDemo() {
-    setDocs(INITIAL_DOCS);
-    setRecent([]);
-    notify('Demo documents restored');
-  }
+  const handleLogout = () => {
+    setUser(null);
+  };
 
   return (
-    <div className="app-shell" onClick={() => setMenuId(null)}>
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-logo">🦝</div>
-          <div className="brand-name">RAGcoon</div>
-          <div className="collapse-icon">▯</div>
+    <div className="min-h-screen w-full bg-[#1e1e1e] font-sans antialiased text-slate-100 selection:bg-yellow-400 selection:text-slate-900">
+      {user ? (
+        <AdminDashboard username={user} onLogout={handleLogout} />
+      ) : (
+        <LoginPage onLogin={handleLogin} />
+      )}
+    </div>
+  );
+}
+
+function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!username.trim()) {
+      setError("Please enter your username");
+      return;
+    }
+    if (!password.trim()) {
+      setError("Please enter your password");
+      return;
+    }
+
+    setError("");
+    setIsLoading(true);
+
+    setTimeout(() => {
+      setIsLoading(false);
+      onLogin(username.trim());
+    }, 600);
+  };
+
+  return (
+    <div className="min-h-screen w-full bg-[#7a7a7a] flex items-center justify-center p-4 sm:p-6 md:p-10 select-none">
+      
+      {/* =================================================
+          FULL-SCREEN RESPONSIVE LOGIN CARD
+      ================================================= */}
+      <div className="relative w-full max-w-[420px] bg-[#2b2b2b] rounded-3xl shadow-2xl pt-12 pb-10 px-6 sm:px-10 border border-white/5 transition-all duration-300">
+        
+        {/* FLOATING RACCOON AVATAR AT TOP CENTER */}
+        <div className="absolute -top-12 left-1/2 -translate-x-1/2">
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-[#2b2b2b] p-1.5 shadow-xl flex items-center justify-center border border-white/10">
+            <div className="w-full h-full rounded-full bg-[#3a3a3a] flex items-center justify-center text-5xl sm:text-6xl border border-white/5">
+              🦝
+            </div>
+          </div>
         </div>
 
-        <nav className="nav">
-          {[
-            ['Dashboard', 'home'],
-            ['Documents Management', 'file'],
-            ['Feedback', 'message']
-          ].map(([label, icon]) => (
-            <button
-              key={label}
-              className={`nav-item ${activeNav === label ? 'active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); setActiveNav(label); notify(`${label} selected`); }}
-            >
-              <Icon name={icon} size={13} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+        {/* LOGO TITLE */}
+        <div className="text-center mt-2 mb-8">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-wider text-white">
+            RAGcoon
+          </h1>
+        </div>
 
-        <button className="logout" onClick={() => notify('Logged out (demo)')}>
-          <span>Log Out</span>
-          <Icon name="logout" size={13} />
+        {/* LOGIN FORM */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          
+          {/* USERNAME FIELD */}
+          <div>
+            <label className="block text-[11px] font-bold tracking-widest text-slate-300 uppercase text-center mb-2">
+              USERNAME
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                setError("");
+              }}
+              placeholder=""
+              className="w-full h-11 sm:h-12 px-4 rounded-md bg-white text-slate-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
+            />
+          </div>
+
+          {/* PASSWORD FIELD */}
+          <div>
+            <label className="block text-[11px] font-bold tracking-widest text-slate-300 uppercase text-center mb-2">
+              PASSWORD
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError("");
+                }}
+                placeholder=""
+                className="w-full h-11 sm:h-12 pl-4 pr-12 rounded-md bg-white text-slate-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 p-1"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* ERROR ALERT */}
+          {error && (
+            <div className="p-3 rounded-md bg-red-500/20 border border-red-500/40 text-red-300 text-xs text-center font-medium">
+              {error}
+            </div>
+          )}
+
+          {/* SIGN IN BUTTON */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full h-12 rounded-md bg-[#eed23e] hover:bg-[#e0c430] active:scale-[0.99] text-slate-950 font-bold text-sm tracking-wider uppercase transition shadow-md flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                "SIGN IN"
+              )}
+            </button>
+          </div>
+
+        </form>
+
+        {/* DEMO AUTOFILL ASSIST */}
+        <div className="mt-8 pt-4 border-t border-white/10 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setUsername("Marry Jann");
+              setPassword("admin123");
+            }}
+            className="text-xs text-slate-400 hover:text-yellow-400 underline transition"
+          >
+            Click to fill Demo Credentials
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ username, onLogout }) {
+  const [activeTab, setActiveTab] = useState("Dashboard");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Top metric overview data
+  const stats = [
+    { label: "Total Document", val: "1256", icon: "📄" },
+    { label: "Search Today", val: "456", icon: "📊" },
+    { label: "Visits", val: "476", icon: "👁️" },
+    { label: "Feedback", val: "1256", icon: "💬" },
+  ];
+
+  // Top keyword metrics
+  const keywords = [
+    { name: "AI", value: 120, bars: 12 },
+    { name: "Chatbot", value: 95, bars: 9 },
+    { name: "IoT", value: 60, bars: 6 },
+    { name: "Automation", value: 40, bars: 4 },
+    { name: "Robot", value: 30, bars: 3 },
+  ];
+
+  // Most viewed document list
+  const mostViewedDocs = [
+    { name: "Network Monitoring Document", views: 23 },
+    { name: "Pet Feeder", views: 20 },
+    { name: "PLC_energy_saver_system", views: 18 },
+    { name: "Mobile Automatic Watering Machine", views: 17 },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#b5b5b5] text-slate-900 flex flex-col md:flex-row">
+
+      {/* =================================================
+          LEFT SIDEBAR NAVIGATION (RESPONSIVE)
+      ================================================= */}
+      
+      {/* Mobile Header Bar */}
+      <div className="md:hidden bg-[#2d2d2d] text-white p-4 flex items-center justify-between border-b border-slate-700">
+        <div className="flex items-center space-x-3">
+          <span className="text-2xl">🦝</span>
+          <span className="font-bold text-lg tracking-wide">RAGcoon</span>
+        </div>
+        <button
+          onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+          className="p-2 rounded-lg bg-slate-800 text-slate-200"
+        >
+          {mobileSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
+      </div>
+
+      {/* Sidebar Panel */}
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-40
+        w-64 bg-[#2d2d2d] text-slate-200 flex flex-col justify-between
+        transform transition-transform duration-300 ease-in-out
+        ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        shrink-0 border-r border-slate-700/50 shadow-2xl md:shadow-none
+      `}>
+        <div>
+          {/* Logo Brand Header */}
+          <div className="p-6 flex items-center space-x-3 border-b border-slate-700/50">
+            <span className="text-3xl">🦝</span>
+            <span className="font-extrabold text-xl tracking-wide text-white">RAGcoon</span>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="p-4 space-y-2">
+            <button
+              onClick={() => { setActiveTab("Dashboard"); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
+                activeTab === "Dashboard"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              <Home className="w-4 h-4" />
+              <span>Dashboard</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab("Documents"); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
+                activeTab === "Documents"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              <Folder className="w-4 h-4" />
+              <span>Documents Management</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab("Feedback"); setMobileSidebarOpen(false); }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
+                activeTab === "Feedback"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Feedback</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Sidebar Log Out Button */}
+        <div className="p-4 border-t border-slate-700/50">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-white text-slate-950 font-bold text-sm hover:bg-slate-200 transition shadow-sm"
+          >
+            <span>Log Out</span>
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
-          <div />
-          <div className="account">
-            <button className="icon-button" onClick={() => notify('No new notifications')}>
-              <Icon name="bell" size={15} />
+      {/* OVERLAY FOR MOBILE SIDEBAR */}
+      {mobileSidebarOpen && (
+        <div 
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm"
+        />
+      )}
+
+      {/* =================================================
+          MAIN DASHBOARD BODY CONTENT
+      ================================================= */}
+      <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto space-y-6">
+        
+        {/* TOP HEADER CONTROLS */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Overview
+          </h2>
+
+          <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search"
+                className="w-full pl-9 pr-4 py-2 text-xs rounded-lg bg-white text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+              />
+            </div>
+
+            {/* Notification Bell */}
+            <button className="p-2 rounded-lg bg-white text-slate-700 shadow-sm hover:bg-slate-50">
+              <Bell className="w-4 h-4" />
             </button>
-            <span className="avatar-dot" />
-            <span className="username">Harry Jann</span>
+
+            {/* User Profile */}
+            <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg shadow-sm">
+              <div className="w-6 h-6 rounded-full bg-red-700 flex items-center justify-center text-white text-xs font-bold">
+                M
+              </div>
+              <span className="text-xs font-bold text-slate-800">{username}</span>
+            </div>
           </div>
-        </header>
+        </div>
 
-        {activeNav !== 'Documents Management' ? (
-          <section className="empty-section">
-            <h2>{activeNav}</h2>
-            <p>This navigation item is ready for your next page.</p>
-            <button className="primary" onClick={() => setActiveNav('Documents Management')}>Back to Documents</button>
-          </section>
-        ) : (
-          <section className="content">
-            <div className="page-heading">
-              <h1>Documents Management</h1>
-              <button className="upload-button" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>
-                <Icon name="upload" size={14} />
-                Upload file
-              </button>
-              <input ref={inputRef} type="file" multiple hidden accept=".pdf,.doc,.docx,.txt,.csv,.ppt,.pptx,.xlsx,.zip" onChange={handleUpload} />
+        {/* SELECT DATES BUTTON */}
+        <div className="flex justify-end">
+          <button className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Select Dates</span>
+          </button>
+        </div>
+
+        {/* =================================================
+            METRIC STATS CARDS GRID (4 ITEMS)
+        ================================================= */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((item, idx) => (
+            <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex flex-col justify-between">
+              <div className="flex justify-between items-start">
+                <span className="text-xs font-semibold text-slate-500">{item.label}</span>
+                <span className="text-purple-600 bg-purple-50 p-1.5 rounded-lg text-xs">🟪</span>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl font-black text-slate-900">{item.val}</div>
+                <div className="flex items-center space-x-1 mt-2 text-[10px] font-bold text-teal-600">
+                  <span>10%</span>
+                  <span>▲</span>
+                  <span className="text-slate-400 font-normal">150 today</span>
+                </div>
+              </div>
             </div>
+          ))}
+        </div>
 
-            <div className="recent-header">
-              <h2>Recently modified</h2>
-              <div className="sparkles" aria-hidden="true"><span>✦</span><span>✦</span></div>
+        {/* =================================================
+            CHARTS ROW (LINE & BAR CHART)
+        ================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* SEARCH ACTIVITY LINE CHART */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
+            <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase mb-6">
+              Search Activity
+            </h3>
+            <div className="h-48 relative flex items-end">
+              {/* Y Axis Labels */}
+              <div className="absolute left-0 top-0 bottom-6 flex flex-col justify-between text-[10px] text-slate-400">
+                <span>200</span>
+                <span>150</span>
+                <span>100</span>
+                <span>0</span>
+              </div>
+
+              {/* Custom SVG Line Graphics */}
+              <div className="w-full h-full pl-8 pb-6 pt-2">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 300 120" preserveAspectRatio="none">
+                  {/* Grid Lines */}
+                  <line x1="0" y1="0" x2="300" y2="0" stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <line x1="0" y1="40" x2="300" y2="40" stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <line x1="0" y1="80" x2="300" y2="80" stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <line x1="0" y1="120" x2="300" y2="120" stroke="#f1f5f9" />
+
+                  {/* Dotted Trend Line */}
+                  <path
+                    d="M 0 70 Q 50 60 100 80 T 200 40 T 300 10"
+                    fill="none"
+                    stroke="#93c5fd"
+                    strokeWidth="2"
+                    strokeDasharray="3 3"
+                  />
+
+                  {/* Main Activity Curve */}
+                  <path
+                    d="M 0 80 C 30 50 50 100 80 80 C 110 60 130 30 160 30 C 190 30 200 60 230 50 C 260 40 280 20 300 25"
+                    fill="none"
+                    stroke="#475569"
+                    strokeWidth="2.5"
+                  />
+                </svg>
+              </div>
+
+              {/* X Axis Month Labels */}
+              <div className="absolute bottom-0 left-8 right-0 flex justify-between text-[10px] text-slate-400 font-medium">
+                <span>Jan</span>
+                <span>Feb</span>
+                <span>Mar</span>
+                <span>Apr</span>
+                <span>May</span>
+                <span>Jun</span>
+                <span>Jul</span>
+              </div>
             </div>
+          </div>
 
-            <div className="recent-grid">
-              {(recent.length ? recent : docs.slice(0, 3)).map(doc => (
-                <div className="recent-card" key={doc.id}>
-                  <Icon name="file" size={13} />
-                  <div className="recent-text">
-                    <div className="recent-title">{doc.title}</div>
-                    <div className="recent-meta">{doc.size} &nbsp; {doc.fileName?.split('.').pop()?.toUpperCase() || 'PDF'}</div>
-                  </div>
-                  <button className="card-more" onClick={(e) => { e.stopPropagation(); setMenuId(menuId === doc.id ? null : doc.id); }}>
-                    <Icon name="more" size={14} />
-                  </button>
+          {/* DOCUMENTS BY YEARS BAR CHART */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
+            <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase mb-6">
+              Documents by years
+            </h3>
+            <div className="h-48 flex items-end justify-between px-2 sm:px-6 pt-4">
+              {[
+                { year: "2018", height: "65%" },
+                { year: "2019", height: "85%" },
+                { year: "2020", height: "40%" },
+                { year: "2021", height: "70%" },
+                { year: "2023", height: "50%" },
+                { year: "2024", height: "65%" },
+                { year: "2025", height: "68%" },
+              ].map((bar, i) => (
+                <div key={i} className="flex flex-col items-center gap-3 h-full justify-end">
+                  <div 
+                    className="w-5 sm:w-7 bg-slate-300 rounded-t-lg transition-all duration-500 hover:bg-slate-400"
+                    style={{ height: bar.height }}
+                  />
+                  <span className="text-[10px] font-semibold text-slate-600">{bar.year}</span>
                 </div>
               ))}
             </div>
+          </div>
 
-            <div className="files-header">
-              <h2>All files</h2>
-              <div className="filters" onClick={(e) => e.stopPropagation()}>
-                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-                  {categories.map(c => <option key={c}>{c}</option>)}
-                </select>
-                <select value={filterModified} onChange={e => setFilterModified(e.target.value)}>
-                  <option>Modified</option>
-                  <option>Newest</option>
-                  <option>Oldest</option>
-                </select>
-                <select value={filterYear} onChange={e => setFilterYear(e.target.value)}>
-                  {years.map(y => <option key={y}>{y}</option>)}
-                </select>
-              </div>
+        </div>
+
+        {/* =================================================
+            BOTTOM ROW (TOP KEYWORDS & MOST VIEWED DOCS)
+        ================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* TOP KEYWORDS SECTION */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
+            <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase mb-6">
+              Top Keywords
+            </h3>
+            <div className="space-y-4">
+              {keywords.map((kw, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs font-semibold">
+                  <span className="w-24 text-slate-700">{kw.name}</span>
+                  <div className="flex-1 max-w-[200px] flex gap-1">
+                    {Array.from({ length: 12 }).map((_, barIdx) => (
+                      <div
+                        key={barIdx}
+                        className={`h-4 flex-1 rounded-sm ${
+                          barIdx < kw.bars ? "bg-slate-900" : "bg-transparent"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="w-10 text-right font-bold text-slate-900">{kw.value}</span>
+                </div>
+              ))}
             </div>
+          </div>
 
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Year</th>
-                    <th>Category</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDocs.length ? filteredDocs.map(doc => (
-                    <tr key={doc.id}>
-                      <td><div className="title-cell"><span className="pdf-mark">▧</span>{doc.title}</div></td>
-                      <td>{doc.year}</td>
-                      <td>{doc.category}</td>
-                      <td><span className={`status ${doc.status.toLowerCase()}`}>{doc.status}</span></td>
-                      <td>{doc.date}</td>
-                      <td className="menu-cell">
-                        <button className="row-more" onClick={(e) => { e.stopPropagation(); setMenuId(menuId === doc.id ? null : doc.id); }}>
-                          <Icon name="more" size={15} />
-                        </button>
-                        {menuId === doc.id && (
-                          <div className="context-menu" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => handleDownload(doc)}><Icon name="download" size={14} />Download</button>
-                            <button onClick={() => handleCopy(doc)}><Icon name="copy" size={14} />Copy</button>
-                            <button onClick={() => handleRename(doc)}><Icon name="edit" size={14} />Rename</button>
-                            <button className="danger" onClick={() => handleRemove(doc)}><Icon name="trash" size={14} />Remove</button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="6" className="no-files">No documents found.</td></tr>
-                  )}
-                </tbody>
-              </table>
+          {/* MOST VIEWED DOCUMENTS SECTION */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
+            <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase mb-6">
+              Most Viewed Documents
+            </h3>
+            <div className="space-y-5">
+              {mostViewedDocs.map((doc, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs font-semibold pb-2 border-b border-slate-100 last:border-none">
+                  <span className="text-slate-800 font-medium truncate pr-4">{doc.name}</span>
+                  <span className="font-bold text-slate-900 shrink-0">{doc.views}</span>
+                </div>
+              ))}
             </div>
+          </div>
 
-            <div className="bottom-actions">
-              <span>{filteredDocs.length} document{filteredDocs.length !== 1 ? 's' : ''}</span>
-              <button onClick={resetDemo}>Restore demo data</button>
-            </div>
-          </section>
-        )}
+        </div>
 
-        {toast && <div className="toast"><Icon name="check" size={15} />{toast}</div>}
       </main>
     </div>
   );
