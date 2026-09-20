@@ -1,5 +1,6 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_BATCH_UPLOAD_FILES = 5;
 
 export async function listDocuments() {
   const res = await fetch(DOCUMENTS_BASE);
@@ -9,7 +10,7 @@ export async function listDocuments() {
   return res.json();
 }
 
-export async function uploadDocument(file) {
+export async function uploadDocument(file, options = {}) {
   if (!file) {
     throw new Error("ไม่ได้เลือกไฟล์");
   }
@@ -26,6 +27,7 @@ export async function uploadDocument(file) {
   const res = await fetch(`${DOCUMENTS_BASE}/upload`, {
     method: "POST",
     body: formData,
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -37,6 +39,56 @@ export async function uploadDocument(file) {
       }
     } catch {
       // keep default message
+    }
+    const error = new Error(detail);
+    error.status = res.status;
+    throw error;
+  }
+
+  return res.json();
+}
+
+/**
+ * Upload up to MAX_BATCH_UPLOAD_FILES PDFs. Returns { results, summary }.
+ * Partial success is normal (HTTP 200 with failed items in results).
+ */
+export async function uploadDocumentsBatch(files) {
+  const list = Array.from(files || []);
+  if (list.length === 0) {
+    throw new Error("ไม่ได้เลือกไฟล์");
+  }
+  if (list.length > MAX_BATCH_UPLOAD_FILES) {
+    throw new Error(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
+  }
+
+  for (const file of list) {
+    if (!file.name?.toLowerCase().endsWith(".pdf")) {
+      throw new Error(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new Error(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
+    }
+  }
+
+  const formData = new FormData();
+  for (const file of list) {
+    formData.append("files", file);
+  }
+
+  const res = await fetch(`${DOCUMENTS_BASE}/upload-batch`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail = `Batch upload failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.detail) {
+        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      }
+    } catch {
+      // keep default
     }
     const error = new Error(detail);
     error.status = res.status;

@@ -16,6 +16,8 @@ import {
   UploadCloud,
   Loader2,
   RefreshCw,
+  Check,
+  CircleAlert,
 } from "lucide-react";
 import {
   deleteDocument,
@@ -24,6 +26,7 @@ import {
   openDocumentPreview,
   uploadDocument,
   MAX_UPLOAD_BYTES,
+  MAX_BATCH_UPLOAD_FILES,
 } from "../services/documentsApi";
 
 export default function DocumentsManagement() {
@@ -35,9 +38,15 @@ export default function DocumentsManagement() {
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [uploadQueue, setUploadQueue] = useState([]);
+  const [uploadToast, setUploadToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [actionBusyId, setActionBusyId] = useState(null);
+  const [menuPos, setMenuPos] = useState(null);
   const fileInputRef = useRef(null);
+  const toastTimerRef = useRef(null);
+  const uploadCancelRef = useRef(false);
+  const uploadAbortRef = useRef(null);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
@@ -57,15 +66,220 @@ export default function DocumentsManagement() {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  const toggleActionMenu = (index) => {
-    setActiveMenuIndex(activeMenuIndex === index ? null : index);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const showUploadToast = (summary) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setUploadToast(summary);
+    toastTimerRef.current = setTimeout(() => setUploadToast(null), 5500);
+  };
+
+  const finishUploadSession = async ({ succeeded, failed, cancelled, total }) => {
+    await fetchDocuments();
+    setUploading(false);
+    setIsUploadModalOpen(false);
+    setUploadQueue([]);
+    setUploadError("");
+    uploadCancelRef.current = false;
+    uploadAbortRef.current = null;
+    if (succeeded > 0 || failed > 0 || cancelled > 0) {
+      showUploadToast({ total, succeeded, failed, cancelled });
+    }
+  };
+
+  const closeUploadModal = () => {
+    if (uploading) {
+      const ok = window.confirm(
+        "ยกเลิกคิวอัปโหลดที่เหลือหรือไม่?\n\nไฟล์ที่อัปโหลดสำเร็จแล้วจะยังอยู่ในระบบ — เฉพาะไฟล์ที่รอคิว/กำลังทำจะถูกยกเลิก"
+      );
+      if (!ok) return;
+      uploadCancelRef.current = true;
+      uploadAbortRef.current?.abort();
+      return;
+    }
+
+    const finished = uploadQueue.filter(
+      (q) => q.status === "success" || q.status === "error" || q.status === "cancelled"
+    );
+    if (finished.length > 0) {
+      const succeeded = finished.filter((q) => q.status === "success").length;
+      const failed = finished.filter((q) => q.status === "error").length;
+      const cancelled = finished.filter((q) => q.status === "cancelled").length;
+      showUploadToast({
+        total: finished.length,
+        succeeded,
+        failed,
+        cancelled,
+      });
+    }
+    setIsUploadModalOpen(false);
+    setUploadQueue([]);
+    setUploadError("");
+  };
+
+  const openUploadModal = () => {
+    setUploadError("");
+    setUploadQueue([]);
+    uploadCancelRef.current = false;
+    setIsUploadModalOpen(true);
+  };
+
+  const handleUploadFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    if (files.length > MAX_BATCH_UPLOAD_FILES) {
+      setUploadError(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
+      return;
+    }
+
+    for (const file of files) {
+      if (!file.name.toLowerCase().endsWith(".pdf")) {
+        setUploadError(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
+        return;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setUploadError(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
+        return;
+      }
+    }
+
+    const queue = files.map((file, index) => ({
+      id: `${file.name}-${file.size}-${index}-${Date.now()}`,
+      name: file.name,
+      file,
+      status: "pending",
+      error: null,
+    }));
+
+    uploadCancelRef.current = false;
+    const abortController = new AbortController();
+    uploadAbortRef.current = abortController;
+
+    setUploading(true);
+    setUploadError("");
+    setUploadQueue(queue);
+
+    const statusById = Object.fromEntries(queue.map((q) => [q.id, "pending"]));
+    let succeeded = 0;
+    let failed = 0;
+
+    const patchRow = (id, status, error = null) => {
+      statusById[id] = status;
+      setUploadQueue((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, status, error } : row))
+      );
+    };
+
+    const cancelRemaining = (fromId = null) => {
+      for (const item of queue) {
+        const st = statusById[item.id];
+        if (st === "pending" || st === "uploading" || item.id === fromId) {
+          if (st === "success" || st === "error") continue;
+          patchRow(item.id, "cancelled", "ยกเลิกโดยผู้ใช้");
+        }
+      }
+    };
+
+    for (const item of queue) {
+      if (uploadCancelRef.current) {
+        cancelRemaining();
+        break;
+      }
+
+      patchRow(item.id, "uploading");
+
+      try {
+        await uploadDocument(item.file, { signal: abortController.signal });
+        succeeded += 1;
+        patchRow(item.id, "success");
+      } catch (err) {
+        const aborted =
+          err?.name === "AbortError" ||
+          String(err?.message || "").toLowerCase().includes("abort") ||
+          uploadCancelRef.current;
+
+        if (aborted) {
+          cancelRemaining(item.id);
+          break;
+        }
+
+        failed += 1;
+        patchRow(item.id, "error", err.message || "Upload failed");
+      }
+    }
+
+    if (uploadCancelRef.current) {
+      cancelRemaining();
+    }
+
+    const cancelled = Object.values(statusById).filter((s) => s === "cancelled").length;
+    const total = queue.length;
+    const wasCancelled = uploadCancelRef.current;
+
+    if (wasCancelled) {
+      await new Promise((r) => setTimeout(r, 250));
+      await finishUploadSession({
+        succeeded,
+        failed,
+        cancelled,
+        total,
+      });
+      return;
+    }
+
+    await fetchDocuments();
+    setUploading(false);
+    uploadAbortRef.current = null;
+
+    if (failed === 0) {
+      await new Promise((r) => setTimeout(r, 700));
+      setIsUploadModalOpen(false);
+      setUploadQueue([]);
+      showUploadToast({ total, succeeded, failed, cancelled: 0 });
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const files = e.target.files;
+    if (files?.length) handleUploadFiles(files);
+    e.target.value = "";
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files?.length) handleUploadFiles(files);
+  };
+
+  const closeActionMenu = () => {
+    setActiveMenuIndex(null);
+    setMenuPos(null);
+  };
+
+  const toggleActionMenu = (index, event) => {
+    if (activeMenuIndex === index) {
+      closeActionMenu();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    setMenuPos({
+      top: rect.bottom + 4,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+    setActiveMenuIndex(index);
   };
 
   const handleRemove = async (id) => {
     if (!window.confirm("ลบเอกสารนี้ถาวรหรือไม่?")) return;
 
     setActionBusyId(id);
-    setActiveMenuIndex(null);
+    closeActionMenu();
     try {
       await deleteDocument(id);
       setFilesData((prev) => prev.filter((file) => file.id !== id));
@@ -77,12 +291,12 @@ export default function DocumentsManagement() {
   };
 
   const handlePreview = (id) => {
-    setActiveMenuIndex(null);
+    closeActionMenu();
     openDocumentPreview(id);
   };
 
   const handleDownload = (id, filename) => {
-    setActiveMenuIndex(null);
+    closeActionMenu();
     const link = document.createElement("a");
     link.href = `/api/v1/documents/${id}/file?download=true`;
     link.download = filename || `document-${id}.pdf`;
@@ -92,47 +306,8 @@ export default function DocumentsManagement() {
     link.remove();
   };
 
-  const handleUploadFile = async (file) => {
-    if (!file) return;
-
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setUploadError("รองรับเฉพาะไฟล์ PDF เท่านั้น");
-      return;
-    }
-
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadError("ไฟล์ใหญ่เกิน 25MB");
-      return;
-    }
-
-    setUploading(true);
-    setUploadError("");
-    try {
-      await uploadDocument(file);
-      setIsUploadModalOpen(false);
-      await fetchDocuments();
-    } catch (err) {
-      setUploadError(err.message || "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) handleUploadFile(file);
-    e.target.value = "";
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragActive(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleUploadFile(file);
-  };
-
   return (
-    <div className="flex h-screen w-screen bg-gray-100 font-sans text-xs sm:text-sm text-gray-800 overflow-hidden relative">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-base text-gray-800 sm:text-lg">
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -147,8 +322,8 @@ export default function DocumentsManagement() {
       >
         <div>
           <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-base sm:text-lg">
-              <span className="text-xl">🦝</span>
+            <div className="flex items-center gap-2 font-bold text-lg sm:text-xl">
+              <span className="text-2xl">🦝</span>
               <span>RAGcoon</span>
             </div>
             <button
@@ -211,8 +386,8 @@ export default function DocumentsManagement() {
 
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900">Documents Management</h1>
-            <p className="text-xs text-gray-500">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Documents Management</h1>
+            <p className="text-sm text-gray-500 sm:text-base">
               จัดการและอัปโหลดไฟล์โครงงาน Senior Project เข้าสู่คลังข้อมูล RAG Engine
             </p>
           </div>
@@ -228,10 +403,7 @@ export default function DocumentsManagement() {
               <span className="hidden sm:inline">Refresh</span>
             </button>
             <button
-              onClick={() => {
-                setUploadError("");
-                setIsUploadModalOpen(true);
-              }}
+              onClick={openUploadModal}
               className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700 shadow-sm"
             >
               <Plus className="h-4 w-4" />
@@ -249,7 +421,7 @@ export default function DocumentsManagement() {
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[1200px]">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-xs">
+              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-sm">
                 <tr>
                   <th className="py-3 px-4">Title</th>
                   <th className="py-3 px-3">Authors</th>
@@ -262,7 +434,7 @@ export default function DocumentsManagement() {
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-xs sm:text-sm">
+              <tbody className="divide-y divide-gray-100 text-sm sm:text-base">
                 {loading && (
                   <tr>
                     <td colSpan={9} className="py-10 text-center text-gray-500">
@@ -316,7 +488,7 @@ export default function DocumentsManagement() {
                       </td>
                       <td className="py-3 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                             row.status === "Ready"
                               ? "bg-green-100 text-green-700"
                               : row.status === "Failed"
@@ -328,11 +500,13 @@ export default function DocumentsManagement() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-gray-500 whitespace-nowrap">{row.date}</td>
-                      <td className="py-3 px-4 text-right relative">
+                      <td className="py-3 px-4 text-right">
                         <button
-                          onClick={() => toggleActionMenu(idx)}
+                          type="button"
+                          onClick={(e) => toggleActionMenu(idx, e)}
                           disabled={actionBusyId === row.id}
                           className="p-1 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                          aria-label="Open actions"
                         >
                           {actionBusyId === row.id ? (
                             <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
@@ -340,32 +514,6 @@ export default function DocumentsManagement() {
                             <MoreVertical className="h-4 w-4 text-gray-500" />
                           )}
                         </button>
-
-                        {activeMenuIndex === idx && (
-                          <div className="absolute right-4 top-10 z-20 w-40 rounded-xl bg-white p-1 shadow-xl border border-gray-200 text-left text-xs">
-                            <button
-                              onClick={() => handlePreview(row.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              <span>Preview</span>
-                            </button>
-                            <button
-                              onClick={() => handleDownload(row.id, row.filename)}
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              <span>Download</span>
-                            </button>
-                            <button
-                              onClick={() => handleRemove(row.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-red-600 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span>Remove</span>
-                            </button>
-                          </div>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -375,15 +523,54 @@ export default function DocumentsManagement() {
         </section>
       </main>
 
+      {activeMenuIndex != null && menuPos && filesData[activeMenuIndex] && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={closeActionMenu} aria-hidden />
+          <div
+            className="fixed z-50 w-44 rounded-xl border border-gray-200 bg-white p-1 text-left text-sm shadow-xl"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
+            <button
+              type="button"
+              onClick={() => handlePreview(filesData[activeMenuIndex].id)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>Preview</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleDownload(
+                  filesData[activeMenuIndex].id,
+                  filesData[activeMenuIndex].filename
+                )
+              }
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Download</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRemove(filesData[activeMenuIndex].id)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>Remove</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-base font-bold text-gray-900">Upload New Senior Project File</h3>
+              <h3 className="text-lg font-bold text-gray-900">Upload Senior Project PDFs</h3>
               <button
-                onClick={() => !uploading && setIsUploadModalOpen(false)}
-                disabled={uploading}
-                className="text-gray-400 hover:text-black disabled:opacity-50"
+                onClick={closeUploadModal}
+                className="text-gray-400 hover:text-black"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -400,25 +587,28 @@ export default function DocumentsManagement() {
                 dragActive
                   ? "border-blue-500 bg-blue-50"
                   : "border-gray-300 hover:bg-gray-50"
-              }`}
+              } ${uploading ? "pointer-events-none opacity-70" : ""}`}
             >
               {uploading ? (
                 <>
-                  <Loader2 className="h-10 w-10 text-blue-500 mb-2 animate-spin" />
-                  <p className="font-bold text-gray-700 text-sm">Uploading & ingesting...</p>
-                  <p className="text-xs text-gray-400 mt-1">อาจใช้เวลาสักครู่เพราะระบบทำ embedding</p>
+                  <Loader2 className="mb-2 h-10 w-10 animate-spin text-blue-500" />
+                  <p className="text-base font-bold text-gray-700">กำลังอัปโหลดทีละไฟล์...</p>
+                  <p className="mt-1 text-sm text-gray-400">ดูสถานะรายไฟล์ด้านล่าง</p>
                 </>
               ) : (
                 <>
-                  <UploadCloud className="h-10 w-10 text-blue-500 mb-2" />
-                  <p className="font-bold text-gray-700 text-sm">คลิกหรือลากไฟล์ PDF มาวาง</p>
-                  <p className="text-xs text-gray-400 mt-1">Supported format: PDF (Max 25MB)</p>
+                  <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
+                  <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
+                  <p className="mt-1 text-sm text-gray-400">
+                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max 25MB / ไฟล์
+                  </p>
                 </>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".pdf,application/pdf"
+                multiple
                 className="hidden"
                 disabled={uploading}
                 onChange={handleFileChange}
@@ -426,28 +616,126 @@ export default function DocumentsManagement() {
             </label>
 
             {uploadError && (
-              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {uploadError}
+              </div>
+            )}
+
+            {uploadQueue.length > 0 && (
+              <div className="mt-4 max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <div className="px-1 text-sm font-semibold text-gray-700">
+                  คิวอัปโหลด · สำเร็จ{" "}
+                  {uploadQueue.filter((q) => q.status === "success").length} / {uploadQueue.length}
+                </div>
+                {[
+                  ...uploadQueue.filter(
+                    (q) => q.status !== "success" && q.status !== "cancelled"
+                  ),
+                  ...uploadQueue.filter((q) => q.status === "cancelled"),
+                  ...uploadQueue.filter((q) => q.status === "success"),
+                ].map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`upload-queue-item flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                      item.status === "success"
+                        ? "is-success border-green-200 bg-green-50 text-green-900"
+                        : item.status === "error"
+                          ? "border-red-200 bg-red-50 text-red-800"
+                          : item.status === "cancelled"
+                            ? "border-gray-300 bg-gray-100 text-gray-600"
+                          : item.status === "uploading"
+                            ? "is-uploading border-blue-200 bg-blue-50 text-blue-900"
+                            : "border-gray-200 bg-white text-gray-700"
+                    }`}
+                    style={{ animationDelay: `${index * 40}ms` }}
+                  >
+                    <div className="mt-0.5 shrink-0">
+                      {item.status === "success" && <Check className="h-4 w-4 text-green-600" />}
+                      {item.status === "error" && <CircleAlert className="h-4 w-4 text-red-600" />}
+                      {item.status === "cancelled" && <X className="h-4 w-4 text-gray-500" />}
+                      {item.status === "uploading" && (
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      )}
+                      {item.status === "pending" && (
+                        <span className="block h-4 w-4 rounded-full border-2 border-gray-300" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium" title={item.name}>
+                        {item.name}
+                      </div>
+                      <div className="mt-0.5 text-xs opacity-80 sm:text-sm">
+                        {item.status === "pending" && "รอคิว"}
+                        {item.status === "uploading" && "กำลังอัปโหลดและ ingest..."}
+                        {item.status === "success" && "อัปโหลดเสร็จแล้ว"}
+                        {item.status === "cancelled" && "ยกเลิกแล้ว"}
+                        {item.status === "error" && (item.error || "ล้มเหลว")}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
             <div className="mt-6 flex justify-end gap-2">
               <button
-                onClick={() => setIsUploadModalOpen(false)}
-                disabled={uploading}
-                className="rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                onClick={closeUploadModal}
+                className="rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100"
               >
-                Cancel
+                {uploading
+                  ? "Cancel"
+                  : uploadQueue.some((q) => q.status === "error" || q.status === "cancelled")
+                    ? "Close"
+                    : "Cancel"}
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
                 className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {uploading ? "Uploading..." : "Choose PDF"}
+                {uploading ? "Uploading..." : "Choose PDFs"}
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {uploadToast && (
+        <div className="fixed bottom-6 right-6 z-[60] w-[min(100%-2rem,22rem)] animate-[upload-row-in_0.3s_ease-out] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl">
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <div className="font-bold text-gray-900">สรุปการอัปโหลด</div>
+            <button
+              type="button"
+              onClick={() => setUploadToast(null)}
+              className="text-gray-400 hover:text-gray-700"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-sm text-gray-600 sm:text-base">
+            สำเร็จ {uploadToast.succeeded} / {uploadToast.total}
+            {uploadToast.failed > 0 ? ` · ล้มเหลว ${uploadToast.failed}` : ""}
+            {uploadToast.cancelled > 0 ? ` · ยกเลิก ${uploadToast.cancelled}` : ""}
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-gray-700">
+            <li className="flex items-center gap-2 text-green-700">
+              <Check className="h-4 w-4" />
+              {uploadToast.succeeded} ไฟล์พร้อมใช้งาน
+            </li>
+            {uploadToast.failed > 0 && (
+              <li className="flex items-center gap-2 text-red-700">
+                <CircleAlert className="h-4 w-4" />
+                {uploadToast.failed} ไฟล์ไม่สำเร็จ
+              </li>
+            )}
+            {uploadToast.cancelled > 0 && (
+              <li className="flex items-center gap-2 text-gray-600">
+                <X className="h-4 w-4" />
+                {uploadToast.cancelled} ไฟล์ถูกยกเลิก
+              </li>
+            )}
+          </ul>
         </div>
       )}
     </div>

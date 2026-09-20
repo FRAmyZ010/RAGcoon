@@ -251,7 +251,7 @@ export default function App() {
   const showEmptyState = messages.length === 0 && !loading;
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-sm text-gray-800">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-base text-gray-800 sm:text-lg">
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -282,7 +282,7 @@ export default function App() {
 
         <button
           onClick={handleNewWorkspace}
-          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 bg-white/10 px-3 py-2.5 text-xs font-medium text-gray-100 transition hover:bg-white/20 hover:text-white md:text-sm"
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 bg-white/10 px-3 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-white/20 hover:text-white md:text-base"
         >
           <MessageSquarePlus className="h-4 w-4" />
           <span>New chat</span>
@@ -294,19 +294,19 @@ export default function App() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search chats..."
-            className="h-9 w-full rounded-lg bg-white/10 pl-9 pr-3 text-xs text-white outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-gray-500 md:text-sm"
+            className="h-9 w-full rounded-lg bg-white/10 pl-9 pr-3 text-sm text-white outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-gray-500 md:text-base"
           />
         </div>
 
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+          <div className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Recents
           </div>
           {filteredWorkspaces.map((ws) => (
             <button
               key={ws.workspace_id}
               onClick={() => handleSelectWorkspace(ws)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition md:text-sm ${
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition md:text-base ${
                 activeWorkspaceId === ws.workspace_id
                   ? "bg-white/20 font-semibold text-white"
                   : "text-gray-300 hover:bg-white/10 hover:text-white"
@@ -318,7 +318,7 @@ export default function App() {
           ))}
 
           {filteredWorkspaces.length === 0 && (
-            <div className="px-2 py-6 text-center text-xs text-gray-500">
+            <div className="px-2 py-6 text-center text-sm text-gray-500">
               No chats yet. Start a new conversation.
             </div>
           )}
@@ -327,14 +327,14 @@ export default function App() {
         <div className="mt-4 space-y-1 border-t border-gray-700 pt-3">
           <Link
             to="/documents"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-300 transition hover:bg-white/10 hover:text-white md:text-sm"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
           >
             <FolderClosed className="h-4 w-4" />
             <span>Documents</span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="hidden w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-gray-400 transition hover:bg-white/10 hover:text-white lg:flex md:text-sm"
+            className="hidden w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-400 transition hover:bg-white/10 hover:text-white lg:flex md:text-base"
           >
             <PanelLeftClose className="h-4 w-4" />
             <span>Hide sidebar</span>
@@ -353,16 +353,16 @@ export default function App() {
               <Menu className="h-5 w-5" />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-bold text-gray-900 md:text-base">
+              <h1 className="truncate text-base font-bold text-gray-900 md:text-lg">
                 {activeWorkspaceTitle}
               </h1>
-              <p className="hidden text-[11px] text-gray-400 sm:block">
+              <p className="hidden text-xs text-gray-400 sm:block sm:text-sm">
                 Ask about CE senior project archives
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">
+          <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-600">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
               G
             </span>
@@ -380,7 +380,7 @@ export default function App() {
                 <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
                   How can RAGcoon help?
                 </h2>
-                <p className="mt-2 max-w-md text-sm text-gray-500">
+                <p className="mt-2 max-w-md text-base text-gray-500">
                   Search and summarize Computer Engineering senior project documents with citations.
                 </p>
 
@@ -389,7 +389,7 @@ export default function App() {
                     <button
                       key={suggestion}
                       onClick={() => handleSuggestion(suggestion)}
-                      className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+                      className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-left text-base text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
                     >
                       {suggestion}
                     </button>
@@ -405,7 +405,7 @@ export default function App() {
                   >
                     {msg.role === "user" ? (
                       <div className="max-w-[85%] sm:max-w-[75%]">
-                        <div className="rounded-2xl rounded-tr-md bg-[#2d2d2d] px-4 py-3 text-xs leading-relaxed text-white shadow-sm sm:text-sm">
+                        <div className="rounded-2xl rounded-tr-md bg-[#2d2d2d] px-4 py-3 text-sm leading-relaxed text-white shadow-sm sm:text-base">
                           {msg.text}
                         </div>
                       </div>
@@ -415,7 +415,7 @@ export default function App() {
                           🦝
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-xs leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-sm">
+                          <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-sm leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-base">
                             <div className="whitespace-pre-wrap">
                               {msg.text || (
                                 <span className="inline-flex items-center gap-2 text-gray-400">
@@ -427,7 +427,7 @@ export default function App() {
                           </div>
 
                           {(msg.text || (msg.citations && msg.citations.length > 0)) && (
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-400">
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleCopy(msg.text, index)}
@@ -481,7 +481,7 @@ export default function App() {
                                 </button>
                               </div>
                               {msg.meta && (
-                                <span className="text-[11px] text-gray-400">{msg.meta}</span>
+                                <span className="text-xs text-gray-400">{msg.meta}</span>
                               )}
                             </div>
                           )}
@@ -489,7 +489,7 @@ export default function App() {
                           {showCitationsIndex === index &&
                             msg.citations &&
                             msg.citations.length > 0 && (
-                              <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3.5 text-xs text-gray-700 shadow-sm">
+                              <div className="mt-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3.5 text-sm text-gray-700 shadow-sm">
                                 <div className="font-bold text-gray-900">Sources</div>
                                 {msg.citations.map((c, i) => {
                                   const canPreview = Boolean(c.document_id);
@@ -520,14 +520,14 @@ export default function App() {
                                             onClick={() =>
                                               openDocumentPreview(c.document_id, c.page)
                                             }
-                                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                                             title="Open PDF preview"
                                           >
                                             <ExternalLink className="h-3.5 w-3.5" />
                                             Preview
                                           </button>
                                         ) : (
-                                          <span className="shrink-0 text-[11px] text-gray-400">
+                                          <span className="shrink-0 text-xs text-gray-400">
                                             No file
                                           </span>
                                         )}
@@ -544,7 +544,7 @@ export default function App() {
                 ))}
 
                 {loading && messages[messages.length - 1]?.role === "bot" && !messages[messages.length - 1]?.text && (
-                  <div className="flex items-center gap-3 text-xs text-gray-500 sm:text-sm">
+                  <div className="flex items-center gap-3 text-sm text-gray-500 sm:text-base">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
                       🦝
                     </div>
@@ -576,7 +576,7 @@ export default function App() {
               onChange={(e) => setInput(e.target.value)}
               disabled={loading}
               placeholder="Ask about a senior project..."
-              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-xs text-gray-800 outline-none placeholder:text-gray-400 sm:text-sm"
+              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-gray-800 outline-none placeholder:text-gray-400 sm:text-base"
             />
             <button
               type="submit"
@@ -591,7 +591,7 @@ export default function App() {
               <SendHorizontal className="h-4 w-4" />
             </button>
           </form>
-          <div className="mt-2 text-center text-[10px] text-gray-400 sm:text-xs">
+          <div className="mt-2 text-center text-xs text-gray-400 sm:text-sm">
             Answers are grounded in uploaded senior project PDFs · Citations included when available
           </div>
         </div>

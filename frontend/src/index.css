@@ -15,22 +15,49 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   font-family: 'Inter', sans-serif;
-  font-size: 14px; /* Base Font Size สำหรับหน้าจอเล็ก */
+  font-size: 16px;
 }
 
 @media (min-width: 768px) {
   html, body, #root {
-    font-size: 15px; /* ปรับขยายตามหน้าจอ Tablet/Laptop */
+    font-size: 17px;
   }
 }
 
 @media (min-width: 1280px) {
   html, body, #root {
-    font-size: 16px; /* ปรับขยายสำหรับหน้าจอ Desktop ใหญ่ */
+    font-size: 18px;
   }
 }
 
-/* Custom Scrollbar */
+@keyframes upload-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes upload-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.upload-queue-item {
+  animation: upload-row-in 0.28s ease-out both;
+}
+
+.upload-queue-item.is-uploading {
+  animation: upload-row-in 0.28s ease-out both, upload-pulse 1.2s ease-in-out infinite;
+}
+
+.upload-queue-item.is-success {
+  transition: background-color 0.35s ease, border-color 0.35s ease;
+}
+
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;

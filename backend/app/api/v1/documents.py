@@ -3,7 +3,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
 from app.core.database import get_db
-from app.schemas.document import DocumentResponse
+from app.schemas.document import (
+    DocumentResponse,
+    BatchUploadResponse,
+    BatchUploadItemResult,
+    BatchUploadSummary,
+)
 from app.services.document_service import (
     process_document_upload_auto,
     get_all_documents,
@@ -11,6 +16,7 @@ from app.services.document_service import (
     delete_document_by_id,
     resolve_document_file_path,
     DocumentUploadError,
+    MAX_BATCH_UPLOAD_FILES,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
@@ -44,6 +50,97 @@ async def upload_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Document Auto-Ingestion Error: {str(e)}"
         )
+
+
+@router.post(
+    "/upload-batch",
+    response_model=BatchUploadResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def upload_documents_batch(
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    อัปโหลดหลาย PDF ในครั้งเดียว (สูงสุด MAX_BATCH_UPLOAD_FILES)
+    Partial success: ไฟล์ที่ผ่านถูกบันทึก; ไฟล์ที่พังคืน error รายตัว
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ต้องมีไฟล์อย่างน้อย 1 ไฟล์",
+        )
+    if len(files) > MAX_BATCH_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"อัปโหลดได้สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง "
+                f"(ส่งมา {len(files)} ไฟล์)"
+            ),
+        )
+
+    results: list[BatchUploadItemResult] = []
+
+    for file in files:
+        filename = file.filename or "uploaded.pdf"
+
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            results.append(
+                BatchUploadItemResult(
+                    filename=filename,
+                    ok=False,
+                    error="รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น",
+                    status_code=400,
+                )
+            )
+            continue
+
+        try:
+            document = await run_in_threadpool(
+                process_document_upload_auto,
+                db=db,
+                file=file,
+            )
+            results.append(
+                BatchUploadItemResult(
+                    filename=filename,
+                    ok=True,
+                    document=DocumentResponse.model_validate(document),
+                    status_code=201,
+                )
+            )
+        except DocumentUploadError as e:
+            db.rollback()
+            results.append(
+                BatchUploadItemResult(
+                    filename=filename,
+                    ok=False,
+                    error=e.message,
+                    status_code=e.status_code,
+                )
+            )
+        except Exception as e:
+            db.rollback()
+            results.append(
+                BatchUploadItemResult(
+                    filename=filename,
+                    ok=False,
+                    error=f"Document Auto-Ingestion Error: {str(e)}",
+                    status_code=500,
+                )
+            )
+
+    succeeded = sum(1 for item in results if item.ok)
+    failed = len(results) - succeeded
+    return BatchUploadResponse(
+        results=results,
+        summary=BatchUploadSummary(
+            total=len(results),
+            succeeded=succeeded,
+            failed=failed,
+        ),
+    )
+
 
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
