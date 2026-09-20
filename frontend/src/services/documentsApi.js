@@ -1,11 +1,50 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_BATCH_UPLOAD_FILES = 5;
+const AUTH_TOKEN_KEY = "token";
+
+export function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token) {
+  if (!token) {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    return;
+  }
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+function authHeaders(extra = {}) {
+  const token = getAuthToken();
+  if (!token) return { ...extra };
+  return {
+    ...extra,
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+async function parseErrorDetail(res, fallback) {
+  let detail = fallback;
+  try {
+    const data = await res.json();
+    if (data?.detail) {
+      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    }
+  } catch {
+    // keep fallback
+  }
+  const error = new Error(detail);
+  error.status = res.status;
+  return error;
+}
 
 export async function listDocuments() {
-  const res = await fetch(DOCUMENTS_BASE);
+  const res = await fetch(DOCUMENTS_BASE, {
+    headers: authHeaders(),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to load documents (${res.status})`);
+    throw await parseErrorDetail(res, `Failed to load documents (${res.status})`);
   }
   return res.json();
 }
@@ -26,23 +65,13 @@ export async function uploadDocument(file, options = {}) {
 
   const res = await fetch(`${DOCUMENTS_BASE}/upload`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
     signal: options.signal,
   });
 
   if (!res.ok) {
-    let detail = `Upload failed (${res.status})`;
-    try {
-      const data = await res.json();
-      if (data?.detail) {
-        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-      }
-    } catch {
-      // keep default message
-    }
-    const error = new Error(detail);
-    error.status = res.status;
-    throw error;
+    throw await parseErrorDetail(res, `Upload failed (${res.status})`);
   }
 
   return res.json();
@@ -77,22 +106,12 @@ export async function uploadDocumentsBatch(files) {
 
   const res = await fetch(`${DOCUMENTS_BASE}/upload-batch`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
 
   if (!res.ok) {
-    let detail = `Batch upload failed (${res.status})`;
-    try {
-      const data = await res.json();
-      if (data?.detail) {
-        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-      }
-    } catch {
-      // keep default
-    }
-    const error = new Error(detail);
-    error.status = res.status;
-    throw error;
+    throw await parseErrorDetail(res, `Batch upload failed (${res.status})`);
   }
 
   return res.json();
@@ -101,17 +120,11 @@ export async function uploadDocumentsBatch(files) {
 export async function deleteDocument(documentId) {
   const res = await fetch(`${DOCUMENTS_BASE}/${documentId}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
 
   if (!res.ok) {
-    let detail = `Delete failed (${res.status})`;
-    try {
-      const data = await res.json();
-      if (data?.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-    } catch {
-      // keep default message
-    }
-    throw new Error(detail);
+    throw await parseErrorDetail(res, `Delete failed (${res.status})`);
   }
 
   return res.json();
