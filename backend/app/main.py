@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.core.database import engine, Base, get_db
+from app.core.database import engine, Base, get_db, SessionLocal
 from app.core.config import settings
 import app.models  # โหลด Models ทั้งหมดเพื่อให้ SQLAlchemy สแกน Schema
 from app.api.v1.router import api_router
+from app.services.auth_service import ensure_administrator_seed
 
 # สร้างตารางใน PostgreSQL หากยังไม่มี
 Base.metadata.create_all(bind=engine)
@@ -14,6 +15,13 @@ Base.metadata.create_all(bind=engine)
 # Soft-migrate: เพิ่มคอลัมน์ใหม่บน DB ที่มีอยู่แล้ว (create_all ไม่แก้ตารางเก่า)
 with engine.begin() as conn:
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
+
+# Seed Administrator from env (idempotent — ไม่ reset password ถ้ามี user แล้ว)
+_seed_db = SessionLocal()
+try:
+    ensure_administrator_seed(_seed_db)
+finally:
+    _seed_db.close()
 
 app = FastAPI(
     title=settings.APP_NAME,

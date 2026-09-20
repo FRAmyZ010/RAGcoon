@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Startup seed — Administrator only (Sprint 2)
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
-    ADMIN_EMAIL: str = "admin@ragcoon.local"
+    ADMIN_EMAIL: str = "admin@example.com"
 
     model_config = SettingsConfigDict(
         env_file = ".env",
