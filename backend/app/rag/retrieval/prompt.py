@@ -8,16 +8,26 @@ from typing import Any, Optional
 import requests
 from dotenv import load_dotenv
 
-from .service import search, search_with_details
+from .config import INTENT_CONFIG
+from .service import is_boilerplate_text, search, search_with_details
 from .session_manager import session_manager
 
 load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 NO_ANSWER_TEXT_EN = "No relevant information found in the documents."
 NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร"
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
+
+# Persistent HTTP session for connection pooling & low latency
+_http_session = requests.Session()
+
+
+def _get_intent_config(intent: str) -> dict[str, Any]:
+    """Retrieve configuration settings for a given intent."""
+    normalized = "FACTUAL_LOOKUP" if intent in {"FACTOID", "FACTUAL_LOOKUP"} else intent
+    return INTENT_CONFIG.get(normalized, INTENT_CONFIG.get(intent, INTENT_CONFIG["FACTOID"]))
 
 
 def _clean_name_spacing(name: str | None) -> str | None:
@@ -116,65 +126,193 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
     if any(normalized.startswith(prefix) for prefix in unknown_prefixes):
         return fallback_text
 
+    # Strip leading reasoning meta-talk or chain-of-thought monologue if LLM started thinking out loud
+    cleaned = re.sub(
+        r"^(?:I need to|Let me|First, I need|To answer this|Based on the provided context, I will|Looking at the context)[\s\S]*?(?=(?:##|\###|\*\*))",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Strip intermediate reasoning scratchpad blocks (e.g. between headers and tables)
+    cleaned = re.sub(
+        r"(?:^|\n)(?:I need to|Let me analyze|Let me check|First, I'll identify|First, let's identify|Now I'll structure|Let me create)[\s\S]*?(?=(?:\n##|\n###|\n\||\n\*\*))",
+        "\n",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Strip trailing reasoning meta-talk or duplicate summary tails
+    cleaned = re.split(
+        r"\n\s*(?:wait,\s*let me|let me check|let me verify|i need to check|i need to analyze|first,\s*i need|to double check|for the scoring matrix|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*notes)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )[0].strip()
+
     return cleaned or fallback_text
 
 
 def _build_intent_instruction(intent: str, question: str = "") -> str:
     """Return specialized prompt instructions based on dynamic query intent."""
     q_lower = question.lower()
-    if intent == "EXPLORATORY":
+    if intent == "RECOMMENDATION":
+        return """4. Evidence-Based Project Recommendations:
+   Recommend 2 to 3 DISTINCT matching senior projects from the context.
+
+   CRITICAL RULES:
+   - DISTINCT PROJECTS ONLY: Never list or recommend duplicate projects. Every numbered project must be completely unique.
+   - RELEVANCE FIRST: Prioritize projects that satisfy all user criteria (Direct Match) before projects that satisfy only some criteria (Partial Match).
+   - DIRECT & CONCISE: Present concrete facts with citations [Source: <file>, Page <X>]. Do not repeat sections or monologue.
+
+   Structure:
+
+   ## Recommended Projects
+
+   ### 1. [Project Title]
+   - **Relevance**: Direct Match / Partial Match
+   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
+   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
+   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
+
+   ### 2. [Next Distinct Project Title]
+   - **Relevance**: Direct Match / Partial Match
+   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
+   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
+   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
+
+   ## Summary
+   Synthesize the matching projects in 1-2 sentences.
+
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
+    elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
    - Group ALL the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
    - Under each group, list the matching projects formatted as:
-     * **[Project Title]** ([Year]) - [Core objective, system operation, and key technologies based strictly on its own document text].
+     * **[Project Title]** ([Year]) - [Core objective, system operation, and key technologies based strictly on its own document text] [Source: <file>, Page <X>].
    - Conclude with a brief 1-2 sentence summary explaining the common objective thread among the grouped projects.
-5. Do NOT output placeholder tags like '[DOCUMENT 1]' in your text; use the actual clean Project Title."""
+   ## Sources
+   - List each project source filename and pages."""
         else:
             return """4. Enumerated Project Overview: Enumerate ALL distinct projects found in the retrieved context without omitting any:
-   1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. (Authors: [Author Names], Advisor: [Advisor Name]). Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned if available].
-5. Provide a rich, informative overview covering each retrieved project concisely. Do not output repetitive filler phrases. Do not use '[DOCUMENT 1]' tags."""
-    elif intent == "DEEP_DIVE":
-        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis structured into clear sections:
-   - **Project Overview & Objectives**: Core problem addressed and main goals.
-   - **System Architecture & Methodology**: System workflows, design patterns, and operational steps.
-   - **Tech Stack, Tools & Hardware**: Exact languages, frameworks, libraries, microcontrollers, or cloud services used.
-   - **Results & Evaluation**: Expected or achieved results, testing methodologies, and deliverables.
-5. Do not use '[DOCUMENT 1]' tags in your final text; use the actual Project Title."""
+   1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. (Authors: [Author Names], Advisor: [Advisor Name]). Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned if available] [Source: <file>, Page <X>].
+   ## Sources
+   - List each project source filename and pages."""
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis directly addressing the question, structured into clear sections:
+   - **Project Overview & Objectives**: Core problem addressed and main goals [Source: <file>, Page <X>].
+   - **System Architecture & Methodology**: System workflows, design patterns, and operational steps [Source: <file>, Page <X>].
+   - **Tech Stack, Tools & Hardware**: Exact languages, frameworks, libraries, microcontrollers, or cloud services used [Source: <file>, Page <X>].
+   - **Results & Evaluation**: Expected or achieved results, testing methodologies, and deliverables [Source: <file>, Page <X>].
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "COMPARISON":
-        return """4. Comparative Synthesis & Multi-Criteria Scoring Matrix:
-   Structure your comparative analysis into the following 4 clear sections:
+        return """4. Structured Comparison with Citations:
+   Structure your comparative analysis into the following exact sections:
 
-   ### 1. Side-by-Side Feature Comparison Table
-   Create a Markdown table comparing:
-   | Project Title | Year | Core Objective | Tech Stack / Architecture | Key Strengths | Limitations / Challenges |
+   ## Comparison Overview
+   Create a Markdown table comparing both projects across key dimensions:
+   | Dimension | [Project A Title] | [Project B Title] |
+   |---|---|---|
+   | Technical Complexity | Evidence & Methodology [Source: <file>, Page <X>] | Evidence & Methodology [Source: <file>, Page <X>] |
+   | Practicality | Documented Use Case [Source: <file>, Page <X>] | Documented Use Case [Source: <file>, Page <X>] |
+   | Technology Stack | Documented technologies ONLY | Documented technologies ONLY |
+   | Main Features | Documented core features | Documented core features |
+   | Limitations | Documented limitations (or 'Not specified') | Documented limitations (or 'Not specified') |
 
-   ### 2. Multi-Criteria Scoring Matrix (Evaluation 1–10 Scale)
-   Evaluate each compared project across 3 academic dimensions (Score 1.0–10.0 based strictly on document evidence):
-   - **Technical Complexity & Architecture** [Weight 40%]: Depth of software/algorithms/hardware, DB schema, models.
-   - **Practicality & Business Readiness** [Weight 30%]: User workflow, deployment readiness, stakeholder problem solving.
-   - **System Completeness & Evaluation** [Weight 30%]: Testing completeness, evaluation metrics, methodology rigor.
+   ## Detailed Comparison
 
-   Present as a Markdown table:
-   | Project Title | Technical Complexity (40%) | Practicality (30%) | System Completeness (30%) | Weighted Total Score (/10) |
+   ### 1. Technical Complexity
+   #### [Project A Title]
+   - Explain features, integrations, and methodology found in its document with exact citations [Source: <file>, Page <X>, Section <sec>].
+   #### [Project B Title]
+   - Explain features, integrations, and methodology strictly from its own document with exact citations [Source: <file>, Page <X>, Section <sec>].
+   #### Evidence Limitation
+   - State clearly any information not found in the documents.
 
-   Formula: Weighted Total = (0.4 * Complexity) + (0.3 * Practicality) + (0.3 * Completeness)
+   ### 2. Practicality
+   - Explain real-world use cases, stakeholder benefits, and operational readiness strictly from document evidence with page citations. Never make performance claims without test results.
 
-   ### 3. Evidence-Based Scoring Justification & Citation Guard
-   For each project, write concise 1-line justification bullets explaining its score with exact citation tags and page numbers:
-   - **[Project Title]**:
-     * Complexity (X.X): [Concise reason]. [อ้างอิง: <Filename.pdf> หน้า <Pages>]
-     * Practicality (X.X): [Concise reason]. [อ้างอิง: <Filename.pdf> หน้า <Pages>]
-     * Completeness (X.X): [Concise reason]. [อ้างอิง: <Filename.pdf> หน้า <Pages>]
+   ### 3. Technology Stack
+   - List ONLY the technologies explicitly stated for each project. If a technology is missing, write 'Not specified in the retrieved document'. NEVER transfer technologies between projects!
 
-   ### 4. Trade-Off Analysis & Recommendations
-   Provide a concise 2-3 sentence academic synthesis explaining domain trade-offs and recommendations on when to select each project.
+   ## Summary
+   Synthesize the key similarities and differences strictly based on evidence. Do NOT fabricate numerical scores or arbitrary scoring matrices.
 
-5. Do not write robotic intros like 'To determine...', 'From [DOCUMENT 1]...', or 'Based on the documents...'; start directly with the structured comparison."""
+   ## Sources
+   - [Project A Title]: <Filename.pdf>, Pages: <Pages>
+   - [Project B Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "CODE":
-        return """4. Technical Code Extraction: Extract and present exact code snippets, SQL queries, algorithms, or API calls from the text in syntax-highlighted code blocks (```). Explain what each code snippet or configuration does."""
-    else:  # FACTOID
-        return """4. Direct Concise Answer: Provide an exact, direct, 1-3 sentence factual answer answering the question precisely without extra filler."""
+        return """4. Technical Code & Database Schema Extraction:
+   - Extract and present exact code snippets, SQL queries, database tables/schemas, algorithms, or technical configurations with citations [Source: <file>, Page <X>].
+   - If database table structures, data dictionaries, attributes, data types, or keys are present in the documents (even without raw SQL queries), detail the tables, columns, data types, and relationships thoroughly.
+   - Explain what each code snippet, database table, or configuration does.
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
+    else:  # FACTOID / FACTUAL_LOOKUP
+        if any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
+            return """4. Structured Component Breakdown with Inline Citations:
+   Present the components found in the retrieved documents formatted clearly with their exact Source, Page, and Section attached directly to each item:
+
+   ### 📋 Component Summary
+   - **Microcontroller**: <exact microcontroller name> [Source: <file>, Page <X>, Section <sec>]
+   - **Sensors**:
+     * <sensor 1> [Source: <file>, Page <X>, Section <sec>]
+     * <sensor 2> [Source: <file>, Page <X>, Section <sec>]
+     * <sensor 3> [Source: <file>, Page <X>, Section <sec>]
+   - **Key Associated Hardware**: <list key related modules such as valves, pumps, relays> [Source: <file>, Page <X>]
+
+   ## Sources
+   - <Project Title>: <Filename.pdf>, Pages: <Pages>
+
+   CRITICAL RULES:
+   - Always append [Source: <file>, Page <X>] directly after each component.
+   - Categorize all sensors under '**Sensors**'.
+   - If page number is unavailable, write 'Page number unavailable'."""
+        else:
+            return """4. Direct Answer with Citations:
+   Provide an exact, concise factual answer directly answering the question, with the exact citation [Source: <file>, Page <X>, Section <sec>] appended directly after the factual statement. Conclude with a '## Sources' line."""
+
+
+def _calculate_token_breakdown(
+    system_text: str,
+    history_text: str,
+    context_text: str,
+    question_text: str,
+    total_input_tokens: int,
+    output_tokens: int,
+) -> dict[str, Any]:
+    """Calculate granular token breakdown proportionally mapped to the exact Ollama prompt_eval_count."""
+    len_sys = len(system_text.strip())
+    len_hist = len(history_text.strip())
+    len_ctx = len(context_text.strip())
+    len_q = len(question_text.strip())
+    total_len = max(1, len_sys + len_hist + len_ctx + len_q)
+
+    if total_input_tokens > 0:
+        sys_tokens = int(round((len_sys / total_len) * total_input_tokens))
+        hist_tokens = int(round((len_hist / total_len) * total_input_tokens))
+        ctx_tokens = int(round((len_ctx / total_len) * total_input_tokens))
+        q_tokens = max(1, total_input_tokens - (sys_tokens + hist_tokens + ctx_tokens))
+    else:
+        sys_tokens = int(len_sys / 3.5)
+        hist_tokens = int(len_hist / 3.5)
+        ctx_tokens = int(len_ctx / 3.5)
+        q_tokens = max(1, int(len_q / 3.5))
+
+    return {
+        "system_instruction_tokens": sys_tokens,
+        "chat_history_tokens": hist_tokens,
+        "document_context_tokens": ctx_tokens,
+        "user_question_tokens": q_tokens,
+        "total_input_tokens": total_input_tokens or (sys_tokens + hist_tokens + ctx_tokens + q_tokens),
+        "output_tokens": output_tokens,
+        "context_char_length": len_ctx,
+        "history_char_length": len_hist,
+    }
 
 
 def _build_full_prompt(
@@ -182,8 +320,8 @@ def _build_full_prompt(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
-) -> tuple[str, bool, str, int]:
-    """Construct prompt and return (prompt, is_thai, fallback_text, num_predict)."""
+) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
+    """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -196,51 +334,67 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
+    system_content = f"""You are an expert AI academic QA assistant for a university senior project document repository.
+Use ONLY the retrieved context below.
+
+CRITICAL INSTRUCTIONS & CITATION RULES:
+1. Answer directly. Do NOT reveal internal reasoning monologue (never write "I need to analyze...", "Let me check...", "First, I need to verify...", "For the scoring matrix...").
+2. Every factual claim from a document must include an exact citation: [Source: <source_file>, Page <page_number>, Section <section_name_if_available>].
+3. If the page number is unavailable in the metadata, state: [Source: <source_file>, Page number unavailable]. Never guess or fabricate page numbers.
+4. ZERO Cross-Document Contamination: The context contains numbered documents. You must analyze each document strictly on its own. NEVER transfer, copy, or assume features, tech stacks (e.g. Docker, Python, ESP32, BLE), or future plans from one document to another.
+5. Clearly separate document evidence from AI suggestions. AI suggestions must be explicitly labeled as AI suggestions, not original document content.
+6. If information is not found in the context, state 'Not specified in the retrieved document' rather than inventing it.
+{intent_instruction}
+{lang_instruction}
+If the context contains no relevant information, reply exactly: {insufficient_reply}"""
+
     history_block = (
-        f"\nRecent Conversation History:\n{chat_history.strip()}\n"
+        f"Recent Conversation History:\n{chat_history.strip()}\n\n"
         if chat_history and chat_history.strip()
         else ""
     )
 
-    prompt = f"""You are an expert AI academic assistant for a university senior project document repository.
-Use ONLY the retrieved context below. Do not invent facts or extrapolate beyond what is stated.
-{history_block}
-Context:
+    user_content = f"""{history_block}Context:
 {context_text}
 
 Question:
-{question}
+{question}"""
 
-CRITICAL INSTRUCTIONS:
-1. Strict Document Independence: The context contains numbered documents (e.g. [DOCUMENT 1], [DOCUMENT 2]). You must analyze each document strictly on its own.
-2. ZERO Cross-Contamination: NEVER transfer, duplicate, or copy features, functionalities, equipment, or future plans from one document into another unrelated document. Every single detail for a project must come exclusively from that project's own document block.
-3. Accurate Objective & Technical Coverage:
-   - Describe what each project accomplishes, its methodology/operation, and key tools/technologies used based strictly on its own document excerpt.
-   - Only mention future plans/extensions if the project explicitly mentions them AND the user's question relates to future work/development. Do NOT append boilerplate phrases like '(No explicit future extensions detailed)' on general questions.
-   - NEVER transfer features (like barcodes, sensors, or stock alerts) to other projects!
-{intent_instruction}
-6. No Robotic Meta-Talk: Never write boilerplate intros like "To determine which projects...", "From [DOCUMENT 1] : ...", or "Based on the provided documents...". Start directly with the structured answer content.
-7. If the question asks for tools, frameworks, hardware, sensors, technologies, libraries, software, or methodologies, extract only what is mentioned in that specific project.
-8. If the question asks about advisor, author, committee, or year, provide the accurate answer directly from the metadata:
-   - Academic Title & Rank Variations: Faculty members often appear with different academic titles across different years/projects (e.g. 'Aj.', 'Aj.Dr.', 'Dr.', 'Asst. Prof', 'Assoc. Prof' with the same name refer to the SAME faculty advisor). When listing projects advised by an advisor, include ALL projects in the retrieved context that match that advisor.
-   - Project Reports: Both 'Pre-Project', 'Senior Project', and 'Project Proposal' documents in the context are valid student project reports. Always include them when enumerating projects.
-   - Complete Enumeration: When asked which projects/reports are advised by an advisor, list EVERY distinct project present in the retrieved context documents that matches that advisor. Do NOT omit any matching project.
-9. {lang_instruction}
-10. Only if the context contains absolutely no relevant information, reply exactly: {insufficient_reply}
-11. Keep the answer accurate, well-structured, objective, and professional.
+    intent_cfg = _get_intent_config(intent)
+    num_predict = intent_cfg.get("num_predict", 512)
+    thinking_enabled = intent_cfg.get("thinking", False)
 
-Answer:
-"""
+    think_block = "" if thinking_enabled else "<think>\n</think>\n"
+    q_lower = question.lower()
+    prefill = ""
+    if intent == "COMPARISON":
+        prefill = "## Comparison Overview\n| Dimension |"
+    elif intent == "RECOMMENDATION":
+        prefill = "## Recommended Projects\n\n### 1. "
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        prefill = "### 📌 Project Overview\n" if not is_thai else "### 📌 สรุปภาพรวมโครงงาน\n"
+    elif intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
+        prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
+    elif intent in {"FACTOID", "FACTUAL_LOOKUP", "CODE"}:
+        prefill = "จากเอกสารที่เกี่ยวข้อง " if is_thai else "Based on the retrieved document, "
 
-    predict_map = {
-        "FACTOID": 384,
-        "EXPLORATORY": 768,
-        "CODE": 512,
-        "COMPARISON": 1024,
-        "DEEP_DIVE": 768,
+    model_name = OLLAMA_MODEL.lower()
+    if "gemma" in model_name:
+        full_user = f"{system_content}\n\n{user_content}"
+        prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
+        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
+    else:
+        prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
+        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"]
+
+    prompt_meta = {
+        "system_text": system_content,
+        "history_text": history_block,
+        "context_text": context_text,
+        "question_text": question,
     }
-    num_predict = predict_map.get(intent, 512)
-    return prompt, is_thai, fallback_text, num_predict
+
+    return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens
 
 
 def get_llm_response(
@@ -248,9 +402,10 @@ def get_llm_response(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
 ) -> str:
-    """Synchronous (non-streaming) LLM call."""
-    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+    """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -258,17 +413,21 @@ def get_llm_response(
         return fallback_text
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    start_t = time.perf_counter()
     try:
-        response = requests.post(
+        response = _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
+                "raw": True,
                 "stream": False,
-                "keep_alive": "15m",
+                "think": thinking_enabled,
+                "keep_alive": "30m",
                 "options": {
-                    "temperature": 0,
+                    "temperature": 0.0,
                     "num_predict": num_predict,
+                    "stop": stop_tokens,
                 },
             },
             timeout=ollama_timeout,
@@ -277,7 +436,35 @@ def get_llm_response(
     except requests.RequestException as exc:
         return f"LLM request failed: {exc}"
 
-    raw_answer = response.json().get("response", "")
+    duration = time.perf_counter() - start_t
+    data = response.json()
+    raw_answer = (prefill + data.get("response", "")) if prefill else data.get("response", "")
+
+    if stats_out is not None:
+        p_eval = data.get("prompt_eval_count", 0)
+        e_count = data.get("eval_count", 0)
+        e_dur_ns = data.get("eval_duration", 0)
+        gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+        breakdown = _calculate_token_breakdown(
+            prompt_meta["system_text"],
+            prompt_meta["history_text"],
+            prompt_meta["context_text"],
+            prompt_meta["question_text"],
+            p_eval,
+            e_count,
+        )
+        stats_out.update({
+            "prompt_eval_count": p_eval,
+            "eval_count": e_count,
+            "eval_duration_ns": e_dur_ns,
+            "gen_speed_tps": gen_speed,
+            "ttft_seconds": duration,
+            "llm_seconds": duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+            "token_breakdown": breakdown,
+        })
+
     return clean_answer(raw_answer, is_thai=is_thai)
 
 
@@ -286,9 +473,10 @@ def stream_llm_response(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
 ) -> Generator[str, None, None]:
     """Streaming LLM generator that yields text tokens in real time from Ollama."""
-    prompt, is_thai, fallback_text, num_predict = _build_full_prompt(
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
         question, context_list, intent=intent, chat_history=chat_history
     )
 
@@ -297,17 +485,27 @@ def stream_llm_response(
         return
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    stream_start = time.perf_counter()
+    ttft: Optional[float] = None
+
+    if prefill:
+        ttft = time.perf_counter() - stream_start
+        yield prefill
+
     try:
-        with requests.post(
+        with _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
+                "raw": True,
                 "stream": True,
-                "keep_alive": "15m",
+                "think": thinking_enabled,
+                "keep_alive": "30m",
                 "options": {
-                    "temperature": 0,
+                    "temperature": 0.0,
                     "num_predict": num_predict,
+                    "stop": stop_tokens,
                 },
             },
             stream=True,
@@ -320,8 +518,33 @@ def stream_llm_response(
                         chunk = json.loads(line)
                         token = chunk.get("response", "")
                         if token:
+                            if ttft is None:
+                                ttft = time.perf_counter() - stream_start
                             yield token
                         if chunk.get("done", False):
+                            if stats_out is not None:
+                                p_eval = chunk.get("prompt_eval_count", 0)
+                                e_count = chunk.get("eval_count", 0)
+                                e_dur_ns = chunk.get("eval_duration", 0)
+                                gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+                                breakdown = _calculate_token_breakdown(
+                                    prompt_meta["system_text"],
+                                    prompt_meta["history_text"],
+                                    prompt_meta["context_text"],
+                                    prompt_meta["question_text"],
+                                    p_eval,
+                                    e_count,
+                                )
+                                stats_out.update({
+                                    "prompt_eval_count": p_eval,
+                                    "eval_count": e_count,
+                                    "eval_duration_ns": e_dur_ns,
+                                    "gen_speed_tps": gen_speed,
+                                    "ttft_seconds": ttft or (time.perf_counter() - stream_start),
+                                    "thinking_enabled": thinking_enabled,
+                                    "intent": intent,
+                                    "token_breakdown": breakdown,
+                                })
                             break
                     except json.JSONDecodeError:
                         continue
@@ -330,19 +553,8 @@ def stream_llm_response(
 
 
 def _is_boilerplate_chunk(text: str) -> bool:
-    """Check if snippet is mostly table of contents, committee signatures, or pure acknowledgements."""
-    t = text.lower()
-    if "list of tables" in t or "list of figures" in t or "table of contents" in t:
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        toc_lines = [
-            l for l in lines
-            if any(k in l.lower() for k in ["table", "page", "chapter", "working plan", "acknowledgement"])
-        ]
-        if len(toc_lines) / max(len(lines), 1) > 0.5:
-            return True
-    if "examining committee" in t and len(text) < 400:
-        return True
-    return False
+    """Use centralized robust boilerplate filter."""
+    return is_boilerplate_text(text)
 
 
 def _prepare_rag_context(
@@ -362,26 +574,33 @@ def _prepare_rag_context(
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
-    if intent == "EXPLORATORY":
+    intent_cfg = _get_intent_config(intent)
+    max_context_chunks = intent_cfg.get("max_context_chunks", 4)
+
+    if intent == "RECOMMENDATION":
+        max_chunks_per_project = 2
+        max_total_projects = 4
+        min_score = 0.0001
+    elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
-        max_total_projects = 8
-        min_score = 0.001 if has_filter else 0.03
+        max_total_projects = 6
+        min_score = 0.0001
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
         max_total_projects = 4
-        min_score = 0.001 if has_filter else 0.05
-    elif intent == "DEEP_DIVE":
-        max_chunks_per_project = 6
+        min_score = 0.0001
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 1
-        min_score = 0.001 if has_filter else 0.05
+        min_score = 0.0001
     elif intent == "CODE":
-        max_chunks_per_project = 4
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 2
-        min_score = 0.001 if has_filter else 0.05
-    else:  # FACTOID
-        max_chunks_per_project = 2
+        min_score = 0.0001
+    else:  # FACTOID / FACTUAL_LOOKUP
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 3
-        min_score = 0.001 if has_filter else 0.05
+        min_score = 0.0001
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -397,7 +616,7 @@ def _prepare_rag_context(
         payload = item.get("payload", {}) or {}
         source = payload.get("source", "Unknown source")
         project_title = payload.get("project_title") or payload.get("title") or source
-        proj_key = str(project_title).strip()
+        proj_key = str(source).strip() if source and source != "Unknown source" else str(project_title).strip()
 
         raw_snippet = str(item.get("text", "")).strip()
         raw_snippet = raw_snippet.replace("\r\n", "\n").replace("\r", "\n")
@@ -423,16 +642,55 @@ def _prepare_rag_context(
             projects_data[proj_key]["pages"].add(str(page_number))
 
         if not preserve_same_project_chunks:
-            snippet = " ".join(raw_snippet.split())
+            snippet_body = " ".join(raw_snippet.split())
         else:
-            snippet = raw_snippet
+            snippet_body = raw_snippet
 
-        if snippet not in projects_data[proj_key]["snippets"]:
+        page_tag = (
+            f"[Document: {project_title} | Source: {source} | Page: {page_number}]:\n"
+            if page_number
+            else f"[Document: {project_title} | Source: {source} | Page: unavailable]:\n"
+        )
+        formatted_snippet = f"{page_tag}{snippet_body}"
+
+        if formatted_snippet not in projects_data[proj_key]["snippets"]:
             if len(projects_data[proj_key]["snippets"]) < max_chunks_per_project:
-                projects_data[proj_key]["snippets"].append(snippet)
+                projects_data[proj_key]["snippets"].append(formatted_snippet)
 
         if source not in sources:
             sources.append(source)
+
+    # Multi-Section Enrichment for RECOMMENDATION: ensure each recommended project includes its concrete Tech Stack chunk
+    if intent == "RECOMMENDATION":
+        from .semantic import semantic_search
+        for proj_key in projects_ordered[:max_total_projects]:
+            proj_payload = projects_data[proj_key]["payload"]
+            proj_source = proj_payload.get("source")
+            filter_payload = {"source": proj_source} if proj_source else ({"project_title": proj_key} if proj_key else None)
+            try:
+                tech_candidates = semantic_search(
+                    "Equipment Website React Node.js Express Figma Flask Docker MySQL Hardware Software microcontrollers frameworks tools",
+                    top_k=4,
+                    metadata_filters=filter_payload,
+                )
+                for tc in tech_candidates:
+                    raw_t = str(tc.get("text", "")).strip()
+                    if raw_t and not _is_boilerplate_chunk(raw_t):
+                        t_snippet = " ".join(raw_t.split())
+                        p_num = tc.get("payload", {}).get("page_number")
+                        p_tag = (
+                            f"[Document: {proj_payload.get('project_title') or proj_key} | Source: {proj_source or proj_key} | Page: {p_num}]:\n"
+                            if p_num
+                            else f"[Document: {proj_payload.get('project_title') or proj_key} | Source: {proj_source or proj_key} | Page: unavailable]:\n"
+                        )
+                        formatted_t_snippet = f"{p_tag}{t_snippet}"
+                        if formatted_t_snippet not in projects_data[proj_key]["snippets"]:
+                            projects_data[proj_key]["snippets"].append(formatted_t_snippet)
+                            if p_num:
+                                projects_data[proj_key]["pages"].add(str(p_num))
+                            break
+            except Exception:
+                pass
 
     citations: list[dict[str, Any]] = []
     for proj_key in projects_ordered:
@@ -555,14 +813,16 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
                 "llm_seconds": 0.0,
                 "total_seconds": retrieval_timing.get("total_seconds", 0.0),
             },
+            "performance": {},
         }
 
     # Add user message to session history
     session_manager.add_user_message(session_id, question)
 
     llm_start = time.perf_counter()
+    stats_out: dict[str, Any] = {}
     answer = get_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str
+        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
     )
     llm_seconds = time.perf_counter() - llm_start
 
@@ -573,6 +833,37 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
     session_manager.add_assistant_message(session_id, answer)
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
+    tb = stats_out.get("token_breakdown", {})
+    perf_data = {
+        "intent": intent,
+        "thinking_enabled": stats_out.get("thinking_enabled", False),
+        "input_tokens": stats_out.get("prompt_eval_count", 0),
+        "output_tokens": stats_out.get("eval_count", 0),
+        "gen_speed_tps": stats_out.get("gen_speed_tps", 0.0),
+        "ttft_seconds": stats_out.get("ttft_seconds", llm_seconds),
+        "llm_seconds": llm_seconds,
+        "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+        "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        "total_seconds": total_seconds,
+        "token_breakdown": tb,
+    }
+
+    print("\n" + "=" * 60)
+    print("📊 [PERFORMANCE & TOKEN BREAKDOWN]")
+    print("=" * 60)
+    print(f"• Intent: {intent} (Thinking: {'ON' if stats_out.get('thinking_enabled') else 'OFF'})")
+    if tb:
+        print(f"• 📜 System Instruction: ~{tb.get('system_instruction_tokens', 0):,} tokens")
+        print(f"• 💬 Chat History (Memory): ~{tb.get('chat_history_tokens', 0):,} tokens")
+        print(f"• 📄 Document Context (Qdrant): ~{tb.get('document_context_tokens', 0):,} tokens ({tb.get('context_char_length', 0):,} chars)")
+        print(f"• ❓ User Question: ~{tb.get('user_question_tokens', 0):,} tokens")
+    print(f"• 📥 Total Input Tokens: {stats_out.get('prompt_eval_count', 0):,} tokens")
+    print(f"• 📤 Output Tokens (Answer): {stats_out.get('eval_count', 0):,} tokens")
+    print(f"• ⚡ Generation Speed: {stats_out.get('gen_speed_tps', 0.0):.1f} tokens/sec")
+    print(f"• ⏱️ Time to First Token (TTFT): {stats_out.get('ttft_seconds', llm_seconds):.3f}s")
+    print(f"• ⏱️ LLM Time: {llm_seconds:.3f}s | Retrieval Time: {retrieval_timing.get('retrieval_seconds', 0.0) + retrieval_timing.get('rerank_seconds', 0.0):.3f}s")
+    print(f"• 🏁 Total Time: {total_seconds:.3f}s")
+    print("=" * 60)
 
     return {
         "question": question,
@@ -595,6 +886,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
             "llm_seconds": llm_seconds,
             "total_seconds": total_seconds,
         },
+        "performance": perf_data,
     }
 
 
@@ -607,7 +899,7 @@ def stream_answer_question(
     Yields structured events:
       - {"event": "metadata", "data": {...}} : Query intent, filters, sources, citations, retrieval timing
       - {"event": "token", "data": {"token": "..."}} : Live token chunks as they are generated
-      - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations
+      - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
     prep = _prepare_rag_context(question, session_id=session_id)
@@ -663,6 +955,7 @@ def stream_answer_question(
                     "llm_seconds": 0.0,
                     "total_seconds": retrieval_timing.get("total_seconds", 0.0),
                 },
+                "performance": {},
             },
         }
         return
@@ -672,10 +965,11 @@ def stream_answer_question(
 
     # 2. Stream Tokens from LLM
     full_tokens: list[str] = []
+    stats_out: dict[str, Any] = {}
     llm_start = time.perf_counter()
 
     for token in stream_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str
+        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
     ):
         full_tokens.append(token)
         yield {"event": "token", "data": {"token": token}}
@@ -691,8 +985,22 @@ def stream_answer_question(
     session_manager.add_assistant_message(session_id, cleaned_answer)
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
+    tb = stats_out.get("token_breakdown", {})
+    perf_data = {
+        "intent": intent,
+        "thinking_enabled": stats_out.get("thinking_enabled", False),
+        "input_tokens": stats_out.get("prompt_eval_count", 0),
+        "output_tokens": stats_out.get("eval_count", 0),
+        "gen_speed_tps": stats_out.get("gen_speed_tps", 0.0),
+        "ttft_seconds": stats_out.get("ttft_seconds", llm_seconds),
+        "llm_seconds": llm_seconds,
+        "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+        "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        "total_seconds": total_seconds,
+        "token_breakdown": tb,
+    }
 
-    # 3. Yield Final Done Event with Timing & Citations
+    # 3. Yield Final Done Event with Timing, Citations & Performance Metrics
     yield {
         "event": "done",
         "data": {
@@ -708,5 +1016,6 @@ def stream_answer_question(
                 "llm_seconds": llm_seconds,
                 "total_seconds": total_seconds,
             },
+            "performance": perf_data,
         },
     }

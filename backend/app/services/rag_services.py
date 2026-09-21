@@ -13,7 +13,7 @@ from app.schemas.chat import (
     WorkspaceDetailResponse,
     WorkspaceQueryResult,
 )
-from app.rag.retrieval import stream_answer_question
+from app.rag.retrieval import answer_question, stream_answer_question
 from app.services.document_service import enrich_citations_with_document_ids
 
 def process_rag_query(
@@ -27,7 +27,6 @@ def process_rag_query(
     """
     active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
     try:
-        from app.rag.main import answer_question
         rag_output = answer_question(query_text)
         answer_text = rag_output.get("answer", "")
         citations_data = rag_output.get("citations", [])
@@ -44,7 +43,15 @@ def process_rag_query(
 
     citations_data = enrich_citations_with_document_ids(db, citations_data)
     citations = [DocumentCitation(**c) if isinstance(c, dict) else c for c in citations_data]
-    timing = TimingMetrics(**timing_data) if isinstance(timing_data, dict) else timing_data
+    if isinstance(timing_data, dict):
+        timing = TimingMetrics(
+            retrieval_seconds=float(timing_data.get("retrieval_seconds", 0.0) or 0.0),
+            rerank_seconds=float(timing_data.get("rerank_seconds", 0.0) or 0.0),
+            llm_seconds=float(timing_data.get("llm_seconds", 0.0) or 0.0),
+            total_seconds=float(timing_data.get("total_seconds", 0.0) or 0.0),
+        )
+    else:
+        timing = timing_data
 
     db_entry = SearchQuery(
         workspace_id=active_workspace_id,
