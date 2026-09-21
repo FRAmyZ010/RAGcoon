@@ -8,6 +8,7 @@ from app.schemas.document import ProcessingStatus
 
 UPLOAD_DIR = "storage/documents"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB
+MAX_BATCH_UPLOAD_FILES = 5
 
 
 class DocumentUploadError(Exception):
@@ -287,6 +288,32 @@ def enrich_citations_with_document_ids(
 
     return enriched
 
+def _purge_document_row_and_orphan_project(db: Session, document: Document) -> None:
+    """
+    Remove the document row; if its Project has no documents left, remove Project too.
+
+    Must flush before counting siblings — an unflushed delete still appears in
+    relationship collections / queries and previously left orphan projects
+    (unique title → 409 on re-upload).
+    """
+    project_id = document.project_id
+    db.delete(document)
+    db.flush()
+
+    if project_id is None:
+        return
+
+    remaining = (
+        db.query(Document)
+        .filter(Document.project_id == project_id)
+        .count()
+    )
+    if remaining == 0:
+        orphan = db.get(Project, project_id)
+        if orphan is not None:
+            db.delete(orphan)
+
+
 def delete_document_by_id(db: Session, document_id: int) -> bool:
     document = (
         db.query(Document)
@@ -316,11 +343,6 @@ def delete_document_by_id(db: Session, document_id: int) -> bool:
         except OSError:
             pass
 
-    project = document.project
-    db.delete(document)
-
-    if project and len(project.documents) == 0:
-        db.delete(project)
-
+    _purge_document_row_and_orphan_project(db, document)
     db.commit()
     return True

@@ -29,3 +29,22 @@ class DocumentResponse(DocumentBase):
     academic_year: int | None = None
     authors: str | None = None
     advisor: str | None = None
+
+
+class BatchUploadItemResult(BaseModel):
+    filename: str
+    ok: bool
+    document: DocumentResponse | None = None
+    error: str | None = None
+    status_code: int | None = None
+
+
+class BatchUploadSummary(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+
+
+class BatchUploadResponse(BaseModel):
+    results: list[BatchUploadItemResult]
+    summary: BatchUploadSummary
