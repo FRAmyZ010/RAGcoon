@@ -78,9 +78,13 @@ def is_boilerplate_text(text: str) -> bool:
             return True
 
     # 6. Committee signatures & degree requirements boilerplate
-    if "examining committee" in t and len(text) < 500 and not is_protected:
+    if any(k in t for k in ["examining committee", "committee members", "คณะกรรมการสอบ", "ลายมือชื่อ"]) and len(text) < 1200 and not is_protected:
         return True
-    if "partial fulfillment of the requirements" in t and len(text) < 450 and not is_protected:
+    if any(k in t for k in ["partial fulfillment of the requirements", "senior project submitted to", "bachelor of engineering\nin computer engineering"]) and len(text) < 1000 and not is_protected:
+        return True
+
+    # 7. Pure cover page / title page without abstract or technical content
+    if "copyright by mae fah luang university" in t and len(lines) <= 12 and not is_protected:
         return True
 
     return False

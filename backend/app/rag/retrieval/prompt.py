@@ -156,39 +156,34 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     """Return specialized prompt instructions based on dynamic query intent."""
     q_lower = question.lower()
     if intent == "RECOMMENDATION":
-        return """4. Evidence-Based Project Recommendations & Future Extensions:
-   Present the matching projects structured into the following exact sections:
+        return """4. Evidence-Based Project Recommendations:
+   Recommend 2 to 3 DISTINCT matching senior projects from the context.
+
+   CRITICAL RULES:
+   - DISTINCT PROJECTS ONLY: Never list or recommend duplicate projects. Every numbered project must be completely unique.
+   - RELEVANCE FIRST: Prioritize projects that satisfy all user criteria (Direct Match) before projects that satisfy only some criteria (Partial Match).
+   - DIRECT & CONCISE: Present concrete facts with citations [Source: <file>, Page <X>]. Do not repeat sections or monologue.
+
+   Structure:
 
    ## Recommended Projects
 
    ### 1. [Project Title]
-   **Relevance:** Direct Match / Partial Match
+   - **Relevance**: Direct Match / Partial Match
+   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
+   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
+   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
 
-   #### Document Evidence
-   - **Domain**: [Domain area from document, e.g. Web Platform / IoT Automation]
-   - **Documented Features**: [Core features strictly from document] [Source: <file>, Page <X>]
-   - **Documented Technology Stack**: [Exact languages, frameworks, microcontrollers, databases from document, or 'Not specified in the retrieved document'] [Source: <file>, Page <X>]
-   - **IoT / Automation Evidence**: [Sensors, hardware, or automated controls mentioned, or 'None'] [Source: <file>, Page <X>]
-   - **Documented Future Work**: [Future plans explicitly stated in the document, or 'Not specified in the retrieved document'] [Source: <file>, Page <X>]
-
-   #### Why It Matches
-   Explain why this project matches the user's query constraints based strictly on the retrieved document evidence.
-
-   #### Possible Future Extensions (AI Suggestions)
-   - [Actionable future extension suggestion 1 - NOTE: This is an AI-generated suggestion for new students, not from the original document]
-   - [Actionable future extension suggestion 2]
-
-   #### Evidence Limitations
-   State any missing or unspecified information in the retrieved text.
-
-   (Repeat the exact structure above for Project 2 and Project 3 if relevant)
-
-   ## Comparison of Relevant Projects
-   | Project | Relevance | Web Evidence | IoT/Automation Evidence | Documented Technology |
-   |---|---|---|---|---|
+   ### 2. [Next Distinct Project Title]
+   - **Relevance**: Direct Match / Partial Match
+   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
+   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
+   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
 
    ## Summary
-   Synthesize the matching projects and summarize how they align with the user's criteria.
+   Synthesize the matching projects in 1-2 sentences.
 
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
@@ -251,7 +246,10 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    - [Project A Title]: <Filename.pdf>, Pages: <Pages>
    - [Project B Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "CODE":
-        return """4. Technical Code Extraction: Extract and present exact code snippets, SQL queries, algorithms, or API calls from the text in syntax-highlighted code blocks (```) with citations [Source: <file>, Page <X>]. Explain what each code snippet or configuration does.
+        return """4. Technical Code & Database Schema Extraction:
+   - Extract and present exact code snippets, SQL queries, database tables/schemas, algorithms, or technical configurations with citations [Source: <file>, Page <X>].
+   - If database table structures, data dictionaries, attributes, data types, or keys are present in the documents (even without raw SQL queries), detail the tables, columns, data types, and relationships thoroughly.
+   - Explain what each code snippet, database table, or configuration does.
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     else:  # FACTOID / FACTUAL_LOOKUP
@@ -322,8 +320,8 @@ def _build_full_prompt(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
-) -> tuple[str, bool, str, int, bool, str, dict[str, str]]:
-    """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill_prefix)."""
+) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
+    """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -377,7 +375,7 @@ Question:
         prefill = "### 📌 Project Overview\n" if not is_thai else "### 📌 สรุปภาพรวมโครงงาน\n"
     elif intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
         prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
-    elif intent in {"FACTOID", "FACTUAL_LOOKUP"}:
+    elif intent in {"FACTOID", "FACTUAL_LOOKUP", "CODE"}:
         prefill = "จากเอกสารที่เกี่ยวข้อง " if is_thai else "Based on the retrieved document, "
 
     model_name = OLLAMA_MODEL.lower()
@@ -596,7 +594,7 @@ def _prepare_rag_context(
         max_total_projects = 1
         min_score = 0.0001
     elif intent == "CODE":
-        max_chunks_per_project = 4
+        max_chunks_per_project = max_context_chunks
         max_total_projects = 2
         min_score = 0.0001
     else:  # FACTOID / FACTUAL_LOOKUP

@@ -26,7 +26,7 @@ else:
     load_dotenv(find_dotenv(usecwd=True))
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 LLM_TIMEOUT = int(os.getenv("LLM_QUERY_TIMEOUT", "60"))
 
 # Persistent HTTP session for connection pooling & low latency
