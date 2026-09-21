@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FileText,
   MoreVertical,
@@ -12,6 +12,7 @@ import {
   Trash2,
   Download,
   ExternalLink,
+  Eye,
   X,
   UploadCloud,
   Loader2,
@@ -28,8 +29,25 @@ import {
   MAX_UPLOAD_BYTES,
   MAX_BATCH_UPLOAD_FILES,
 } from "../services/documentsApi";
+import { clearAuth } from "../services/authApi";
+
+function splitCommaList(value) {
+  if (!value || value === "—") return [];
+  return String(value)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function statusChipClass(status) {
+  if (status === "Ready") return "bg-green-100 text-green-800";
+  if (status === "Failed") return "bg-red-100 text-red-800";
+  return "bg-yellow-100 text-yellow-800";
+}
 
 export default function DocumentsManagement() {
+  const navigate = useNavigate();
+  const displayName = localStorage.getItem("username") || "Admin";
   const [activeMenuIndex, setActiveMenuIndex] = useState(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,6 +61,7 @@ export default function DocumentsManagement() {
   const [dragActive, setDragActive] = useState(false);
   const [actionBusyId, setActionBusyId] = useState(null);
   const [menuPos, setMenuPos] = useState(null);
+  const [detailsRow, setDetailsRow] = useState(null);
   const fileInputRef = useRef(null);
   const toastTimerRef = useRef(null);
   const uploadCancelRef = useRef(false);
@@ -359,7 +378,14 @@ export default function DocumentsManagement() {
           </nav>
         </div>
 
-        <button className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 font-bold text-gray-900 hover:bg-gray-200">
+        <button
+          type="button"
+          onClick={() => {
+            clearAuth();
+            navigate("/login", { replace: true });
+          }}
+          className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 font-bold text-gray-900 hover:bg-gray-200"
+        >
           <span>Log Out</span>
           <LogOut className="h-4 w-4" />
         </button>
@@ -377,9 +403,9 @@ export default function DocumentsManagement() {
             <Bell className="h-5 w-5 cursor-pointer text-gray-600 hover:text-black" />
             <div className="flex items-center gap-2">
               <div className="h-7 w-7 rounded-full bg-[#800000] text-white font-bold text-xs flex items-center justify-center">
-                MJ
+                {displayName.slice(0, 2).toUpperCase()}
               </div>
-              <span className="font-bold text-gray-800 hidden sm:inline">Marry Jann</span>
+              <span className="font-bold text-gray-800 hidden sm:inline">{displayName}</span>
             </div>
           </div>
         </header>
@@ -420,24 +446,22 @@ export default function DocumentsManagement() {
 
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1200px]">
+            <table className="w-full text-left border-collapse min-w-[900px]">
               <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-sm">
                 <tr>
                   <th className="py-3 px-4">Title</th>
-                  <th className="py-3 px-3">Authors</th>
-                  <th className="py-3 px-3">Advisor</th>
                   <th className="py-3 px-3">Academic Year</th>
-                  <th className="py-3 px-3">Keywords</th>
-                  <th className="py-3 px-3">Supervisory Committee</th>
+                  <th className="py-3 px-3">Source</th>
                   <th className="py-3 px-3">Status</th>
                   <th className="py-3 px-3">Date</th>
+                  <th className="py-3 px-3 text-center">Details</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm sm:text-base">
                 {loading && (
                   <tr>
-                    <td colSpan={9} className="py-10 text-center text-gray-500">
+                    <td colSpan={7} className="py-10 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Loading documents...
@@ -448,7 +472,7 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="py-10 text-center text-gray-500">
+                    <td colSpan={7} className="py-10 text-center text-gray-500">
                       ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
                     </td>
                   </tr>
@@ -460,30 +484,15 @@ export default function DocumentsManagement() {
                       <td className="py-3 px-4 font-bold text-gray-900">
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-[#800000] shrink-0" />
-                          <span className="truncate max-w-[200px]" title={row.title}>
+                          <span className="truncate max-w-[240px]" title={row.title}>
                             {row.title}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[160px]" title={row.authors}>
-                          {row.authors}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[160px]" title={row.advisor}>
-                          {row.advisor}
-                        </span>
-                      </td>
                       <td className="py-3 px-3 text-gray-600 whitespace-nowrap">{row.year}</td>
                       <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[180px]" title={row.keywords}>
-                          {row.keywords}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-gray-600">
-                        <span className="line-clamp-2 max-w-[180px]" title={row.supervisoryCommittee}>
-                          {row.supervisoryCommittee}
+                        <span className="truncate max-w-[200px] block" title={row.source}>
+                          {row.source}
                         </span>
                       </td>
                       <td className="py-3 px-3">
@@ -500,6 +509,17 @@ export default function DocumentsManagement() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-gray-500 whitespace-nowrap">{row.date}</td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setDetailsRow(row)}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                          aria-label={`View details for ${row.title}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span className="hidden sm:inline">View</span>
+                        </button>
+                      </td>
                       <td className="py-3 px-4 text-right">
                         <button
                           type="button"
@@ -561,6 +581,169 @@ export default function DocumentsManagement() {
             </button>
           </div>
         </>
+      )}
+
+      {detailsRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setDetailsRow(null)}
+        >
+          <div
+            className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-details-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gray-50 px-6 py-4">
+              <div className="min-w-0 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Document Details
+                </p>
+                <h2
+                  id="document-details-title"
+                  className="text-lg font-bold leading-snug text-gray-900"
+                >
+                  {detailsRow.title}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusChipClass(
+                      detailsRow.status
+                    )}`}
+                  >
+                    {detailsRow.status}
+                  </span>
+                  {detailsRow.year !== "—" && (
+                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                      Year {detailsRow.year}
+                    </span>
+                  )}
+                  {detailsRow.date !== "—" && (
+                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                      {detailsRow.date}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsRow(null)}
+                className="shrink-0 rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-700"
+                aria-label="Close details"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 overflow-y-auto px-6 py-5 text-sm">
+              <section className="rounded-xl bg-gray-50 p-3">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Source
+                </p>
+                <div className="flex items-start gap-2 text-gray-900">
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[#800000]" />
+                  <span className="break-all font-medium">{detailsRow.source}</span>
+                </div>
+              </section>
+
+              <section>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Authors
+                </p>
+                {splitCommaList(detailsRow.authors).length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {splitCommaList(detailsRow.authors).map((name) => (
+                      <li
+                        key={name}
+                        className="rounded-lg bg-indigo-50 px-3 py-2 font-medium text-indigo-950"
+                      >
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-400">—</p>
+                )}
+              </section>
+
+              <section>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Advisor
+                </p>
+                <p className="rounded-lg bg-amber-50 px-3 py-2 font-medium text-amber-950">
+                  {detailsRow.advisor}
+                </p>
+              </section>
+
+              <section>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Supervisory Committee
+                </p>
+                {splitCommaList(detailsRow.supervisoryCommittee).length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {splitCommaList(detailsRow.supervisoryCommittee).map((name) => (
+                      <li
+                        key={name}
+                        className="rounded-lg bg-teal-50 px-3 py-2 font-medium text-teal-950"
+                      >
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-400">—</p>
+                )}
+              </section>
+
+              <section>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Keywords
+                </p>
+                {splitCommaList(detailsRow.keywords).length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {splitCommaList(detailsRow.keywords).map((kw) => (
+                      <span
+                        key={kw}
+                        className="inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-800"
+                      >
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-400">—</p>
+                )}
+              </section>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setDetailsRow(null)}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownload(detailsRow.id, detailsRow.filename)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePreview(detailsRow.id)}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#800000] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6a0000]"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Preview
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {isUploadModalOpen && (
