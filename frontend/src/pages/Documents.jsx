@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -32,7 +32,7 @@ import {
 import { clearAuth } from "../services/authApi";
 
 function splitCommaList(value) {
-  if (!value || value === "—") return [];
+  if (!value || value === "ΓÇö") return [];
   return String(value)
     .split(",")
     .map((part) => part.trim())
@@ -113,7 +113,7 @@ export default function DocumentsManagement() {
   const closeUploadModal = () => {
     if (uploading) {
       const ok = window.confirm(
-        "ยกเลิกคิวอัปโหลดที่เหลือหรือไม่?\n\nไฟล์ที่อัปโหลดสำเร็จแล้วจะยังอยู่ในระบบ — เฉพาะไฟล์ที่รอคิว/กำลังทำจะถูกยกเลิก"
+        "α╕óα╕üα╣Çα╕Ñα╕┤α╕üα╕äα╕┤α╕ºα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╕ùα╕╡α╣êα╣Çα╕½α╕Ñα╕╖α╕¡α╕½α╕úα╕╖α╕¡α╣äα╕íα╣ê?\n\nα╣äα╕ƒα╕Ñα╣îα╕ùα╕╡α╣êα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╕¬α╕│α╣Çα╕úα╣çα╕êα╣üα╕Ñα╣ëα╕ºα╕êα╕░α╕óα╕▒α╕çα╕¡α╕óα╕╣α╣êα╣âα╕Öα╕úα╕░α╕Üα╕Ü ΓÇö α╣Çα╕ëα╕₧α╕▓α╕░α╣äα╕ƒα╕Ñα╣îα╕ùα╕╡α╣êα╕úα╕¡α╕äα╕┤α╕º/α╕üα╕│α╕Ñα╕▒α╕çα╕ùα╕│α╕êα╕░α╕ûα╕╣α╕üα╕óα╕üα╣Çα╕Ñα╕┤α╕ü"
       );
       if (!ok) return;
       uploadCancelRef.current = true;
@@ -152,17 +152,17 @@ export default function DocumentsManagement() {
     if (files.length === 0) return;
 
     if (files.length > MAX_BATCH_UPLOAD_FILES) {
-      setUploadError(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
+      setUploadError(`α╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╣äα╕öα╣ëα╕¬α╕╣α╕çα╕¬α╕╕α╕ö ${MAX_BATCH_UPLOAD_FILES} α╣äα╕ƒα╕Ñα╣îα╕òα╣êα╕¡α╕äα╕úα╕▒α╣ëα╕ç`);
       return;
     }
 
     for (const file of files) {
       if (!file.name.toLowerCase().endsWith(".pdf")) {
-        setUploadError(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
+        setUploadError(`α╕úα╕¡α╕çα╕úα╕▒α╕Üα╣Çα╕ëα╕₧α╕▓α╕░α╣äα╕ƒα╕Ñα╣î PDF α╣Çα╕ùα╣êα╕▓α╕Öα╕▒α╣ëα╕Ö: ${file.name}`);
         return;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
-        setUploadError(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
+        setUploadError(`α╣äα╕ƒα╕Ñα╣îα╣âα╕½α╕ìα╣êα╣Çα╕üα╕┤α╕Ö 25MB: ${file.name}`);
         return;
       }
     }
@@ -199,7 +199,7 @@ export default function DocumentsManagement() {
         const st = statusById[item.id];
         if (st === "pending" || st === "uploading" || item.id === fromId) {
           if (st === "success" || st === "error") continue;
-          patchRow(item.id, "cancelled", "ยกเลิกโดยผู้ใช้");
+          patchRow(item.id, "cancelled", "α╕óα╕üα╣Çα╕Ñα╕┤α╕üα╣éα╕öα╕óα╕£α╕╣α╣ëα╣âα╕èα╣ë");
         }
       }
     };
@@ -295,7 +295,7 @@ export default function DocumentsManagement() {
   };
 
   const handleRemove = async (id) => {
-    if (!window.confirm("ลบเอกสารนี้ถาวรหรือไม่?")) return;
+    if (!window.confirm("α╕Ñα╕Üα╣Çα╕¡α╕üα╕¬α╕▓α╕úα╕Öα╕╡α╣ëα╕ûα╕▓α╕ºα╕úα╕½α╕úα╕╖α╕¡α╣äα╕íα╣ê?")) return;
 
     setActionBusyId(id);
     closeActionMenu();
@@ -342,14 +342,14 @@ export default function DocumentsManagement() {
         <div>
           <div className="mb-6 flex items-center justify-between">
             <div className="flex items-center gap-2 font-bold text-lg sm:text-xl">
-              <span className="text-2xl">🦝</span>
+              <span className="text-2xl">≡ƒª¥</span>
               <span>RAGcoon</span>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-gray-400 hover:text-white"
             >
-              ✕
+              Γ£ò
             </button>
           </div>
 
@@ -397,7 +397,7 @@ export default function DocumentsManagement() {
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden rounded-lg p-2 bg-white shadow-sm hover:bg-gray-50"
           >
-            ☰
+            Γÿ░
           </button>
           <div className="flex items-center gap-3 ml-auto">
             <Bell className="h-5 w-5 cursor-pointer text-gray-600 hover:text-black" />
@@ -414,7 +414,7 @@ export default function DocumentsManagement() {
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Documents Management</h1>
             <p className="text-sm text-gray-500 sm:text-base">
-              จัดการและอัปโหลดไฟล์โครงงาน Senior Project เข้าสู่คลังข้อมูล RAG Engine
+              α╕êα╕▒α╕öα╕üα╕▓α╕úα╣üα╕Ñα╕░α╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╣äα╕ƒα╕Ñα╣îα╣éα╕äα╕úα╕çα╕çα╕▓α╕Ö Senior Project α╣Çα╕éα╣ëα╕▓α╕¬α╕╣α╣êα╕äα╕Ñα╕▒α╕çα╕éα╣ëα╕¡α╕íα╕╣α╕Ñ RAG Engine
             </p>
           </div>
 
@@ -473,7 +473,7 @@ export default function DocumentsManagement() {
                 {!loading && filesData.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-gray-500">
-                      ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
+                      α╕óα╕▒α╕çα╣äα╕íα╣êα╕íα╕╡α╣Çα╕¡α╕üα╕¬α╕▓α╕ú ΓÇö α╕üα╕ö Upload File α╣Çα╕₧α╕╖α╣êα╕¡α╣Çα╕₧α╕┤α╣êα╕í PDF
                     </td>
                   </tr>
                 )}
@@ -614,12 +614,12 @@ export default function DocumentsManagement() {
                   >
                     {detailsRow.status}
                   </span>
-                  {detailsRow.year !== "—" && (
+                  {detailsRow.year !== "ΓÇö" && (
                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
                       Year {detailsRow.year}
                     </span>
                   )}
-                  {detailsRow.date !== "—" && (
+                  {detailsRow.date !== "ΓÇö" && (
                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
                       {detailsRow.date}
                     </span>
@@ -663,7 +663,7 @@ export default function DocumentsManagement() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-gray-400">—</p>
+                  <p className="text-gray-400">ΓÇö</p>
                 )}
               </section>
 
@@ -692,7 +692,7 @@ export default function DocumentsManagement() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-gray-400">—</p>
+                  <p className="text-gray-400">ΓÇö</p>
                 )}
               </section>
 
@@ -712,7 +712,7 @@ export default function DocumentsManagement() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-400">—</p>
+                  <p className="text-gray-400">ΓÇö</p>
                 )}
               </section>
             </div>
@@ -775,15 +775,15 @@ export default function DocumentsManagement() {
               {uploading ? (
                 <>
                   <Loader2 className="mb-2 h-10 w-10 animate-spin text-blue-500" />
-                  <p className="text-base font-bold text-gray-700">กำลังอัปโหลดทีละไฟล์...</p>
-                  <p className="mt-1 text-sm text-gray-400">ดูสถานะรายไฟล์ด้านล่าง</p>
+                  <p className="text-base font-bold text-gray-700">α╕üα╕│α╕Ñα╕▒α╕çα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╕ùα╕╡α╕Ñα╕░α╣äα╕ƒα╕Ñα╣î...</p>
+                  <p className="mt-1 text-sm text-gray-400">α╕öα╕╣α╕¬α╕ûα╕▓α╕Öα╕░α╕úα╕▓α╕óα╣äα╕ƒα╕Ñα╣îα╕öα╣ëα╕▓α╕Öα╕Ñα╣êα╕▓α╕ç</p>
                 </>
               ) : (
                 <>
                   <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
-                  <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
+                  <p className="text-base font-bold text-gray-700">α╕äα╕Ñα╕┤α╕üα╕½α╕úα╕╖α╕¡α╕Ñα╕▓α╕üα╣äα╕ƒα╕Ñα╣î PDF α╕íα╕▓α╕ºα╕▓α╕ç</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max 25MB / ไฟล์
+                    α╕¬α╕╣α╕çα╕¬α╕╕α╕ö {MAX_BATCH_UPLOAD_FILES} α╣äα╕ƒα╕Ñα╣î ┬╖ PDF ┬╖ Max 25MB / α╣äα╕ƒα╕Ñα╣î
                   </p>
                 </>
               )}
@@ -807,7 +807,7 @@ export default function DocumentsManagement() {
             {uploadQueue.length > 0 && (
               <div className="mt-4 max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3">
                 <div className="px-1 text-sm font-semibold text-gray-700">
-                  คิวอัปโหลด · สำเร็จ{" "}
+                  α╕äα╕┤α╕ºα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕ö ┬╖ α╕¬α╕│α╣Çα╕úα╣çα╕ê{" "}
                   {uploadQueue.filter((q) => q.status === "success").length} / {uploadQueue.length}
                 </div>
                 {[
@@ -848,11 +848,11 @@ export default function DocumentsManagement() {
                         {item.name}
                       </div>
                       <div className="mt-0.5 text-xs opacity-80 sm:text-sm">
-                        {item.status === "pending" && "รอคิว"}
-                        {item.status === "uploading" && "กำลังอัปโหลดและ ingest..."}
-                        {item.status === "success" && "อัปโหลดเสร็จแล้ว"}
-                        {item.status === "cancelled" && "ยกเลิกแล้ว"}
-                        {item.status === "error" && (item.error || "ล้มเหลว")}
+                        {item.status === "pending" && "α╕úα╕¡α╕äα╕┤α╕º"}
+                        {item.status === "uploading" && "α╕üα╕│α╕Ñα╕▒α╕çα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╣üα╕Ñα╕░ ingest..."}
+                        {item.status === "success" && "α╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕öα╣Çα╕¬α╕úα╣çα╕êα╣üα╕Ñα╣ëα╕º"}
+                        {item.status === "cancelled" && "α╕óα╕üα╣Çα╕Ñα╕┤α╕üα╣üα╕Ñα╣ëα╕º"}
+                        {item.status === "error" && (item.error || "α╕Ñα╣ëα╕íα╣Çα╕½α╕Ñα╕º")}
                       </div>
                     </div>
                   </div>
@@ -886,7 +886,7 @@ export default function DocumentsManagement() {
       {uploadToast && (
         <div className="fixed bottom-6 right-6 z-[60] w-[min(100%-2rem,22rem)] animate-[upload-row-in_0.3s_ease-out] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl">
           <div className="mb-2 flex items-start justify-between gap-2">
-            <div className="font-bold text-gray-900">สรุปการอัปโหลด</div>
+            <div className="font-bold text-gray-900">α╕¬α╕úα╕╕α╕¢α╕üα╕▓α╕úα╕¡α╕▒α╕¢α╣éα╕½α╕Ñα╕ö</div>
             <button
               type="button"
               onClick={() => setUploadToast(null)}
@@ -897,25 +897,25 @@ export default function DocumentsManagement() {
             </button>
           </div>
           <p className="text-sm text-gray-600 sm:text-base">
-            สำเร็จ {uploadToast.succeeded} / {uploadToast.total}
-            {uploadToast.failed > 0 ? ` · ล้มเหลว ${uploadToast.failed}` : ""}
-            {uploadToast.cancelled > 0 ? ` · ยกเลิก ${uploadToast.cancelled}` : ""}
+            α╕¬α╕│α╣Çα╕úα╣çα╕ê {uploadToast.succeeded} / {uploadToast.total}
+            {uploadToast.failed > 0 ? ` ┬╖ α╕Ñα╣ëα╕íα╣Çα╕½α╕Ñα╕º ${uploadToast.failed}` : ""}
+            {uploadToast.cancelled > 0 ? ` ┬╖ α╕óα╕üα╣Çα╕Ñα╕┤α╕ü ${uploadToast.cancelled}` : ""}
           </p>
           <ul className="mt-2 space-y-1 text-sm text-gray-700">
             <li className="flex items-center gap-2 text-green-700">
               <Check className="h-4 w-4" />
-              {uploadToast.succeeded} ไฟล์พร้อมใช้งาน
+              {uploadToast.succeeded} α╣äα╕ƒα╕Ñα╣îα╕₧α╕úα╣ëα╕¡α╕íα╣âα╕èα╣ëα╕çα╕▓α╕Ö
             </li>
             {uploadToast.failed > 0 && (
               <li className="flex items-center gap-2 text-red-700">
                 <CircleAlert className="h-4 w-4" />
-                {uploadToast.failed} ไฟล์ไม่สำเร็จ
+                {uploadToast.failed} α╣äα╕ƒα╕Ñα╣îα╣äα╕íα╣êα╕¬α╕│α╣Çα╕úα╣çα╕ê
               </li>
             )}
             {uploadToast.cancelled > 0 && (
               <li className="flex items-center gap-2 text-gray-600">
                 <X className="h-4 w-4" />
-                {uploadToast.cancelled} ไฟล์ถูกยกเลิก
+                {uploadToast.cancelled} α╣äα╕ƒα╕Ñα╣îα╕ûα╕╣α╕üα╕óα╕üα╣Çα╕Ñα╕┤α╕ü
               </li>
             )}
           </ul>

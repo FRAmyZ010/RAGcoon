@@ -1,219 +1,108 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { FolderText, Send, Bot, User, Menu, X } from "lucide-react";
 
-export default function App() {
-  const [input, setInput] = useState("");
+export default function Chat() {
   const [messages, setMessages] = useState([
-    { 
-      role: "bot", 
-      text: "สวัสดีครับ! ผมคือ RAGcoon AI Assistant 🦝 พร้อมช่วยค้นหาและตอบคำถามของคุณแล้วครับ",
-      meta: "RAGcoon Engine v1.0"
-    }
+    { id: 1, sender: "bot", text: "สวัสดีครับ มีคำถามเกี่ยวกับเอกสารโครงงานชิ้นไหน สอบถามได้เลยครับ" }
   ]);
-  const [loading, setLoading] = useState(false);
-  const chatEndRef = useRef(null);
+  const [inputQuery, setInputQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // เลื่อนลงล่างสุดอัตโนมัติเมื่อมีข้อความใหม่
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ฟังก์ชันจำลองการตอบกลับ (Mock Response ฝั่ง Frontend)
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!inputQuery.trim()) return;
 
-    const userQuery = input;
-
-    // 1. แสดงคำถามของ User ทันที
-    setMessages((prev) => [...prev, { role: "user", text: userQuery }]);
-    setInput("");
-    setLoading(true);
-
-    // 2. จำลองเวลาการประมวลผล 1 วินาที
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "bot",
-          text: `[RAGcoon Response] คำถามของคุณคือ: "${userQuery}" (ระบบกำลังดึงข้อมูลจาก Knowledge Base)`,
-          meta: "RAGcoon Engine v1.0"
-        },
-      ]);
-      setLoading(false);
-    }, 1000);
+    const userMessage = { id: Date.now(), sender: "user", text: inputQuery };
+    setMessages((prev) => [...prev, userMessage]);
+    setInputQuery("");
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", backgroundColor: "#828282", fontFamily: "monospace", fontSize: "12px", overflow: "hidden" }}>
+    <div className="flex h-screen bg-gray-50 font-mono text-[#353535] overflow-hidden">
       
-      {/* ---------------- 1. SIDEBAR ---------------- */}
-      <div style={{ width: "240px", backgroundColor: "#353535", color: "#ffffff", padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between", flexShrink: 0 }}>
-        <div>
-          {/* Logo Brand */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "bold", fontSize: "15px" }}>
-              <span>🦝</span> RAGcoon
-            </div>
-            <Link to="/documents" title="Go to Documents" style={{ color: "#ffffff", textDecoration: "none", opacity: 0.6, fontSize: "12px", cursor: "pointer" }}>
-              📎
-            </Link>
+      {/* 🔴 Responsive Sidebar Drawer (ซ่อนแบบ Overlay บนมือถือ / โชว์ปกติบนจอใหญ่ lg:) */}
+      <div 
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex flex-col h-full p-4">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="font-bold text-sm text-gray-700">Chat Workspaces</h2>
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 text-gray-500">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-
-          {/* Search Box */}
-          <div style={{ marginBottom: "14px" }}>
-            <input 
-              type="text" 
-              placeholder="Search" 
-              style={{ width: "100%", padding: "6px 12px", borderRadius: "16px", border: "none", outline: "none", fontSize: "11px", backgroundColor: "#ffffff", color: "#000", boxSizing: "border-box" }}
-            />
-          </div>
-
-          {/* New Workspace Button */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#d1d5db", cursor: "pointer", marginBottom: "16px" }}>
-            <span>+</span> New Workspace
-          </div>
-
-          {/* Recents Menu */}
-          <div>
-            <div style={{ color: "#9ca3af", fontSize: "11px", fontWeight: "bold", marginBottom: "8px" }}>Recents</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", color: "#e5e7eb" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", cursor: "pointer" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Equipment used in PLC project</span>
-                <span>+</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", paddingLeft: "6px", color: "#ffffff", backgroundColor: "rgba(255, 255, 255, 0.15)", padding: "4px 8px", borderRadius: "4px" }}>
-                <span style={{ opacity: 0.5 }}>└</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>PLC Workflow Summary</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", cursor: "pointer" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>PetFeeder Overview</span>
-                <span>+</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", cursor: "pointer" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>RAGcoon Methodology</span>
-                <span>+</span>
-              </div>
+          <div className="flex-1 overflow-y-auto space-y-2">
+            <div className="p-2.5 bg-blue-50 text-[#1D61E7] rounded-lg text-xs font-bold truncate cursor-pointer">
+              💬 โครงงานระบบอัตโนมัติ 2024
             </div>
           </div>
-        </div>
-
-        {/* Sidebar Footer */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", color: "#d1d5db" }}>
-            <span>⚙ Settings</span>
-            <span>∨</span>
-          </div>
-          <button style={{ width: "100%", backgroundColor: "#ffffff", color: "#353535", fontWeight: "bold", padding: "8px 12px", borderRadius: "8px", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>Log Out</span>
-            <span>↪</span>
-          </button>
         </div>
       </div>
 
-      {/* ---------------- 2. MAIN CHAT AREA ---------------- */}
-      <div style={{ flex: 1, backgroundColor: "#ffffff", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      {/* Main Area */}
+      <div className="flex-1 flex flex-col h-full min-w-0">
         
-        {/* Header Top Bar */}
-        <div style={{ padding: "12px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: "bold", fontSize: "13px", color: "#353535", cursor: "pointer" }}>
-            RAGcoon ∨
+        {/* 🔴 Top Header Bar */}
+        <div className="bg-white border-b border-gray-200 p-3 sm:p-4 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2">
+            {/* ปุ่มเปิด Sidebar บนมือถือ */}
+            <button 
+              onClick={() => setSidebarOpen(true)} 
+              className="p-1.5 text-gray-600 lg:hidden hover:bg-gray-100 rounded-lg"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <h1 className="font-bold text-xs sm:text-sm text-gray-800 truncate">RAGcoon Query Assistant</h1>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div style={{ width: "26px", height: "26px", borderRadius: "50%", backgroundColor: "#800000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: "bold" }}>
-              MJ
-            </div>
-            <span style={{ fontWeight: "bold", color: "#353535" }}>Marry Jann</span>
-          </div>
+
+          {/* 🔵 ปุ่มลิงก์สลับไปหน้า Documents ( Responsive: ซ่อนคำว่า Documents บนมือถือ ) */}
+          <Link
+            to="/documents"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded-lg shadow-sm flex items-center gap-2 transition text-xs font-bold"
+            title="ไปที่หน้า Documents"
+          >
+            <FolderText className="h-4 w-4 text-[#800000]" />
+            <span className="hidden sm:inline">Documents</span>
+          </Link>
         </div>
 
-        {/* --- ส่วนกล่องแสดงผลข้อความแชท (นำจากโค้ดล่างมาใส่) --- */}
-        <div style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "20px",
-          maxWidth: "800px",
-          width: "100%",
-          margin: "0 auto",
-          boxSizing: "border-box"
-        }}>
-          {messages.map((msg, index) => (
+        {/* Chat Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((msg) => (
             <div
-              key={index}
-              style={{
-                marginBottom: "16px",
-                textAlign: msg.role === "user" ? "right" : "left"
-              }}
+              key={msg.id}
+              className={`flex items-start gap-2.5 max-w-[85%] sm:max-w-[75%] ${
+                msg.sender === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
+              }`}
             >
-              <div style={{
-                display: "inline-block",
-                padding: "12px 18px",
-                borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                backgroundColor: msg.role === "user" ? "#4f46e5" : "#f8fafc",
-                color: msg.role === "user" ? "#ffffff" : "#1e293b",
-                border: msg.role === "user" ? "none" : "1px solid #e2e8f0",
-                maxWidth: "75%",
-                wordBreak: "break-word",
-                lineHeight: "1.5",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                textAlign: "left"
-              }}>
-                <div>{msg.text}</div>
-                {msg.meta && (
-                  <div style={{ fontSize: "10px", opacity: 0.6, marginTop: "6px", textAlign: "right" }}>
-                    {msg.meta}
-                  </div>
-                )}
+              <div className={`p-2 rounded-lg shrink-0 ${msg.sender === "user" ? "bg-blue-600 text-white" : "bg-red-800 text-white"}`}>
+                {msg.sender === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+              </div>
+              <div className={`p-3 rounded-xl text-xs sm:text-sm leading-relaxed ${
+                msg.sender === "user" ? "bg-[#1D61E7] text-white rounded-tr-none" : "bg-white border text-gray-800 rounded-tl-none shadow-sm"
+              }`}>
+                {msg.text}
               </div>
             </div>
           ))}
-
-          {loading && (
-            <div style={{ color: "#64748b", fontStyle: "italic", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span>🦝</span> RAGcoon กำลังค้นหาข้อมูลและประมวลผลคำตอบ...
-            </div>
-          )}
-
-          <div ref={chatEndRef} />
         </div>
 
-        {/* --- ส่วนช่องพิมพ์คำถาม --- */}
-        <div style={{ padding: "20px 40px", maxWidth: "800px", width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-          <form onSubmit={handleSend} style={{ display: "flex", gap: "10px", position: "relative" }}>
+        {/* Input Bar */}
+        <div className="p-3 sm:p-4 bg-white border-t border-gray-200 shrink-0">
+          <form onSubmit={handleSend} className="flex items-center gap-2 max-w-4xl mx-auto">
             <input
               type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything"
-              disabled={loading}
-              style={{
-                flex: 1,
-                padding: "12px 90px 12px 20px",
-                borderRadius: "24px",
-                border: "none",
-                backgroundColor: "#e8e8e8",
-                color: "#353535",
-                fontSize: "12px",
-                outline: "none"
-              }}
+              value={inputQuery}
+              onChange={(e) => setInputQuery(e.target.value)}
+              placeholder="พิมพ์คำถามเกี่ยวกับโครงงานที่นี่..."
+              className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:border-[#1D61E7]"
             />
-            <div style={{ position: "absolute", right: "16px", top: "50%", transform: "translateY(-50%)", display: "flex", gap: "10px", alignItems: "center", color: "#6b7280" }}>
-              <span style={{ cursor: "pointer" }}>🎙️</span>
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                style={{
-                  border: "none",
-                  backgroundColor: "transparent",
-                  color: loading || !input.trim() ? "#cbd5e1" : "#4f46e5",
-                  fontWeight: "bold",
-                  cursor: loading || !input.trim() ? "not-allowed" : "pointer",
-                  fontSize: "14px"
-                }}
-              >
-                ➔
-              </button>
-            </div>
+            <button type="submit" className="p-2.5 sm:p-3 bg-[#1D61E7] hover:bg-blue-700 text-white rounded-xl transition shrink-0">
+              <Send className="h-4 w-4" />
+            </button>
           </form>
         </div>
 

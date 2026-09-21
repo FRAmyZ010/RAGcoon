@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Check,
@@ -177,7 +177,7 @@ export default function App() {
                   ...updated[botMsgIndex],
                   citations: data.citations || [],
                   meta: data.timing
-                    ? `Total ${data.timing.total_seconds || 0}s · Retrieval ${data.timing.retrieval_seconds || 0}s`
+                    ? `Total ${data.timing.total_seconds || 0}s ┬╖ Retrieval ${data.timing.retrieval_seconds || 0}s`
                     : "Completed",
                 };
                 return updated;
@@ -267,7 +267,7 @@ export default function App() {
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-base font-bold md:text-lg">
             <span className="text-xl" aria-hidden>
-              🦝
+              ≡ƒª¥
             </span>
             <span>RAGcoon</span>
           </div>
@@ -375,7 +375,7 @@ export default function App() {
             {showEmptyState ? (
               <div className="flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2d2d2d] text-2xl shadow-sm">
-                  🦝
+                  ≡ƒª¥
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
                   How can RAGcoon help?
@@ -412,7 +412,7 @@ export default function App() {
                     ) : (
                       <div className="flex w-full max-w-[95%] gap-3 sm:max-w-[90%]">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base shadow-sm">
-                          🦝
+                          ≡ƒª¥
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-sm leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-base">
@@ -504,7 +504,7 @@ export default function App() {
                                             {c.project_title || c.source}
                                             {c.page ? (
                                               <span className="ml-1 font-normal text-gray-500">
-                                                · page {c.page}
+                                                ┬╖ page {c.page}
                                               </span>
                                             ) : null}
                                           </div>
@@ -546,7 +546,7 @@ export default function App() {
                 {loading && messages[messages.length - 1]?.role === "bot" && !messages[messages.length - 1]?.text && (
                   <div className="flex items-center gap-3 text-sm text-gray-500 sm:text-base">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
-                      🦝
+                      ≡ƒª¥
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
                       <span className="flex gap-1">
@@ -592,7 +592,7 @@ export default function App() {
             </button>
           </form>
           <div className="mt-2 text-center text-xs text-gray-400 sm:text-sm">
-            Answers are grounded in uploaded senior project PDFs · Citations included when available
+            Answers are grounded in uploaded senior project PDFs ┬╖ Citations included when available
           </div>
         </div>
       </main>

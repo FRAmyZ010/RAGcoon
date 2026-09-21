@@ -1,95 +1,127 @@
-import React, { useState } from 'react';
-import { X, UploadCloud, Loader2 } from 'lucide-react';
+// src/components/ui/UploadModal.jsx
+import React, { useState } from "react";
+import { X, UploadCloud } from "lucide-react";
+import { uploadDocumentApi } from "../../services/api";
 
 export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
-  const [isUploading, setIsUploading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
+  const [file, setFile] = useState(null);
+  const [formData, setFormData] = useState({
+    project_title: "",
+    academic_year: 2024,
+    authors: "",
+    advisor: "",
+  });
+  const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  // ฟังก์ชันอัปโหลดไฟล์
-  const handleUpload = async (file) => {
-    if (!file) return;
-
-    setIsUploading(true);
-    try {
-      // 1. เตรียม Data ส่งหา Backend
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // 2. ยิง API (ตัวอย่างการต่อ Backend)
-      // await axios.post('/api/upload', formData);
-
-      console.log('File uploaded:', file.name);
-
-      // ส่ง callback กลับไปอัปเดตหน้าหลัก (ถ้ามี)
-      if (onUploadSuccess) onUploadSuccess(file);
-      
-      onClose();
-    } catch (error) {
-      console.error('Upload failed:', error);
-    } finally {
-      setIsUploading(false);
-    }
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // รองรับการ Click เลือกไฟล์
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      handleUpload(e.target.files[0]);
-    }
-  };
-
-  // รองรับ Drag and Drop (ลากไฟล์มาวาง)
-  const handleDrop = (e) => {
+  const handleUpload = async (e) => {
     e.preventDefault();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleUpload(e.dataTransfer.files[0]);
+    if (!file) return alert("กรุณาเลือกไฟล์ PDF ก่อนครับ");
+
+    try {
+      setLoading(true);
+      await uploadDocumentApi(file, formData);
+      alert("อัปโหลดเอกสารเข้าสู่ระบบสำเร็จ!");
+      if (onUploadSuccess) onUploadSuccess();
+      onClose();
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการอัปโหลดไฟล์");
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 relative">
-        <button 
-          onClick={onClose}
-          disabled={isUploading}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 disabled:opacity-50"
-        >
-          <X size={20} />
-        </button>
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl font-mono text-xs text-[#353535]">
+        <div className="flex justify-between items-center border-b pb-3 mb-4">
+          <h3 className="font-bold text-sm">Upload Senior Project PDF</h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-        <h3 className="text-lg font-bold text-slate-800 mb-4">Upload File</h3>
-        
-        <label 
-          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition ${
-            dragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:bg-blue-50/50 hover:border-blue-500'
-          }`}
-        >
-          {isUploading ? (
-            <div className="flex flex-col items-center py-2">
-              <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-2" />
-              <p className="text-sm font-semibold text-slate-600">Uploading...</p>
+        <form onSubmit={handleUpload} className="space-y-3">
+          <div>
+            <label className="block font-bold mb-1">Project Title</label>
+            <input
+              type="text"
+              name="project_title"
+              required
+              placeholder="ชื่อโครงงาน"
+              className="w-full p-2 border rounded-md"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block font-bold mb-1">Academic Year</label>
+              <input
+                type="number"
+                name="academic_year"
+                defaultValue={2024}
+                className="w-full p-2 border rounded-md"
+                onChange={handleChange}
+              />
             </div>
-          ) : (
-            <>
-              <UploadCloud className="w-12 h-12 text-blue-500 mb-2" />
-              <p className="text-sm font-semibold text-slate-700">Click to upload or drag and drop</p>
-              <p className="text-xs text-slate-400 mt-1">PDF, DOCX, TXT (max. 10MB)</p>
-            </>
-          )}
-          
-          <input 
-            type="file" 
-            className="hidden" 
-            onChange={handleFileChange}
-            disabled={isUploading}
-          />
-        </label>
+            <div>
+              <label className="block font-bold mb-1">Advisor</label>
+              <input
+                type="text"
+                name="advisor"
+                placeholder="ชื่ออาจารย์ที่ปรึกษา"
+                className="w-full p-2 border rounded-md"
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-bold mb-1">Authors</label>
+            <input
+              type="text"
+              name="authors"
+              placeholder="ชื่อผู้จัดทำ"
+              className="w-full p-2 border rounded-md"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center bg-gray-50 mt-2">
+            <UploadCloud className="h-6 w-6 mx-auto text-blue-500 mb-1" />
+            <input
+              type="file"
+              accept=".pdf"
+              required
+              onChange={(e) => setFile(e.target.files[0])}
+              className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-[#1D61E7] text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {loading ? "Ingesting PDF..." : "Upload"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
