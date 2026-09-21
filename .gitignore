@@ -6,6 +6,7 @@ venv/
 ENV/
 *.env
 node_modules/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
@@ -27,16 +28,26 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
 # --- Data & Local Cache ---
 data/dummy/*
 !data/dummy/.gitkeep
 *.csv
 *.log
+backend/storage/*
+!backend/storage/.gitkeep
+
+# --- Agent Skills (local installs; do not commit) ---
+.agents/
+skills-lock.json
 
 # --- IDE & Editors ---
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 .DS_Store
@@ -46,3 +57,5 @@ data/dummy/*
 
 # --- Sentence Transformers / HuggingFace Cache ---
 .cache/
+
+.cursorrules

@@ -1,20 +1,6 @@
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
-from typing import Optional
 from enum import Enum
-
-"""
-ไฟล์สำหรับรับ-ส่งข้อมูล API และกำหนด Enum สถานะการทำงาน
-
-Document Pydantic Schemas (Data Validation & Serialization Layer)
-
-ไฟล์นี้ทำหน้าที่เป็น Data Transfer Object (DTO) สำหรับจัดการโครงสร้างข้อมูลของเอกสาร:
-1. ProcessingStatus (Enum): กำหนดสถานะที่เป็นไปได้ของกระบวนการประมวลผล (PENDING, PROCESSING, COMPLETED, FAILED)
-2. DocumentBase: Schema แม่แบบ เก็บฟิลด์ข้อมูลพื้นฐานที่ใช้ร่วมกัน
-3. DocumentCreate: สำหรับ Validate ข้อมูลฝั่ง Request ขาเข้า ตอนอัปโหลด/สร้างเอกสารใหม่
-4. DocumentUpdate: สำหรับ Validate ข้อมูลฝั่ง Request ขาเข้า ตอนอัปเดตข้อมูล/สถานะ (Partial Update)
-5. DocumentResponse: สำหรับ Format ข้อมูลฝั่ง Response ขาออก โดยแปลง SQLAlchemy Model เป็น JSON ส่งกลับให้ Client
-"""
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 
 class ProcessingStatus(str, Enum):
     PENDING = "PENDING"
@@ -24,24 +10,41 @@ class ProcessingStatus(str, Enum):
 
 class DocumentBase(BaseModel):
     filename: str
-    title: Optional[str] = None
-    supervisory_committee: Optional[str] = None
+    title: str | None = None
+    supervisory_committee: str | None = None
+    keywords: str | None = None
 
 class DocumentCreate(DocumentBase):
     file_path: str
-
-class DocumentUpdate(BaseModel):
-    title: Optional[str] = None
-    supervisory_committee: Optional[str] = None
-    status: Optional[ProcessingStatus] = None
-    error_message: Optional[str] = None
+    project_id: int | None = None
 
 class DocumentResponse(DocumentBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
+    project_id: int | None = None
     file_path: str
     status: ProcessingStatus
-    error_message: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    upload_date: datetime
+    academic_year: int | None = None
+    authors: str | None = None
+    advisor: str | None = None
 
-    model_config = ConfigDict(from_attributes=True)
+
+class BatchUploadItemResult(BaseModel):
+    filename: str
+    ok: bool
+    document: DocumentResponse | None = None
+    error: str | None = None
+    status_code: int | None = None
+
+
+class BatchUploadSummary(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+
+
+class BatchUploadResponse(BaseModel):
+    results: list[BatchUploadItemResult]
+    summary: BatchUploadSummary

@@ -115,3 +115,93 @@ def upload_to_qdrant(chunks: Iterable[Mapping[str, Any]]) -> bool:
     except Exception as e:
         print(f"Upload failed: {e}")
         return False
+
+
+def _candidate_sources(filename: str | None, file_path: str | None) -> list[str]:
+    """Build possible Qdrant `source` values used during scan/upload."""
+    sources: set[str] = set()
+
+    if file_path:
+        base = os.path.basename(file_path)
+        sources.add(base)
+        # Final path is usually "{project_id}_{safe_filename}" while scan used "temp_{safe_filename}"
+        if "_" in base:
+            original = base.split("_", 1)[1]
+            if original:
+                sources.add(original)
+                sources.add(f"temp_{original}")
+
+    if filename:
+        safe = filename.replace(" ", "_")
+        sources.add(filename)
+        sources.add(safe)
+        sources.add(f"temp_{safe}")
+
+    return sorted(s for s in sources if s)
+
+
+def delete_from_qdrant(
+    *,
+    project_title: str | None = None,
+    filename: str | None = None,
+    file_path: str | None = None,
+) -> bool:
+    """
+    Delete vector points for a document from Qdrant.
+
+    Matches by project_title and/or source filename variants (including temp_* used at scan time).
+    """
+    try:
+        if not QDRANT_URL:
+            raise ValueError("QDRANT_URL is missing. Check backend/.env")
+        if not QDRANT_API_KEY:
+            raise ValueError("QDRANT_API_KEY is missing. Check backend/.env")
+
+        conditions: list[models.FieldCondition] = []
+        if project_title and project_title.strip():
+            conditions.append(
+                models.FieldCondition(
+                    key="project_title",
+                    match=models.MatchValue(value=project_title.strip()),
+                )
+            )
+
+        sources = _candidate_sources(filename, file_path)
+        if sources:
+            conditions.append(
+                models.FieldCondition(
+                    key="source",
+                    match=models.MatchAny(any=sources),
+                )
+            )
+
+        if not conditions:
+            print("delete_from_qdrant skipped: no project_title/source to match")
+            return False
+
+        client = QdrantClient(
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+            timeout=30,
+            check_compatibility=False,
+        )
+
+        collections = [c.name for c in client.get_collections().collections]
+        if COLLECTION_NAME not in collections:
+            print(f"delete_from_qdrant skipped: collection {COLLECTION_NAME} not found")
+            return True
+
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(should=conditions)
+            ),
+        )
+        print(
+            "Deleted Qdrant vectors matching "
+            f"title={project_title!r} sources={sources}"
+        )
+        return True
+    except Exception as e:
+        print(f"Qdrant vector delete failed: {e}")
+        return False

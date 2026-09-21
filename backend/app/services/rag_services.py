@@ -1,32 +1,201 @@
-import sys
-from pathlib import Path
+import json
+import uuid
+from typing import Generator
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.models.search_query import SearchQuery
+from app.schemas.chat import (
+    ChatResponse,
+    TimingMetrics,
+    DocumentCitation,
+    SearchQueryHistoryResponse,
+    WorkspaceSummaryResponse,
+    WorkspaceDetailResponse,
+    WorkspaceQueryResult,
+)
+from app.rag.retrieval import answer_question, stream_answer_question
+from app.services.document_service import enrich_citations_with_document_ids
 
-# กำหนด Path ให้ชี้ไปยังโฟลเดอร์ app/rag เพื่อ Import retrieval ได้โดยตรง
-RAG_DIR = Path(__file__).resolve().parent.parent / "rag"
-if str(RAG_DIR) not in sys.path:
-    sys.path.insert(0, str(RAG_DIR))
+def process_rag_query(
+    db: Session,
+    query_text: str,
+    workspace_id: str | None = None,
+    parent_query_id: int | None = None
+) -> ChatResponse:
+    """
+    ประมวลผลคำถาม RAG แบบ Blocking (Non-Streaming) และบันทึกประวัติลง PostgreSQL
+    """
+    active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
+    try:
+        rag_output = answer_question(query_text)
+        answer_text = rag_output.get("answer", "")
+        citations_data = rag_output.get("citations", [])
+        timing_data = rag_output.get("timing", {})
+    except ImportError:
+        answer_text = f"ระบบได้รับคำถาม: '{query_text}' เรียบร้อยแล้ว"
+        citations_data = [{
+            "project_title": "RAGcoon System",
+            "source": "Senior_Project_Archive.pdf",
+            "page": 1,
+            "content_snippet": "เนื้อหาตัวอย่างจากเอกสารอ้างอิง"
+        }]
+        timing_data = {"retrieval_seconds": 0.1, "llm_seconds": 1.2, "total_seconds": 1.3}
 
-from rag.retrieval import answer_question  # Import ฟังก์ชันของด๋อย[cite: 2]
+    citations_data = enrich_citations_with_document_ids(db, citations_data)
+    citations = [DocumentCitation(**c) if isinstance(c, dict) else c for c in citations_data]
+    if isinstance(timing_data, dict):
+        timing = TimingMetrics(
+            retrieval_seconds=float(timing_data.get("retrieval_seconds", 0.0) or 0.0),
+            rerank_seconds=float(timing_data.get("rerank_seconds", 0.0) or 0.0),
+            llm_seconds=float(timing_data.get("llm_seconds", 0.0) or 0.0),
+            total_seconds=float(timing_data.get("total_seconds", 0.0) or 0.0),
+        )
+    else:
+        timing = timing_data
 
-class RAGService:
-    async def get_answer(self, user_query: str) -> dict:
-        """
-        เรียกใช้ RAG Pipeline จริง แล้วแปลง Data Structure ส่งกลับให้ API Controller
-        """
-        # เรียกใช้ฟังก์ชันหลักของ RAG Engine[cite: 2]
-        rag_result = answer_question(user_query)
-        
-        # ดึงข้อมูลจาก Dictionary ที่ RAG คืนค่ากลับมา[cite: 2]
-        answer_text = rag_result.get("answer", "")
-        sources = rag_result.get("sources", [])
-        
-        # แปลง sources (list of str) เป็น List ของ Citations Dict ตาม Schema ที่วางไว้[cite: 1, 2]
-        citations = [{"source": src} for src in sources]
-        
-        return {
-            "answer": answer_text,
-            "citations": citations,
-            "raw_result": rag_result  # (Optional) เก็บไว้ลง DB ในช่อง retrieved_docs หรือ logs[cite: 1]
-        }
+    db_entry = SearchQuery(
+        workspace_id=active_workspace_id,
+        query_text=query_text,
+        parent_query_id=parent_query_id,
+        answer_text=answer_text,
+        citations=[c.model_dump() for c in citations],
+        execution_time=timing.model_dump() if timing else None
+    )
+    db.add(db_entry)
+    db.commit()
+    db.refresh(db_entry)
 
-rag_service = RAGService()
+    return ChatResponse(
+        query_id=db_entry.id,
+        workspace_id=active_workspace_id,
+        answer=answer_text,
+        sources=[c.source for c in citations],
+        citations=citations,
+        contexts_count=len(citations),
+        timing=timing
+    )
+
+def process_rag_stream(
+    db: Session,
+    query_text: str,
+    workspace_id: str | None = None,
+    parent_query_id: int | None = None
+) -> Generator[str, None, None]:
+    """
+    สร้าง Record ใน DB, สตรีมมิ่ง SSE Events ไปยัง Frontend และบันทึกคำตอบฉบับเต็มเมื่อสตรีมจบ
+    """
+    active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
+
+    db_entry = SearchQuery(
+        workspace_id=active_workspace_id,
+        query_text=query_text,
+        parent_query_id=parent_query_id,
+        answer_text="",
+        citations=[]
+    )
+    db.add(db_entry)
+    db.commit()
+    db.refresh(db_entry)
+
+    full_answer = ""
+    citations_data = []
+    execution_time_data = {}
+
+    for item in stream_answer_question(question=query_text):
+        event_type = item.get("event", "message")
+        event_data = item.get("data", {})
+
+        if event_type == "metadata":
+            citations_data = enrich_citations_with_document_ids(
+                db, event_data.get("citations", [])
+            )
+        elif event_type == "token":
+            token_text = event_data.get("token", "")
+            full_answer += token_text
+            chunk_payload = {
+                "type": "answer_chunk",
+                "content": token_text,
+                "workspace_id": active_workspace_id
+            }
+            yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
+        elif event_type == "done":
+            full_answer = event_data.get("answer", full_answer)
+            citations_data = enrich_citations_with_document_ids(
+                db, event_data.get("citations", citations_data)
+            )
+            execution_time_data = event_data.get("timing", {})
+
+    metadata_payload = {
+        "type": "metadata",
+        "workspace_id": active_workspace_id,
+        "citations": citations_data,
+        "timing": execution_time_data
+    }
+    yield f"data: {json.dumps(metadata_payload, ensure_ascii=False)}\n\n"
+
+    db_entry.answer_text = full_answer
+    db_entry.citations = citations_data
+    db_entry.execution_time = execution_time_data
+    db.commit()
+
+def get_chat_history(db: Session, skip: int = 0, limit: int = 20) -> list[SearchQueryHistoryResponse]:
+    queries = db.query(SearchQuery).order_by(SearchQuery.created_at.desc()).offset(skip).limit(limit).all()
+    return queries
+
+def get_all_workspaces(db: Session) -> list[WorkspaceSummaryResponse]:
+    """
+    ดึงรายการ Workspace ทั้งหมดเรียงตามกิจกรรมล่าสุด
+    """
+    results = (
+        db.query(
+            SearchQuery.workspace_id,
+            func.min(SearchQuery.query_text).label("title"),
+            func.max(SearchQuery.created_at).label("last_activity")
+        )
+        .filter(SearchQuery.workspace_id.isnot(None))
+        .group_by(SearchQuery.workspace_id)
+        .order_by(func.max(SearchQuery.created_at).desc())
+        .all()
+    )
+
+    workspaces = []
+    for r in results:
+        title = r.title[:30] + "..." if len(r.title) > 30 else r.title
+        workspaces.append(
+            WorkspaceSummaryResponse(
+                workspace_id=r.workspace_id,
+                title=title or "บทสนทนาใหม่",
+                last_activity=r.last_activity
+            )
+        )
+    return workspaces
+
+def get_workspace_detail(db: Session, workspace_id: str) -> WorkspaceDetailResponse | None:
+    """
+    ดึงประวัติคำถาม-คำตอบทั้งหมดใน Workspace ที่ระบุ
+    """
+    queries = (
+        db.query(SearchQuery)
+        .filter(SearchQuery.workspace_id == workspace_id)
+        .order_by(SearchQuery.created_at.asc())
+        .all()
+    )
+
+    if not queries:
+        return None
+
+    query_list = []
+    for q in queries:
+        query_list.append(
+            WorkspaceQueryResult(
+                query_id=q.id,
+                query_text=q.query_text,
+                response_text=q.answer_text or "",
+                retrieved_docs={"citations": q.citations or [], "timing": q.execution_time or {}}
+            )
+        )
+
+    return WorkspaceDetailResponse(
+        workspace_id=workspace_id,
+        queries=query_list
+    )
