@@ -27,7 +27,10 @@ import {
   openDocumentPreview,
   uploadDocument,
   MAX_UPLOAD_BYTES,
+  MAX_TOTAL_UPLOAD_BYTES,
   MAX_BATCH_UPLOAD_FILES,
+  MAX_UPLOAD_MB,
+  MAX_TOTAL_UPLOAD_MB,
 } from "../services/documentsApi";
 import { clearAuth } from "../services/authApi";
 
@@ -110,10 +113,43 @@ export default function DocumentsManagement() {
     }
   };
 
+  const cleanupIncompleteUploadsByFilenames = async (filenames) => {
+    const nameSet = new Set(
+      filenames.map((name) => String(name || "").toLowerCase()).filter(Boolean)
+    );
+    if (nameSet.size === 0) return 0;
+
+    // ให้ backend มีเวลาเขียนแถวค้างหลัง abort ก่อนค่อยลบ
+    await new Promise((r) => setTimeout(r, 800));
+
+    const incompleteStatuses = new Set(["PROCESSING", "PENDING", "FAILED"]);
+    let deleted = 0;
+
+    try {
+      const docs = await listDocuments();
+      for (const doc of docs) {
+        const filename = String(doc.filename || "").toLowerCase();
+        if (!nameSet.has(filename)) continue;
+        if (!incompleteStatuses.has(String(doc.status || "").toUpperCase())) continue;
+
+        try {
+          await deleteDocument(doc.id);
+          deleted += 1;
+        } catch (err) {
+          console.error("Failed to cleanup incomplete upload:", doc.filename, err);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to list documents for upload cleanup:", err);
+    }
+
+    return deleted;
+  };
+
   const closeUploadModal = () => {
     if (uploading) {
       const ok = window.confirm(
-        "ยกเลิกคิวอัปโหลดที่เหลือหรือไม่?\n\nไฟล์ที่อัปโหลดสำเร็จแล้วจะยังอยู่ในระบบ — เฉพาะไฟล์ที่รอคิว/กำลังทำจะถูกยกเลิก"
+        "ยกเลิกคิวอัปโหลดที่เหลือหรือไม่?\n\nไฟล์ที่อัปโหลดสำเร็จแล้วจะยังอยู่ในระบบ\nไฟล์ที่ยังอัปโหลดไม่เสร็จจะถูกยกเลิก และลบออกจากระบบ/Qdrant ถ้ามีค้างอยู่"
       );
       if (!ok) return;
       uploadCancelRef.current = true;
@@ -138,42 +174,137 @@ export default function DocumentsManagement() {
     setIsUploadModalOpen(false);
     setUploadQueue([]);
     setUploadError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const openUploadModal = () => {
     setUploadError("");
     setUploadQueue([]);
     uploadCancelRef.current = false;
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setIsUploadModalOpen(true);
   };
 
-  const handleUploadFiles = async (fileList) => {
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
+  const submitCandidates = uploadQueue.filter((q) => q.status === "pending");
+  const submitTotalBytes = submitCandidates.reduce(
+    (sum, item) => sum + (item.file?.size || 0),
+    0
+  );
+  const queueOverTotalLimit = submitTotalBytes > MAX_TOTAL_UPLOAD_BYTES;
+  const canSubmitUpload =
+    !uploading && submitCandidates.length > 0 && !queueOverTotalLimit;
 
-    if (files.length > MAX_BATCH_UPLOAD_FILES) {
-      setUploadError(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
-      return;
+  const removeQueuedFile = (id) => {
+    if (uploading) return;
+    const next = uploadQueue.filter((item) => item.id !== id);
+    const total = next
+      .filter((item) => item.status === "pending")
+      .reduce((sum, item) => sum + (item.file?.size || 0), 0);
+    setUploadQueue(next);
+    if (total > MAX_TOTAL_UPLOAD_BYTES) {
+      setUploadError(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+    } else {
+      setUploadError("");
     }
+  };
 
-    for (const file of files) {
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        setUploadError(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
-        return;
+  const addFilesToQueue = (fileList) => {
+    if (uploading) return;
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
+
+    const warnings = [];
+    const accepted = [];
+    let hitMaxFiles = false;
+    let hitMaxTotal = false;
+    const queueNames = new Set(
+      uploadQueue.map((item) => item.name.toLowerCase())
+    );
+    const serverNames = new Set(
+      filesData
+        .map((row) => (row.filename || row.source || "").toLowerCase())
+        .filter(Boolean)
+    );
+    let runningTotal = uploadQueue
+      .filter((item) => item.status === "pending")
+      .reduce((sum, item) => sum + (item.file?.size || 0), 0);
+
+    for (const file of incoming) {
+      const name = file.name || "unnamed";
+      const lower = name.toLowerCase();
+
+      if (!lower.endsWith(".pdf")) {
+        warnings.push(`${name} ไม่รองรับ`);
+        continue;
+      }
+      if (file.size <= 0) {
+        warnings.push(`${name} ไฟล์ว่างเปล่า หรือไฟล์เสีย`);
+        continue;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
-        setUploadError(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
-        return;
+        warnings.push(`${name} ใหญ่เกิน ${MAX_UPLOAD_MB}MB`);
+        continue;
       }
+      if (
+        queueNames.has(lower) ||
+        accepted.some((f) => f.name.toLowerCase() === lower)
+      ) {
+        warnings.push(`${name} ชื่อไฟล์ซ้ำในคิว`);
+        continue;
+      }
+      if (serverNames.has(lower)) {
+        warnings.push(`${name} มีชื่อไฟล์ซ้ำในระบบแล้ว`);
+        continue;
+      }
+      if (uploadQueue.length + accepted.length >= MAX_BATCH_UPLOAD_FILES) {
+        hitMaxFiles = true;
+        continue;
+      }
+      if (runningTotal + file.size > MAX_TOTAL_UPLOAD_BYTES) {
+        hitMaxTotal = true;
+        continue;
+      }
+
+      accepted.push(file);
+      queueNames.add(lower);
+      runningTotal += file.size;
     }
 
-    const queue = files.map((file, index) => ({
-      id: `${file.name}-${file.size}-${index}-${Date.now()}`,
-      name: file.name,
-      file,
-      status: "pending",
-      error: null,
-    }));
+    if (hitMaxFiles) {
+      warnings.push(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์`);
+    }
+    if (hitMaxTotal) {
+      warnings.push(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+    }
+
+    const nextQueue = [
+      ...uploadQueue,
+      ...accepted.map((file, index) => ({
+        id: `${file.name}-${file.size}-${Date.now()}-${index}`,
+        name: file.name,
+        file,
+        status: "pending",
+        error: null,
+      })),
+    ];
+
+    setUploadQueue(nextQueue);
+    setUploadError(warnings.length ? [...new Set(warnings)].join(" · ") : "");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const submitUploadQueue = async () => {
+    const queue = uploadQueue.filter((q) => q.status === "pending");
+    const totalBytes = queue.reduce(
+      (sum, item) => sum + (item.file?.size || 0),
+      0
+    );
+    if (uploading || queue.length === 0 || totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+      if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+        setUploadError(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+      }
+      return;
+    }
 
     uploadCancelRef.current = false;
     const abortController = new AbortController();
@@ -181,9 +312,10 @@ export default function DocumentsManagement() {
 
     setUploading(true);
     setUploadError("");
-    setUploadQueue(queue);
 
-    const statusById = Object.fromEntries(queue.map((q) => [q.id, "pending"]));
+    const statusById = Object.fromEntries(
+      uploadQueue.map((q) => [q.id, q.status])
+    );
     let succeeded = 0;
     let failed = 0;
 
@@ -195,7 +327,7 @@ export default function DocumentsManagement() {
     };
 
     const cancelRemaining = (fromId = null) => {
-      for (const item of queue) {
+      for (const item of uploadQueue) {
         const st = statusById[item.id];
         if (st === "pending" || st === "uploading" || item.id === fromId) {
           if (st === "success" || st === "error") continue;
@@ -241,7 +373,14 @@ export default function DocumentsManagement() {
     const wasCancelled = uploadCancelRef.current;
 
     if (wasCancelled) {
-      await new Promise((r) => setTimeout(r, 250));
+      const incompleteNames = uploadQueue
+        .filter((item) => {
+          const st = statusById[item.id];
+          return st === "cancelled" || st === "uploading";
+        })
+        .map((item) => item.name);
+
+      await cleanupIncompleteUploadsByFilenames(incompleteNames);
       await finishUploadSession({
         succeeded,
         failed,
@@ -265,15 +404,16 @@ export default function DocumentsManagement() {
 
   const handleFileChange = (e) => {
     const files = e.target.files;
-    if (files?.length) handleUploadFiles(files);
+    if (files?.length) addFilesToQueue(files);
     e.target.value = "";
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
+    if (uploading) return;
     const files = e.dataTransfer.files;
-    if (files?.length) handleUploadFiles(files);
+    if (files?.length) addFilesToQueue(files);
   };
 
   const closeActionMenu = () => {
@@ -783,7 +923,8 @@ export default function DocumentsManagement() {
                   <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
                   <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max 25MB / ไฟล์
+                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max {MAX_UPLOAD_MB}MB / ไฟล์ · รวมไม่เกิน{" "}
+                    {MAX_TOTAL_UPLOAD_MB}MB
                   </p>
                 </>
               )}
@@ -807,8 +948,11 @@ export default function DocumentsManagement() {
             {uploadQueue.length > 0 && (
               <div className="mt-4 max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3">
                 <div className="px-1 text-sm font-semibold text-gray-700">
-                  คิวอัปโหลด · สำเร็จ{" "}
-                  {uploadQueue.filter((q) => q.status === "success").length} / {uploadQueue.length}
+                  ไฟล์ที่เลือก {uploadQueue.length} · รวม{" "}
+                  {(submitTotalBytes / (1024 * 1024)).toFixed(1)} / {MAX_TOTAL_UPLOAD_MB}MB
+                  {uploading
+                    ? ` · สำเร็จ ${uploadQueue.filter((q) => q.status === "success").length}`
+                    : ""}
                 </div>
                 {[
                   ...uploadQueue.filter(
@@ -840,7 +984,7 @@ export default function DocumentsManagement() {
                         <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                       )}
                       {item.status === "pending" && (
-                        <span className="block h-4 w-4 rounded-full border-2 border-gray-300" />
+                        <FileText className="h-4 w-4 text-gray-400" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -848,20 +992,33 @@ export default function DocumentsManagement() {
                         {item.name}
                       </div>
                       <div className="mt-0.5 text-xs opacity-80 sm:text-sm">
-                        {item.status === "pending" && "รอคิว"}
+                        {item.status === "pending" &&
+                          `${((item.file?.size || 0) / (1024 * 1024)).toFixed(2)}MB · รอส่ง`}
                         {item.status === "uploading" && "กำลังอัปโหลดและ ingest..."}
                         {item.status === "success" && "อัปโหลดเสร็จแล้ว"}
                         {item.status === "cancelled" && "ยกเลิกแล้ว"}
                         {item.status === "error" && (item.error || "ล้มเหลว")}
                       </div>
                     </div>
+                    {!uploading && item.status === "pending" && (
+                      <button
+                        type="button"
+                        onClick={() => removeQueuedFile(item.id)}
+                        className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                        title="ลบไฟล์ออกจากคิว"
+                        aria-label={`Remove ${item.name}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
               <button
+                type="button"
                 onClick={closeUploadModal}
                 className="rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100"
               >
@@ -872,11 +1029,36 @@ export default function DocumentsManagement() {
                     : "Cancel"}
               </button>
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
-                {uploading ? "Uploading..." : "Choose PDFs"}
+                Choose PDFs
+              </button>
+              <button
+                type="button"
+                onClick={submitUploadQueue}
+                disabled={!canSubmitUpload}
+                title={
+                  canSubmitUpload
+                    ? "อัปโหลดไฟล์ในคิว"
+                    : queueOverTotalLimit
+                      ? `ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`
+                      : submitCandidates.length === 0
+                        ? "ยังไม่มีไฟล์ในคิว"
+                        : "ไม่สามารถส่งได้"
+                }
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  "Submit"
+                )}
               </button>
             </div>
           </div>

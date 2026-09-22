@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
+import os
 from app.api.deps import get_current_administrator
 from app.core.database import get_db
 from app.models.user import User
@@ -19,6 +20,7 @@ from app.services.document_service import (
     resolve_document_file_path,
     DocumentUploadError,
     MAX_BATCH_UPLOAD_FILES,
+    MAX_TOTAL_UPLOAD_BYTES,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
@@ -80,6 +82,26 @@ async def upload_documents_batch(
             detail=(
                 f"อัปโหลดได้สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง "
                 f"(ส่งมา {len(files)} ไฟล์)"
+            ),
+        )
+
+    total_bytes = 0
+    for file in files:
+        # Best-effort size probe; full validation still runs per file on disk.
+        try:
+            pos = file.file.tell()
+            file.file.seek(0, os.SEEK_END)
+            total_bytes += file.file.tell()
+            file.file.seek(pos)
+        except Exception:
+            pass
+
+    if total_bytes > MAX_TOTAL_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"ขนาดไฟล์รวมเกิน {MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)}MB "
+                f"(ขนาดปัจจุบัน {total_bytes / (1024 * 1024):.1f}MB)"
             ),
         )
 

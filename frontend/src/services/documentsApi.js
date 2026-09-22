@@ -1,6 +1,9 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-export const MAX_BATCH_UPLOAD_FILES = 5;
+export const MAX_TOTAL_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_BATCH_UPLOAD_FILES = 10;
+export const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / (1024 * 1024);
+export const MAX_TOTAL_UPLOAD_MB = MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024);
 const AUTH_TOKEN_KEY = "token";
 
 export function getAuthToken() {
@@ -75,8 +78,11 @@ export async function uploadDocument(file, options = {}) {
   if (!file.name?.toLowerCase().endsWith(".pdf")) {
     throw new Error("รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น");
   }
+  if (file.size <= 0) {
+    throw new Error("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้");
+  }
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("ไฟล์ใหญ่เกิน 25MB");
+    throw new Error(`ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB}MB`);
   }
 
   const formData = new FormData();
@@ -106,12 +112,20 @@ export async function uploadDocumentsBatch(files) {
     throw new Error(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
   }
 
+  const totalBytes = list.reduce((sum, file) => sum + (file.size || 0), 0);
+  if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+    throw new Error(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+  }
+
   for (const file of list) {
     if (!file.name?.toLowerCase().endsWith(".pdf")) {
       throw new Error(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
     }
+    if (file.size <= 0) {
+      throw new Error(`ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้: ${file.name}`);
+    }
     if (file.size > MAX_UPLOAD_BYTES) {
-      throw new Error(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
+      throw new Error(`ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB}MB: ${file.name}`);
     }
   }
 

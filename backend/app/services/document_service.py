@@ -7,8 +7,9 @@ from app.models.document import Document
 from app.schemas.document import ProcessingStatus
 
 UPLOAD_DIR = "storage/documents"
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB
-MAX_BATCH_UPLOAD_FILES = 5
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB per file
+MAX_TOTAL_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB total per batch selection
+MAX_BATCH_UPLOAD_FILES = 10
 
 
 class DocumentUploadError(Exception):
@@ -75,6 +76,19 @@ def process_document_upload_auto(
 
     try:
         _assert_pdf_file(temp_file_path, file.filename)
+
+        original_filename = file.filename or "uploaded.pdf"
+        existing_filename = (
+            db.query(Document)
+            .filter(Document.filename == original_filename)
+            .first()
+        )
+        if existing_filename:
+            raise DocumentUploadError(
+                f'พบไฟล์ชื่อซ้ำ: "{original_filename}" '
+                "กรุณาลบไฟล์เดิมก่อน หรือเปลี่ยนชื่อไฟล์",
+                status_code=409,
+            )
 
         from app.rag.embedding.pdf_scanning import scan_pdf_document
         from app.rag.embedding.text_processor import chunk_extracted_data
