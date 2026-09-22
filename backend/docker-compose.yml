@@ -46,8 +46,8 @@ services:
       PID=$$!;
       echo '⏳ Waiting for Ollama service to start...';
       sleep 5;
-      echo '📥 Pulling model qwen2.5:7b...';
-      ollama pull qwen2.5:7b;
+      echo '📥 Pulling model gemma3:4b...';
+      ollama pull gemma3:4b;
       echo '✅ Model pulled successfully!';
       wait $$PID
       "
