@@ -100,6 +100,7 @@ def process_rag_stream(
     full_answer = ""
     citations_data = []
     execution_time_data = {}
+    model_name = None
 
     for item in stream_answer_question(question=query_text):
         event_type = item.get("event", "message")
@@ -109,6 +110,8 @@ def process_rag_stream(
             citations_data = enrich_citations_with_document_ids(
                 db, event_data.get("citations", [])
             )
+            if event_data.get("model"):
+                model_name = event_data.get("model")
         elif event_type == "token":
             token_text = event_data.get("token", "")
             full_answer += token_text
@@ -124,12 +127,15 @@ def process_rag_stream(
                 db, event_data.get("citations", citations_data)
             )
             execution_time_data = event_data.get("timing", {})
+            if event_data.get("model"):
+                model_name = event_data.get("model")
 
     metadata_payload = {
         "type": "metadata",
         "workspace_id": active_workspace_id,
         "citations": citations_data,
-        "timing": execution_time_data
+        "timing": execution_time_data,
+        "model": model_name,
     }
     yield f"data: {json.dumps(metadata_payload, ensure_ascii=False)}\n\n"
 

@@ -10,6 +10,7 @@ import {
   Menu,
   MessageSquarePlus,
   PanelLeftClose,
+  RefreshCw,
   Search,
   SendHorizontal,
   ThumbsDown,
@@ -23,6 +24,12 @@ const SUGGESTIONS = [
   "List projects advised by Surapol",
   "Summarize projects about web applications",
 ];
+
+function formatSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toFixed(2);
+}
 
 export default function App() {
   const [input, setInput] = useState("");
@@ -40,6 +47,14 @@ export default function App() {
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  const resizeComposer = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxPx = 160; // ~ max-h-40
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  };
+
   useEffect(() => {
     fetchWorkspaces();
     if (window.innerWidth >= 1024) {
@@ -50,6 +65,10 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    resizeComposer();
+  }, [input]);
 
   const fetchWorkspaces = async () => {
     try {
@@ -95,7 +114,7 @@ export default function App() {
             text: q.response_text,
             citations: q.retrieved_docs?.citations || [],
             meta: q.retrieved_docs?.timing
-              ? `Total ${q.retrieved_docs.timing.total_seconds}s`
+              ? `Total ${formatSeconds(q.retrieved_docs.timing.total_seconds)}s`
               : "",
           });
         });
@@ -109,15 +128,32 @@ export default function App() {
     }
   };
 
-  const streamQuery = async (userQuery, workspaceId = activeWorkspaceId) => {
+  const streamQuery = async (userQuery, workspaceId = activeWorkspaceId, options = {}) => {
+    const { replaceBotIndex = null } = options;
     setLoading(true);
 
-    const botMsgIndex = messages.length + 1;
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: userQuery },
-      { role: "bot", text: "", citations: [], meta: "Searching..." },
-    ]);
+    let botMsgIndex;
+    if (replaceBotIndex != null) {
+      botMsgIndex = replaceBotIndex;
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[botMsgIndex] = {
+          role: "bot",
+          text: "",
+          citations: [],
+          meta: "Searching...",
+          model: null,
+        };
+        return updated;
+      });
+    } else {
+      botMsgIndex = messages.length + 1;
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: userQuery },
+        { role: "bot", text: "", citations: [], meta: "Searching..." },
+      ]);
+    }
 
     try {
       const response = await fetch("/api/v1/chat/query-stream", {
@@ -176,8 +212,9 @@ export default function App() {
                 updated[botMsgIndex] = {
                   ...updated[botMsgIndex],
                   citations: data.citations || [],
+                  model: data.model || updated[botMsgIndex]?.model || null,
                   meta: data.timing
-                    ? `Total ${data.timing.total_seconds || 0}s ┬╖ Retrieval ${data.timing.retrieval_seconds || 0}s`
+                    ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
                     : "Completed",
                 };
                 return updated;
@@ -203,6 +240,29 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRegenerate = async () => {
+    if (loading || messages.length < 2) return;
+
+    let botIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "bot") {
+        botIndex = i;
+        break;
+      }
+    }
+    if (botIndex < 1 || messages[botIndex - 1]?.role !== "user") return;
+
+    const userQuery = messages[botIndex - 1].text;
+    let workspaceId = activeWorkspaceId;
+    if (!workspaceId) {
+      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      setActiveWorkspaceId(workspaceId);
+      setActiveWorkspaceTitle("New chat");
+    }
+
+    await streamQuery(userQuery, workspaceId, { replaceBotIndex: botIndex });
   };
 
   const handleSend = async (e) => {
@@ -250,6 +310,14 @@ export default function App() {
 
   const showEmptyState = messages.length === 0 && !loading;
 
+  let lastBotIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "bot") {
+      lastBotIndex = i;
+      break;
+    }
+  }
+
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-base text-gray-800 sm:text-lg">
       {sidebarOpen && (
@@ -267,7 +335,7 @@ export default function App() {
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-base font-bold md:text-lg">
             <span className="text-xl" aria-hidden>
-              ≡ƒª¥
+              🦝
             </span>
             <span>RAGcoon</span>
           </div>
@@ -375,7 +443,7 @@ export default function App() {
             {showEmptyState ? (
               <div className="flex min-h-[60vh] flex-col items-center justify-center px-2 text-center">
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2d2d2d] text-2xl shadow-sm">
-                  ≡ƒª¥
+                  🦝
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
                   How can RAGcoon help?
@@ -412,7 +480,7 @@ export default function App() {
                     ) : (
                       <div className="flex w-full max-w-[95%] gap-3 sm:max-w-[90%]">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base shadow-sm">
-                          ≡ƒª¥
+                          🦝
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-sm leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-base">
@@ -431,21 +499,28 @@ export default function App() {
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleCopy(msg.text, index)}
-                                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-gray-100 hover:text-gray-700"
+                                  className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
                                   title="Copy message"
+                                  aria-label="Copy message"
                                 >
                                   {copiedIndex === index ? (
-                                    <>
-                                      <Check className="h-3.5 w-3.5 text-green-600" />
-                                      Copied
-                                    </>
+                                    <Check className="h-3.5 w-3.5 text-green-600" />
                                   ) : (
-                                    <>
-                                      <Copy className="h-3.5 w-3.5" />
-                                      Copy
-                                    </>
+                                    <Copy className="h-3.5 w-3.5" />
                                   )}
                                 </button>
+
+                                {index === lastBotIndex && !loading && (
+                                  <button
+                                    type="button"
+                                    onClick={handleRegenerate}
+                                    className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
+                                    title="Regenerate answer"
+                                    aria-label="Regenerate answer"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
 
                                 {msg.citations && msg.citations.length > 0 && (
                                   <button
@@ -455,6 +530,7 @@ export default function App() {
                                       )
                                     }
                                     className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-gray-100 hover:text-gray-700"
+                                    title={`Sources (${msg.citations.length})`}
                                   >
                                     <FileText className="h-3.5 w-3.5" />
                                     Sources ({msg.citations.length})
@@ -480,9 +556,16 @@ export default function App() {
                                   <ThumbsDown className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              {msg.meta && (
-                                <span className="text-xs text-gray-400">{msg.meta}</span>
-                              )}
+                              <div className="flex flex-col items-end gap-0.5 text-right">
+                                {msg.model && (
+                                  <span className="text-xs text-gray-400">
+                                    Model: {msg.model}
+                                  </span>
+                                )}
+                                {msg.meta && (
+                                  <span className="text-xs text-gray-400">{msg.meta}</span>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -504,7 +587,7 @@ export default function App() {
                                             {c.project_title || c.source}
                                             {c.page ? (
                                               <span className="ml-1 font-normal text-gray-500">
-                                                ┬╖ page {c.page}
+                                                · page {c.page}
                                               </span>
                                             ) : null}
                                           </div>
@@ -546,7 +629,7 @@ export default function App() {
                 {loading && messages[messages.length - 1]?.role === "bot" && !messages[messages.length - 1]?.text && (
                   <div className="flex items-center gap-3 text-sm text-gray-500 sm:text-base">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
-                      ≡ƒª¥
+                      🦝
                     </div>
                     <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
                       <span className="flex gap-1">
@@ -569,19 +652,28 @@ export default function App() {
             onSubmit={handleSend}
             className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm transition focus-within:border-gray-400 focus-within:bg-white"
           >
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!loading && input.trim()) {
+                    handleSend(e);
+                  }
+                }
+              }}
               disabled={loading}
               placeholder="Ask about a senior project..."
-              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-gray-800 outline-none placeholder:text-gray-400 sm:text-base"
+              className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-6 text-gray-800 outline-none placeholder:text-gray-400 sm:text-base"
+              style={{ height: "2.5rem" }}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
+              className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
                 loading || !input.trim()
                   ? "cursor-not-allowed bg-gray-200 text-gray-400"
                   : "bg-[#2d2d2d] text-white hover:bg-black active:scale-95"
@@ -592,7 +684,7 @@ export default function App() {
             </button>
           </form>
           <div className="mt-2 text-center text-xs text-gray-400 sm:text-sm">
-            Answers are grounded in uploaded senior project PDFs ┬╖ Citations included when available
+            Answers are grounded in uploaded senior project PDFs · Citations included when available
           </div>
         </div>
       </main>

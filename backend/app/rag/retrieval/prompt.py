@@ -921,6 +921,7 @@ def stream_answer_question(
         "question": question,
         "session_id": session_id,
         "intent": intent,
+        "model": OLLAMA_MODEL,
         "normalized_query": retrieval_details.get("normalized_query", question),
         "filters": prep["filters"],
         "sources": sources,
@@ -946,6 +947,7 @@ def stream_answer_question(
             "data": {
                 "answer": error_msg,
                 "session_id": session_id,
+                "model": OLLAMA_MODEL,
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1007,6 +1009,7 @@ def stream_answer_question(
             "answer": cleaned_answer,
             "session_id": session_id,
             "intent": intent,
+            "model": OLLAMA_MODEL,
             "sources": sources,
             "citations": citations,
             "timing": {
