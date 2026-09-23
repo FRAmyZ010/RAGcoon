@@ -534,21 +534,6 @@ export default function DocumentsManagement() {
     link.remove();
   };
 
-  const handleBulkDownload = async () => {
-    const rows = filesData.filter((row) => selectedIds.has(row.id));
-    if (rows.length === 0) return;
-    setBulkBusy(true);
-    closeActionMenu();
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i];
-      handleDownload(row.id, row.filename);
-      if (i < rows.length - 1) {
-        await new Promise((r) => setTimeout(r, 350));
-      }
-    }
-    setBulkBusy(false);
-  };
-
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-xs text-gray-800 sm:text-sm">
       {sidebarOpen && (
@@ -682,15 +667,6 @@ export default function DocumentsManagement() {
           {selectedCount > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-900 sm:text-xs">
               <span className="font-semibold">Selected {selectedCount}</span>
-              <button
-                type="button"
-                onClick={handleBulkDownload}
-                disabled={bulkBusy}
-                className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                <Download className="h-3 w-3" />
-                Download
-              </button>
               <button
                 type="button"
                 onClick={handleBulkDelete}
