@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Check,
   CircleAlert,
+  Search,
 } from "lucide-react";
 import {
   deleteDocument,
@@ -49,12 +50,15 @@ function statusChipClass(status) {
 export default function DocumentsManagement() {
   const navigate = useNavigate();
   const displayName = localStorage.getItem("username") || "Admin";
-  const [activeMenuIndex, setActiveMenuIndex] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [filesData, setFilesData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadQueue, setUploadQueue] = useState([]);
@@ -73,7 +77,12 @@ export default function DocumentsManagement() {
     setError("");
     try {
       const docs = await listDocuments();
-      setFilesData(docs.map(mapDocumentToRow));
+      const rows = docs.map(mapDocumentToRow);
+      setFilesData(rows);
+      setSelectedIds((prev) => {
+        const valid = new Set(rows.map((row) => row.id));
+        return new Set([...prev].filter((id) => valid.has(id)));
+      });
     } catch (err) {
       setError(err.message || "Failed to load documents");
       setFilesData([]);
@@ -411,12 +420,12 @@ export default function DocumentsManagement() {
   };
 
   const closeActionMenu = () => {
-    setActiveMenuIndex(null);
+    setActiveMenuId(null);
     setMenuPos(null);
   };
 
-  const toggleActionMenu = (index, event) => {
-    if (activeMenuIndex === index) {
+  const toggleActionMenu = (id, event) => {
+    if (activeMenuId === id) {
       closeActionMenu();
       return;
     }
@@ -425,8 +434,43 @@ export default function DocumentsManagement() {
       top: rect.bottom + 4,
       right: Math.max(8, window.innerWidth - rect.right),
     });
-    setActiveMenuIndex(index);
+    setActiveMenuId(id);
   };
+
+  const filteredFiles = filesData.filter((row) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [row.title, row.authors, row.advisor, row.year]
+      .map((value) => String(value ?? "").toLowerCase())
+      .some((value) => value.includes(q));
+  });
+
+  const selectedCount = selectedIds.size;
+  const allVisibleSelected =
+    filteredFiles.length > 0 && filteredFiles.every((row) => selectedIds.has(row.id));
+
+  const toggleRowSelected = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        filteredFiles.forEach((row) => next.delete(row.id));
+      } else {
+        filteredFiles.forEach((row) => next.add(row.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   const handleRemove = async (id) => {
     if (!window.confirm("ลบเอกสารนี้ถาวรหรือไม่?")) return;
@@ -436,11 +480,42 @@ export default function DocumentsManagement() {
     try {
       await deleteDocument(id);
       setFilesData((prev) => prev.filter((file) => file.id !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (err) {
       setError(err.message || "Delete failed");
     } finally {
       setActionBusyId(null);
     }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`ลบเอกสารที่เลือก ${ids.length} รายการถาวรหรือไม่?`)) return;
+
+    setBulkBusy(true);
+    closeActionMenu();
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteDocument(id);
+        setFilesData((prev) => prev.filter((file) => file.id !== id));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } catch (err) {
+        failed += 1;
+        setError(err.message || "Delete failed");
+      }
+    }
+    setBulkBusy(false);
+    if (failed === 0) clearSelection();
   };
 
   const handlePreview = (id) => {
@@ -459,8 +534,23 @@ export default function DocumentsManagement() {
     link.remove();
   };
 
+  const handleBulkDownload = async () => {
+    const rows = filesData.filter((row) => selectedIds.has(row.id));
+    if (rows.length === 0) return;
+    setBulkBusy(true);
+    closeActionMenu();
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      handleDownload(row.id, row.filename);
+      if (i < rows.length - 1) {
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+    setBulkBusy(false);
+  };
+
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-base text-gray-800 sm:text-lg">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-xs text-gray-800 sm:text-sm">
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -469,14 +559,14 @@ export default function DocumentsManagement() {
       )}
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col justify-between bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ${
+        className={`fixed lg:static inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col justify-between bg-[#2d2d2d] p-3 text-white transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div>
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-lg sm:text-xl">
-              <span className="text-2xl">🦝</span>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-sm sm:text-base">
+              <span className="text-lg">🦝</span>
               <span>RAGcoon</span>
             </div>
             <button
@@ -487,26 +577,26 @@ export default function DocumentsManagement() {
             </button>
           </div>
 
-          <nav className="space-y-1.5">
+          <nav className="space-y-1">
             <Link
               to="/dashboard"
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-white/10"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
-              <LayoutDashboard className="h-4 w-4" />
+              <LayoutDashboard className="h-3.5 w-3.5" />
               <span>Dashboard</span>
             </Link>
             <Link
               to="/documents"
-              className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 font-bold text-gray-900"
+              className="flex items-center gap-2.5 rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900"
             >
-              <FolderClosed className="h-4 w-4" />
+              <FolderClosed className="h-3.5 w-3.5" />
               <span>Documents</span>
             </Link>
             <Link
               to="/chat"
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-white/10"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
-              <MessageSquare className="h-4 w-4" />
+              <MessageSquare className="h-3.5 w-3.5" />
               <span>Chat Workspace</span>
             </Link>
           </nav>
@@ -518,36 +608,36 @@ export default function DocumentsManagement() {
             clearAuth();
             navigate("/login", { replace: true });
           }}
-          className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 font-bold text-gray-900 hover:bg-gray-200"
+          className="flex w-full items-center justify-between rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900 hover:bg-gray-200"
         >
           <span>Log Out</span>
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
         </button>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 min-w-0">
-        <header className="mb-6 flex items-center justify-between">
+      <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 min-w-0">
+        <header className="mb-4 flex items-center justify-between">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden rounded-lg p-2 bg-white shadow-sm hover:bg-gray-50"
+            className="lg:hidden rounded-lg p-1.5 bg-white shadow-sm hover:bg-gray-50"
           >
             ☰
           </button>
-          <div className="flex items-center gap-3 ml-auto">
-            <Bell className="h-5 w-5 cursor-pointer text-gray-600 hover:text-black" />
+          <div className="flex items-center gap-2.5 ml-auto">
+            <Bell className="h-4 w-4 cursor-pointer text-gray-600 hover:text-black" />
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-full bg-[#800000] text-white font-bold text-xs flex items-center justify-center">
+              <div className="h-6 w-6 rounded-full bg-[#800000] text-white font-bold text-[10px] flex items-center justify-center">
                 {displayName.slice(0, 2).toUpperCase()}
               </div>
-              <span className="font-bold text-gray-800 hidden sm:inline">{displayName}</span>
+              <span className="font-bold text-gray-800 hidden sm:inline text-sm">{displayName}</span>
             </div>
           </div>
         </header>
 
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Documents Management</h1>
-            <p className="text-sm text-gray-500 sm:text-base">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900">Documents Management</h1>
+            <p className="text-[11px] text-gray-500 sm:text-xs">
               จัดการและอัปโหลดไฟล์โครงงาน Senior Project เข้าสู่คลังข้อมูล RAG Engine
             </p>
           </div>
@@ -556,48 +646,102 @@ export default function DocumentsManagement() {
             <button
               onClick={fetchDocuments}
               disabled={loading}
-              className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               title="Refresh"
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
             <button
               onClick={openUploadModal}
-              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700 shadow-sm"
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               <span>Upload File</span>
             </button>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 sm:text-sm">
             {error}
           </div>
         )}
 
-        <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search title, author, advisor, year..."
+              className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-2.5 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-gray-500 sm:text-sm"
+            />
+          </div>
+          {selectedCount > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-900 sm:text-xs">
+              <span className="font-semibold">Selected {selectedCount}</span>
+              <button
+                type="button"
+                onClick={handleBulkDownload}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Download className="h-3 w-3" />
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={bulkBusy}
+                className="rounded-md px-1.5 py-1 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        <section className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px]">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-sm">
+            <table className="w-full text-left border-collapse min-w-[860px]">
+              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-[11px] sm:text-xs">
                 <tr>
-                  <th className="py-3 px-4">Title</th>
-                  <th className="py-3 px-3">Academic Year</th>
-                  <th className="py-3 px-3">Source</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Date</th>
-                  <th className="py-3 px-3 text-center">Details</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-1.5 px-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={loading || filteredFiles.length === 0}
+                      onChange={toggleSelectAllVisible}
+                      className="h-3 w-3 cursor-pointer rounded border-gray-300 accent-blue-600 disabled:cursor-not-allowed"
+                      aria-label="Select all visible documents"
+                    />
+                  </th>
+                  <th className="py-1.5 px-2.5">Title</th>
+                  <th className="py-1.5 px-2">Academic Year</th>
+                  <th className="py-1.5 px-2">Source</th>
+                  <th className="py-1.5 px-2">Status</th>
+                  <th className="py-1.5 px-2">Date</th>
+                  <th className="py-1.5 px-2 text-center">Details</th>
+                  <th className="py-1.5 px-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-sm sm:text-base">
+              <tbody className="divide-y divide-gray-100 text-[11px] sm:text-xs">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading documents...
                       </span>
                     </td>
@@ -606,32 +750,54 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
                       ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
                     </td>
                   </tr>
                 )}
 
+                {!loading && filesData.length > 0 && filteredFiles.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
+                      ไม่พบเอกสารที่ตรงกับคำค้น
+                    </td>
+                  </tr>
+                )}
+
                 {!loading &&
-                  filesData.map((row, idx) => (
-                    <tr key={row.id} className="hover:bg-gray-50 transition">
-                      <td className="py-3 px-4 font-bold text-gray-900">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-[#800000] shrink-0" />
-                          <span className="truncate max-w-[240px]" title={row.title}>
+                  filteredFiles.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`transition hover:bg-gray-50 ${
+                        selectedIds.has(row.id) ? "bg-blue-50/60" : ""
+                      }`}
+                    >
+                      <td className="py-1.5 px-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(row.id)}
+                          onChange={() => toggleRowSelected(row.id)}
+                          className="h-3 w-3 cursor-pointer rounded border-gray-300 accent-blue-600"
+                          aria-label={`Select ${row.title}`}
+                        />
+                      </td>
+                      <td className="py-1.5 px-2.5 font-bold text-gray-900">
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="h-3 w-3 text-[#800000] shrink-0" />
+                          <span className="truncate max-w-[220px]" title={row.title}>
                             {row.title}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-gray-600 whitespace-nowrap">{row.year}</td>
-                      <td className="py-3 px-3 text-gray-600">
-                        <span className="truncate max-w-[200px] block" title={row.source}>
+                      <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{row.year}</td>
+                      <td className="py-1.5 px-2 text-gray-600">
+                        <span className="truncate max-w-[180px] block" title={row.source}>
                           {row.source}
                         </span>
                       </td>
-                      <td className="py-3 px-3">
+                      <td className="py-1.5 px-2">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                             row.status === "Ready"
                               ? "bg-green-100 text-green-700"
                               : row.status === "Failed"
@@ -642,30 +808,30 @@ export default function DocumentsManagement() {
                           {row.status}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-gray-500 whitespace-nowrap">{row.date}</td>
-                      <td className="py-3 px-3 text-center">
+                      <td className="py-1.5 px-2 text-gray-500 whitespace-nowrap">{row.date}</td>
+                      <td className="py-1.5 px-2 text-center">
                         <button
                           type="button"
                           onClick={() => setDetailsRow(row)}
-                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-100 sm:text-xs"
                           aria-label={`View details for ${row.title}`}
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-3 w-3" />
                           <span className="hidden sm:inline">View</span>
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-1.5 px-2.5 text-right">
                         <button
                           type="button"
-                          onClick={(e) => toggleActionMenu(idx, e)}
-                          disabled={actionBusyId === row.id}
-                          className="p-1 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                          onClick={(e) => toggleActionMenu(row.id, e)}
+                          disabled={actionBusyId === row.id || bulkBusy}
+                          className="p-0.5 rounded-md hover:bg-gray-200 disabled:opacity-50"
                           aria-label="Open actions"
                         >
                           {actionBusyId === row.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                            <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
                           ) : (
-                            <MoreVertical className="h-4 w-4 text-gray-500" />
+                            <MoreVertical className="h-3 w-3 text-gray-500" />
                           )}
                         </button>
                       </td>
@@ -677,7 +843,7 @@ export default function DocumentsManagement() {
         </section>
       </main>
 
-      {activeMenuIndex != null && menuPos && filesData[activeMenuIndex] && (
+      {activeMenuId != null && menuPos && filesData.find((row) => row.id === activeMenuId) && (
         <>
           <div className="fixed inset-0 z-40" onClick={closeActionMenu} aria-hidden />
           <div
@@ -686,7 +852,7 @@ export default function DocumentsManagement() {
           >
             <button
               type="button"
-              onClick={() => handlePreview(filesData[activeMenuIndex].id)}
+              onClick={() => handlePreview(activeMenuId)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -694,12 +860,10 @@ export default function DocumentsManagement() {
             </button>
             <button
               type="button"
-              onClick={() =>
-                handleDownload(
-                  filesData[activeMenuIndex].id,
-                  filesData[activeMenuIndex].filename
-                )
-              }
+              onClick={() => {
+                const row = filesData.find((item) => item.id === activeMenuId);
+                handleDownload(activeMenuId, row?.filename);
+              }}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
             >
               <Download className="h-3.5 w-3.5" />
@@ -707,7 +871,7 @@ export default function DocumentsManagement() {
             </button>
             <button
               type="button"
-              onClick={() => handleRemove(filesData[activeMenuIndex].id)}
+              onClick={() => handleRemove(activeMenuId)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-red-600 hover:bg-red-50"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -924,7 +1088,6 @@ export default function DocumentsManagement() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,application/pdf"
                 multiple
                 className="hidden"
                 disabled={uploading}
