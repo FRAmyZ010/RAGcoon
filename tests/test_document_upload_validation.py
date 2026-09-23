@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from app.services.document_service import (
-    MAX_UPLOAD_BYTES,
+    MAX_TOTAL_UPLOAD_BYTES,
     DocumentUploadError,
     DuplicateDocumentError,
     _assert_pdf_file,
@@ -42,8 +42,20 @@ class UploadValidationTests(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_max_upload_constant(self):
-        self.assertEqual(MAX_UPLOAD_BYTES, 25 * 1024 * 1024)
+    def test_reject_file_over_total_limit(self):
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(b"%PDF-1.4\n")
+            tmp.write(b"x" * (MAX_TOTAL_UPLOAD_BYTES + 1))
+            path = tmp.name
+        try:
+            with self.assertRaises(DocumentUploadError) as ctx:
+                _assert_pdf_file(path, "huge.pdf")
+            self.assertIn("รวมเกิน", ctx.exception.message)
+        finally:
+            os.remove(path)
+
+    def test_max_total_upload_constant(self):
+        self.assertEqual(MAX_TOTAL_UPLOAD_BYTES, 15 * 1024 * 1024)
 
     def test_duplicate_error_is_conflict(self):
         err = DuplicateDocumentError("Demo Project")

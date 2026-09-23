@@ -1,8 +1,7 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-export const MAX_TOTAL_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** No per-file size cap; only the batch total limit applies. */
+export const MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const MAX_BATCH_UPLOAD_FILES = 10;
-export const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / (1024 * 1024);
 export const MAX_TOTAL_UPLOAD_MB = MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024);
 const AUTH_TOKEN_KEY = "token";
 
@@ -81,8 +80,8 @@ export async function uploadDocument(file, options = {}) {
   if (file.size <= 0) {
     throw new Error("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้");
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(`ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB}MB`);
+  if (file.size > MAX_TOTAL_UPLOAD_BYTES) {
+    throw new Error(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
   }
 
   const formData = new FormData();
@@ -123,9 +122,6 @@ export async function uploadDocumentsBatch(files) {
     }
     if (file.size <= 0) {
       throw new Error(`ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้: ${file.name}`);
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      throw new Error(`ไฟล์ใหญ่เกิน ${MAX_UPLOAD_MB}MB: ${file.name}`);
     }
   }
 

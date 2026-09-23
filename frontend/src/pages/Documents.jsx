@@ -26,10 +26,8 @@ import {
   mapDocumentToRow,
   openDocumentPreview,
   uploadDocument,
-  MAX_UPLOAD_BYTES,
   MAX_TOTAL_UPLOAD_BYTES,
   MAX_BATCH_UPLOAD_FILES,
-  MAX_UPLOAD_MB,
   MAX_TOTAL_UPLOAD_MB,
 } from "../services/documentsApi";
 import { clearAuth } from "../services/authApi";
@@ -239,10 +237,6 @@ export default function DocumentsManagement() {
       }
       if (file.size <= 0) {
         warnings.push(`${name} ไฟล์ว่างเปล่า หรือไฟล์เสีย`);
-        continue;
-      }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        warnings.push(`${name} ใหญ่เกิน ${MAX_UPLOAD_MB}MB`);
         continue;
       }
       if (
@@ -923,8 +917,7 @@ export default function DocumentsManagement() {
                   <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
                   <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max {MAX_UPLOAD_MB}MB / ไฟล์ · รวมไม่เกิน{" "}
-                    {MAX_TOTAL_UPLOAD_MB}MB
+                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · รวมไม่เกิน {MAX_TOTAL_UPLOAD_MB}MB
                   </p>
                 </>
               )}
