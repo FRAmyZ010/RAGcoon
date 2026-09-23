@@ -7,8 +7,8 @@ from app.models.document import Document
 from app.schemas.document import ProcessingStatus
 
 UPLOAD_DIR = "storage/documents"
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB per file
-MAX_TOTAL_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB total per batch selection
+# No per-file size cap; enforce total size at batch/API selection layer.
+MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB total per batch selection
 MAX_BATCH_UPLOAD_FILES = 10
 
 
@@ -37,9 +37,9 @@ def _assert_pdf_file(temp_file_path: str, filename: str | None) -> None:
     size = os.path.getsize(temp_file_path)
     if size <= 0:
         raise DocumentUploadError("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้")
-    if size > MAX_UPLOAD_BYTES:
+    if size > MAX_TOTAL_UPLOAD_BYTES:
         raise DocumentUploadError(
-            f"ไฟล์ใหญ่เกิน {MAX_UPLOAD_BYTES // (1024 * 1024)}MB "
+            f"ขนาดไฟล์รวมเกิน {MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)}MB "
             f"(ขนาดปัจจุบัน {size / (1024 * 1024):.1f}MB)"
         )
 
