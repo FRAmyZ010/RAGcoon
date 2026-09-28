@@ -724,7 +724,11 @@ def _prepare_rag_context(
             "pages_formatted": pages_str,
             "author": author,
             "advisor": advisor,
+            "committee": committee,
             "year": year,
+            "school": payload.get("school"),
+            "program": payload.get("program"),
+            "course": payload.get("course"),
         })
 
         context_parts = []
@@ -819,15 +823,37 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
     # Add user message to session history
     session_manager.add_user_message(session_id, question)
 
-    llm_start = time.perf_counter()
-    stats_out: dict[str, Any] = {}
-    answer = get_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
-    )
-    llm_seconds = time.perf_counter() - llm_start
+    # Check for direct Deterministic Template Response Bypass (Ultra-fast response for pure metadata lookups)
+    from .template_responder import try_generate_template_response
+    template_answer = try_generate_template_response(question, prep)
 
-    if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
-        answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
+    if template_answer:
+        answer = template_answer
+        llm_seconds = 0.0
+        stats_out: dict[str, Any] = {
+            "prompt_eval_count": 0,
+            "eval_count": 0,
+            "gen_speed_tps": 0.0,
+            "ttft_seconds": 0.0,
+            "thinking_enabled": False,
+            "token_breakdown": {
+                "system_instruction_tokens": 0,
+                "chat_history_tokens": 0,
+                "document_context_tokens": 0,
+                "user_question_tokens": 0,
+                "context_char_length": 0,
+            },
+        }
+    else:
+        llm_start = time.perf_counter()
+        stats_out = {}
+        answer = get_llm_response(
+            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+        )
+        llm_seconds = time.perf_counter() - llm_start
+
+        if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
+            answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
     # Add assistant response to session history
     session_manager.add_assistant_message(session_id, answer)
@@ -963,23 +989,47 @@ def stream_answer_question(
     # Add user query to session manager
     session_manager.add_user_message(session_id, question)
 
-    # 2. Stream Tokens from LLM
-    full_tokens: list[str] = []
-    stats_out: dict[str, Any] = {}
-    llm_start = time.perf_counter()
+    # Check for direct Deterministic Template Response Bypass
+    from .template_responder import try_generate_template_response
+    template_answer = try_generate_template_response(question, prep)
 
-    for token in stream_llm_response(
-        question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
-    ):
-        full_tokens.append(token)
-        yield {"event": "token", "data": {"token": token}}
+    if template_answer:
+        cleaned_answer = template_answer
+        llm_seconds = 0.0
+        stats_out: dict[str, Any] = {
+            "prompt_eval_count": 0,
+            "eval_count": 0,
+            "gen_speed_tps": 0.0,
+            "ttft_seconds": 0.0,
+            "thinking_enabled": False,
+            "token_breakdown": {
+                "system_instruction_tokens": 0,
+                "chat_history_tokens": 0,
+                "document_context_tokens": 0,
+                "user_question_tokens": 0,
+                "context_char_length": 0,
+            },
+        }
+        # Yield the complete template answer token immediately
+        yield {"event": "token", "data": {"token": template_answer}}
+    else:
+        # 2. Stream Tokens from LLM
+        full_tokens: list[str] = []
+        stats_out = {}
+        llm_start = time.perf_counter()
 
-    llm_seconds = time.perf_counter() - llm_start
-    raw_full_answer = "".join(full_tokens)
-    cleaned_answer = clean_answer(raw_full_answer, is_thai=is_thai)
+        for token in stream_llm_response(
+            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+        ):
+            full_tokens.append(token)
+            yield {"event": "token", "data": {"token": token}}
 
-    if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
-        cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
+        llm_seconds = time.perf_counter() - llm_start
+        raw_full_answer = "".join(full_tokens)
+        cleaned_answer = clean_answer(raw_full_answer, is_thai=is_thai)
+
+        if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
+            cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
     # Add assistant response to session manager
     session_manager.add_assistant_message(session_id, cleaned_answer)
