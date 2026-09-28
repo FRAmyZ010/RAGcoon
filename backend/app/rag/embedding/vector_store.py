@@ -22,6 +22,8 @@ FILTERABLE_FIELDS = (
     "committee",
     "keywords",
     "year",
+    "school",
+    "program",
     "source",
 )
 

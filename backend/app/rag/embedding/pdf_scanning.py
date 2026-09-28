@@ -22,7 +22,6 @@ def scan_pdf_document(file_path):
             "year": None,
             "school": None,
             "program": None,
-            "course": None,
         }
 
         # 2. Collect metadata first so every page receives the final payload.

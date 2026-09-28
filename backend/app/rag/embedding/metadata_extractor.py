@@ -216,7 +216,6 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
         "year": None,
         "school": None,
         "program": None,
-        "course": None,
     }
 
     # Skip front-matter pages that should not extract titles/authors (e.g. acknowledgements, table of contents)
@@ -388,14 +387,5 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
                 metadata["school"] = "Applied Digital Technology"
             else:
                 metadata["school"] = f"สำนักวิชา{th_school}"
-
-    # --- Course / รายวิชา / ประเภทโครงงาน ---
-    combined_ctx = f"{filename or ''} {first_page_text}"
-    if re.search(r"(?:PRE[\-\s_]*PROJECT|CPE\s*491|1301491)", combined_ctx, re.IGNORECASE):
-        metadata["course"] = "Pre-Project (CPE491)"
-    elif re.search(r"(?:SENIOR[\-\s_]*PROJECT|CPE\s*492|1301492|COMPUTER\s+ENGINEERING\s+PROJECT)", combined_ctx, re.IGNORECASE):
-        metadata["course"] = "Senior Project (CPE492)"
-    elif metadata["project_title"]:
-        metadata["course"] = "Senior Project (CPE492)"
 
     return metadata

@@ -728,7 +728,6 @@ def _prepare_rag_context(
             "year": year,
             "school": payload.get("school"),
             "program": payload.get("program"),
-            "course": payload.get("course"),
         })
 
         context_parts = []
@@ -1069,3 +1068,29 @@ def stream_answer_question(
             "performance": perf_data,
         },
     }
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        user_query = " ".join(sys.argv[1:])
+        print(f"\n❓ คำถาม: {user_query}\n")
+        res = answer_question(user_query)
+        print("\n💡 คำตอบ:")
+        print(res["answer"])
+    else:
+        print("\n" + "=" * 60)
+        print("🤖 RAGcoon Interactive Query CLI (พิมพ์ 'exit' หรือ 'q' เพื่อออก)")
+        print("=" * 60)
+        while True:
+            try:
+                user_query = input("\n❓ ถามคำถาม: ").strip()
+                if not user_query or user_query.lower() in {"exit", "quit", "q"}:
+                    print("\n👋 ลาก่อนครับ!")
+                    break
+                res = answer_question(user_query)
+                print("\n💡 คำตอบ:")
+                print(res["answer"])
+            except (KeyboardInterrupt, EOFError):
+                print("\n👋 ยกเลิกการทำงาน")
+                break

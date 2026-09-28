@@ -27,7 +27,6 @@ class DocumentCitation(BaseModel):
     year: str | int | None = None
     school: str | None = None
     program: str | None = None
-    course: str | None = None
 
     model_config = ConfigDict(extra="ignore")
 

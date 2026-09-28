@@ -156,27 +156,6 @@ def test_missing_advisor_fallback_to_committee():
     assert "Dr. Mahamah Sebakor (จากรายชื่อคณะกรรมการ)" in resp
 
 
-def test_course_senior_project_template():
-    prep = {
-        "intent": "EXPLORATORY",
-        "filters": {},
-        "citations": [
-            {
-                "project_title": "Vehicle Access System",
-                "course": "Senior Project (CPE492)",
-                "author": "Alice",
-                "advisor": "Bob",
-                "year": "2020",
-                "source": "doc1.pdf",
-            }
-        ],
-    }
-    resp = try_generate_template_response("วิชา Senior Project มีโครงงานอะไรบ้าง", prep)
-    assert resp is not None
-    assert "Senior Project (CPE492)" in resp
-    assert "Vehicle Access System" in resp
-
-
 def test_school_template():
     prep = {
         "intent": "EXPLORATORY",

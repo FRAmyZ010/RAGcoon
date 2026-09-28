@@ -59,7 +59,6 @@ def test_extract_academic_metadata():
     meta = extract_project_metadata(sample_text, filename="Pre-Project_Gem_Car2.pdf")
     assert meta["school"] == "Applied Digital Technology"
     assert meta["program"] == "Computer Engineering"
-    assert meta["course"] == "Pre-Project (CPE491)"
     assert meta["project_title"] == "Gem car tracking application"
 
 

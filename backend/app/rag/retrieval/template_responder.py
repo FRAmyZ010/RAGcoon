@@ -156,13 +156,13 @@ def try_generate_template_response(
             for idx, p in enumerate(distinct_projects, 1):
                 p_title = p.get("project_title", "-")
                 p_year = p.get("year", "-")
-                p_course = p.get("course") or "Senior Project (CPE492)"
+                p_prog = p.get("program") or "Computer Engineering"
                 p_authors = p.get("author", "-")
                 p_source = p.get("source", "เอกสารต้นฉบับ")
                 p_pages = p.get("pages_formatted") or ""
                 page_info = f" (หน้า {p_pages})" if p_pages and p_pages != "?" else ""
                 rows.append(
-                    f"| {idx} | **{p_title}** | {p_year} | {p_course} | {p_authors} | 📄 `{p_source}`{page_info} |"
+                    f"| {idx} | **{p_title}** | {p_year} | {p_prog} | {p_authors} | 📄 `{p_source}`{page_info} |"
                 )
 
             table_body = "\n".join(rows)
@@ -170,7 +170,7 @@ def try_generate_template_response(
 
             return (
                 f"### 📋 รายชื่อโครงงานที่มี **{matched_advisor}** เป็นอาจารย์ที่ปรึกษา (ทั้งหมด {count} โครงงาน)\n\n"
-                f"| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | รายวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n"
+                f"| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | สาขาวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n"
                 f"| :---: | :--- | :---: | :---: | :--- | :--- |\n"
                 f"{table_body}\n\n"
                 f"> 💡 *ท่านสามารถพิมพ์สอบถามรายละเอียดเชิงลึก เช่น \"อธิบายสถาปัตยกรรมของโครงงาน {sample_title}\" หรือ \"ใช้เซนเซอร์อะไรบ้าง\" ได้ครับ*"
@@ -204,7 +204,6 @@ def try_generate_template_response(
         thai_year = _to_thai_year(year) if year != "ไม่ระบุปี" else "-"
         school = target_citation.get("school") or "Applied Digital Technology"
         program = target_citation.get("program") or "Computer Engineering"
-        course = target_citation.get("course") or "Senior Project (CPE492)"
         source = target_citation.get("source", "เอกสารต้นฉบับ")
         pages = target_citation.get("pages_formatted") or ""
         page_info = f" (หน้า {pages})" if pages and pages != "?" else ""
@@ -255,7 +254,6 @@ def try_generate_template_response(
                 f"- **ผู้จัดทำ**: {authors}\n"
                 f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
                 f"- **สำนักวิชา / สาขาวิชา**: {school} / {program}\n"
-                f"- **รายวิชา**: {course}\n"
                 f"- **เอกสารต้นฉบับ**: 📄 `{source}`{page_info}\n\n"
                 f"> 💡 *หากต้องการทราบข้อมูลสเปกฮาร์ดแวร์ เทคโนโลยีที่ใช้ หรือการทำงาน สามารถพิมพ์ถามได้เลยครับ*"
             )
@@ -310,62 +308,7 @@ def try_generate_template_response(
     # =========================================================================
     # Case 4: Course Grouping (e.g. Pre-Project CPE491 vs Senior Project CPE492)
     # =========================================================================
-    if any(k in q_lower for k in ["pre-project", "pre project", "cpe491", "cpe 491", "1301491"]):
-        matching_course_projects = [
-            c for c in citations
-            if "pre-project" in str(c.get("course", "")).lower() or "491" in str(c.get("course", ""))
-        ]
-        if matching_course_projects:
-            seen_titles = set()
-            distinct = []
-            for c in matching_course_projects:
-                t = c.get("project_title") or c.get("source")
-                if t and t not in seen_titles:
-                    seen_titles.add(t)
-                    distinct.append(c)
-
-            items = []
-            for idx, p in enumerate(distinct, 1):
-                items.append(
-                    f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
-                    f"   - **ผู้จัดทำ**: {p.get('author') or '-'}\n"
-                    f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
-                    f"   - **เอกสาร**: 📄 `{p.get('source')}`"
-                )
-            return (
-                f"### 📚 รายชื่อโครงงานในรายวิชา **Pre-Project (CPE491)** (ทั้งหมด {len(distinct)} โครงงาน)\n\n"
-                + "\n\n".join(items)
-            )
-
-    if any(k in q_lower for k in ["senior project", "cpe492", "cpe 492", "1301492"]):
-        matching_course_projects = [
-            c for c in citations
-            if "senior project" in str(c.get("course", "")).lower() or "492" in str(c.get("course", ""))
-        ]
-        if matching_course_projects:
-            seen_titles = set()
-            distinct = []
-            for c in matching_course_projects:
-                t = c.get("project_title") or c.get("source")
-                if t and t not in seen_titles:
-                    seen_titles.add(t)
-                    distinct.append(c)
-
-            items = []
-            for idx, p in enumerate(distinct, 1):
-                items.append(
-                    f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
-                    f"   - **ผู้จัดทำ**: {p.get('author') or '-'}\n"
-                    f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
-                    f"   - **เอกสาร**: 📄 `{p.get('source')}`"
-                )
-            return (
-                f"### 🎓 รายชื่อโครงงานในรายวิชา **Senior Project (CPE492)** (ทั้งหมด {len(distinct)} โครงงาน)\n\n"
-                + "\n\n".join(items)
-            )
-
-    # =========================================================================
-    # Case 5: School / Program Grouping
+    # Case 4: School / Program Grouping
     # =========================================================================
     _PROG_QUERY_MAP = [
         ("Software Engineering", ["software engineering", "วิศวกรรมซอฟต์แวร์"]),
@@ -394,8 +337,8 @@ def try_generate_template_response(
                     for idx, p in enumerate(distinct, 1):
                         items.append(
                             f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
-                            f"   - **รายวิชา**: {p.get('course') or 'Senior Project (CPE492)'}\n"
                             f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
+                            f"   - **ผู้จัดทำ**: {p.get('author') or '-'}\n"
                             f"   - **เอกสาร**: 📄 `{p.get('source')}`"
                         )
                     return (
@@ -421,7 +364,6 @@ def try_generate_template_response(
                 items.append(
                     f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
                     f"   - **สาขาวิชา**: {p.get('program') or 'Computer Engineering'}\n"
-                    f"   - **รายวิชา**: {p.get('course') or 'Senior Project (CPE492)'}\n"
                     f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
                     f"   - **เอกสาร**: 📄 `{p.get('source')}`"
                 )
