@@ -127,7 +127,10 @@ def run_interactive_streaming_chat():
                         title = c.get("project_title", "Unknown")
                         pages = c.get("pages_formatted") or ", ".join(c.get("pages", []))
                         source = c.get("source", "")
-                        print(f"   • {title} (Source: {source} | Pages: {pages})")
+                        if pages and pages != "?":
+                            print(f"   • {title} (Source: {source} | Pages: {pages})")
+                        else:
+                            print(f"   • {title} (Source: {source})")
                 print("-" * 60)
 
             elif event_type == "error":

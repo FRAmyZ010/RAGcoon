@@ -97,6 +97,15 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
         return fallback_text
 
     cleaned = answer.strip()
+
+    # Strip any <think>...</think> block or lingering think tags
+    if "<think>" in cleaned:
+        cleaned = re.sub(r"<think>[\s\S]*?</think>", "", cleaned, flags=re.DOTALL).strip()
+        if "<think>" in cleaned:
+            cleaned = cleaned.split("<think>")[0].strip()
+    if "</think>" in cleaned:
+        cleaned = cleaned.split("</think>")[-1].strip()
+
     lower_cleaned = cleaned.lower().strip()
 
     if lower_cleaned.startswith("answer:"):
@@ -128,7 +137,7 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
 
     # Strip leading reasoning meta-talk or chain-of-thought monologue if LLM started thinking out loud
     cleaned = re.sub(
-        r"^(?:I need to|Let me|First, I need|To answer this|Based on the provided context, I will|Looking at the context)[\s\S]*?(?=(?:##|\###|\*\*))",
+        r"^(?:I need to|Let me|First, I need|To answer this|Based on the provided context, I will|Looking at the context|The question asks|In order to answer)[\s\S]*?(?=(?:##|\###|\*\*|1\.|\-))",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -136,7 +145,7 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
 
     # Strip intermediate reasoning scratchpad blocks (e.g. between headers and tables)
     cleaned = re.sub(
-        r"(?:^|\n)(?:I need to|Let me analyze|Let me check|First, I'll identify|First, let's identify|Now I'll structure|Let me create)[\s\S]*?(?=(?:\n##|\n###|\n\||\n\*\*))",
+        r"(?:^|\n)(?:I need to|Let me analyze|Let me check|First, I'll identify|First, let's identify|Now I'll structure|Let me create)[\s\S]*?(?=(?:\n##|\n###|\n\||\n\*\*|\n1\.))",
         "\n",
         cleaned,
         flags=re.IGNORECASE,
@@ -160,87 +169,59 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    Recommend 2 to 3 DISTINCT matching senior projects from the context.
 
    CRITICAL RULES:
-   - DISTINCT PROJECTS ONLY: Never list or recommend duplicate projects. Every numbered project must be completely unique.
-   - RELEVANCE FIRST: Prioritize projects that satisfy all user criteria (Direct Match) before projects that satisfy only some criteria (Partial Match).
-   - DIRECT & CONCISE: Present concrete facts with citations [Source: <file>, Page <X>]. Do not repeat sections or monologue.
+   - DISTINCT PROJECTS ONLY: Never list duplicate projects.
+   - DIRECT & CONCISE: Present concrete facts with citations [Source: <file>, Page <X>]. Zero fluff, zero filler.
 
    Structure:
 
    ## Recommended Projects
 
    ### 1. [Project Title]
-   - **Relevance**: Direct Match / Partial Match
-   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
-   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
-   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
-   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
+   - **Domain & Core Features**: [Key goals and problem solved] [Source: <file>, Page <X>]
+   - **Tech Stack & Hardware**: [Exact languages, frameworks, hardware from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1 concise sentence explaining fit]
 
    ### 2. [Next Distinct Project Title]
-   - **Relevance**: Direct Match / Partial Match
-   - **Domain & Core Features**: [Key goals, problem solved, and documented features] [Source: <file>, Page <X>]
-   - **Documented Tech Stack & Hardware**: [Exact languages, frameworks, hardware, sensors, databases from document] [Source: <file>, Page <X>]
-   - **Why It Fits**: [1-2 sentences explaining how it satisfies the user's criteria]
-   - **Future Extension Idea (AI Suggestion)**: [1 practical extension idea for new students]
-
-   ## Summary
-   Synthesize the matching projects in 1-2 sentences.
+   - **Domain & Core Features**: [Key goals and problem solved] [Source: <file>, Page <X>]
+   - **Tech Stack & Hardware**: [Exact languages, frameworks, hardware from document] [Source: <file>, Page <X>]
+   - **Why It Fits**: [1 concise sentence explaining fit]
 
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
-   - Group ALL the retrieved projects into clear, logical domain/objective categories (e.g. "1. IoT, Automation & Hardware Systems", "2. Web & Service Management Platforms", "3. Network & Energy Optimization").
-   - Under each group, list the matching projects formatted as:
-     * **[Project Title]** ([Year]) - [Core objective, system operation, and key technologies based strictly on its own document text] [Source: <file>, Page <X>].
-   - Conclude with a brief 1-2 sentence summary explaining the common objective thread among the grouped projects.
+   - Group the retrieved projects into clear, logical domain categories.
+   - Under each group, list the matching projects concisely:
+     * **[Project Title]** ([Year]) - [Core objective in 1 sentence] [Source: <file>, Page <X>].
    ## Sources
    - List each project source filename and pages."""
         else:
-            return """4. Enumerated Project Overview: Enumerate ALL distinct projects found in the retrieved context without omitting any:
-   1. **[Project Title]** ([Year]) - [Summary of core objectives and system operation]. (Authors: [Author Names], Advisor: [Advisor Name]). Key technologies/tools: [List languages, frameworks, hardware, APIs, or libraries mentioned if available] [Source: <file>, Page <X>].
+            return """4. Enumerated Project Overview: Enumerate distinct projects found in the retrieved context concisely without filler:
+   1. **[Project Title]** ([Year]) - [Core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page <X>].
    ## Sources
    - List each project source filename and pages."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
-        return """4. In-Depth Technical Breakdown: Provide a comprehensive and thorough technical analysis directly addressing the question, structured into clear sections:
-   - **Project Overview & Objectives**: Core problem addressed and main goals [Source: <file>, Page <X>].
-   - **System Architecture & Methodology**: System workflows, design patterns, and operational steps [Source: <file>, Page <X>].
-   - **Tech Stack, Tools & Hardware**: Exact languages, frameworks, libraries, microcontrollers, or cloud services used [Source: <file>, Page <X>].
-   - **Results & Evaluation**: Expected or achieved results, testing methodologies, and deliverables [Source: <file>, Page <X>].
+        return """4. Concise Technical Breakdown: Directly address the question with concise bullet points:
+   - **Core Objective**: [1-2 sentences] [Source: <file>, Page <X>]
+   - **Methodology & Architecture**: [Key operational flow] [Source: <file>, Page <X>]
+   - **Technologies & Hardware**: [Documented tech stack] [Source: <file>, Page <X>]
+   - **Results & Evaluation**: [Documented results] [Source: <file>, Page <X>]
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "COMPARISON":
         return """4. Structured Comparison with Citations:
-   Structure your comparative analysis into the following exact sections:
+   Create a concise comparison table and dimension breakdown:
 
    ## Comparison Overview
-   Create a Markdown table comparing both projects across key dimensions:
    | Dimension | [Project A Title] | [Project B Title] |
    |---|---|---|
    | Technical Complexity | Evidence & Methodology [Source: <file>, Page <X>] | Evidence & Methodology [Source: <file>, Page <X>] |
    | Practicality | Documented Use Case [Source: <file>, Page <X>] | Documented Use Case [Source: <file>, Page <X>] |
    | Technology Stack | Documented technologies ONLY | Documented technologies ONLY |
-   | Main Features | Documented core features | Documented core features |
-   | Limitations | Documented limitations (or 'Not specified') | Documented limitations (or 'Not specified') |
 
-   ## Detailed Comparison
-
-   ### 1. Technical Complexity
-   #### [Project A Title]
-   - Explain features, integrations, and methodology found in its document with exact citations [Source: <file>, Page <X>, Section <sec>].
-   #### [Project B Title]
-   - Explain features, integrations, and methodology strictly from its own document with exact citations [Source: <file>, Page <X>, Section <sec>].
-   #### Evidence Limitation
-   - State clearly any information not found in the documents.
-
-   ### 2. Practicality
-   - Explain real-world use cases, stakeholder benefits, and operational readiness strictly from document evidence with page citations. Never make performance claims without test results.
-
-   ### 3. Technology Stack
-   - List ONLY the technologies explicitly stated for each project. If a technology is missing, write 'Not specified in the retrieved document'. NEVER transfer technologies between projects!
-
-   ## Summary
-   Synthesize the key similarities and differences strictly based on evidence. Do NOT fabricate numerical scores or arbitrary scoring matrices.
+   ## Key Differences
+   - Concise bullet points comparing the core systems strictly from document evidence.
 
    ## Sources
    - [Project A Title]: <Filename.pdf>, Pages: <Pages>
@@ -248,33 +229,24 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     elif intent == "CODE":
         return """4. Technical Code & Database Schema Extraction:
    - Extract and present exact code snippets, SQL queries, database tables/schemas, algorithms, or technical configurations with citations [Source: <file>, Page <X>].
-   - If database table structures, data dictionaries, attributes, data types, or keys are present in the documents (even without raw SQL queries), detail the tables, columns, data types, and relationships thoroughly.
-   - Explain what each code snippet, database table, or configuration does.
+   - If database table structures or columns are present in the documents, detail them concisely.
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     else:  # FACTOID / FACTUAL_LOOKUP
         if any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
             return """4. Structured Component Breakdown with Inline Citations:
-   Present the components found in the retrieved documents formatted clearly with their exact Source, Page, and Section attached directly to each item:
+   Present the components found in the retrieved documents clearly and concisely:
 
    ### 📋 Component Summary
-   - **Microcontroller**: <exact microcontroller name> [Source: <file>, Page <X>, Section <sec>]
-   - **Sensors**:
-     * <sensor 1> [Source: <file>, Page <X>, Section <sec>]
-     * <sensor 2> [Source: <file>, Page <X>, Section <sec>]
-     * <sensor 3> [Source: <file>, Page <X>, Section <sec>]
-   - **Key Associated Hardware**: <list key related modules such as valves, pumps, relays> [Source: <file>, Page <X>]
+   - **Microcontroller**: <exact microcontroller name> [Source: <file>, Page <X>]
+   - **Sensors**: <list sensors> [Source: <file>, Page <X>]
+   - **Key Associated Hardware**: <list key modules> [Source: <file>, Page <X>]
 
    ## Sources
-   - <Project Title>: <Filename.pdf>, Pages: <Pages>
-
-   CRITICAL RULES:
-   - Always append [Source: <file>, Page <X>] directly after each component.
-   - Categorize all sensors under '**Sensors**'.
-   - If page number is unavailable, write 'Page number unavailable'."""
+   - <Project Title>: <Filename.pdf>, Pages: <Pages>"""
         else:
             return """4. Direct Answer with Citations:
-   Provide an exact, concise factual answer directly answering the question, with the exact citation [Source: <file>, Page <X>, Section <sec>] appended directly after the factual statement. Conclude with a '## Sources' line."""
+   Provide an exact, concise factual answer directly answering the question in 1-2 sentences, with the exact citation [Source: <file>, Page <X>] appended. Conclude with a '## Sources' line."""
 
 
 def _calculate_token_breakdown(
@@ -334,16 +306,21 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
-    system_content = f"""You are an expert AI academic QA assistant for a university senior project document repository.
+    concise_rule = (
+        "ตอบกระชับ ตรงประเด็น เอาแต่เนื้อข้อมูลสำคัญ ห้ามเกริ่นนำ ห้ามร่ายน้ำ และห้ามแสดงขั้นตอนการคิดหรือบ่นในใจเด็ดขาด"
+        if is_thai
+        else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
+    )
+
+    system_content = f"""You are an expert academic QA assistant for a university senior project repository.
 Use ONLY the retrieved context below.
 
-CRITICAL INSTRUCTIONS & CITATION RULES:
-1. Answer directly. Do NOT reveal internal reasoning monologue (never write "I need to analyze...", "Let me check...", "First, I need to verify...", "For the scoring matrix...").
-2. Every factual claim from a document must include an exact citation: [Source: <source_file>, Page <page_number>, Section <section_name_if_available>].
-3. If the page number is unavailable in the metadata, state: [Source: <source_file>, Page number unavailable]. Never guess or fabricate page numbers.
-4. ZERO Cross-Document Contamination: The context contains numbered documents. You must analyze each document strictly on its own. NEVER transfer, copy, or assume features, tech stacks (e.g. Docker, Python, ESP32, BLE), or future plans from one document to another.
-5. Clearly separate document evidence from AI suggestions. AI suggestions must be explicitly labeled as AI suggestions, not original document content.
-6. If information is not found in the context, state 'Not specified in the retrieved document' rather than inventing it.
+CRITICAL RULES:
+1. STRICTLY CONCISE & DIRECT (เอาแต่เนื้อ ไม่มีน้ำ): {concise_rule} Start IMMEDIATELY with the direct answer. Never write introductory filler (e.g., 'Based on the context...', 'Here is the answer...', 'To answer your question...', 'According to the retrieved documents...').
+2. NO REASONING MONOLOGUE: Never output internal thinking, self-talk, verification steps, or reasoning processes (never write 'I need to...', 'Let me check...', 'First, I will...', 'So the answer is...').
+3. ACCURATE CITATIONS: Every factual claim must include an exact citation: [Source: <source_file>, Page <page_number>]. If page number is unavailable, write [Source: <source_file>, Page: unavailable]. Never guess page numbers.
+4. ZERO Cross-Document Contamination: The context contains numbered documents. Analyze each document strictly on its own. Never mix or transfer details across documents.
+5. If information is not found in the context, state 'Not specified in the retrieved document' (หรือ 'ไม่ระบุในเอกสาร').
 {intent_instruction}
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""
@@ -372,11 +349,11 @@ Question:
     elif intent == "RECOMMENDATION":
         prefill = "## Recommended Projects\n\n### 1. "
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
-        prefill = "### 📌 Project Overview\n" if not is_thai else "### 📌 สรุปภาพรวมโครงงาน\n"
+        prefill = "### 📌 สรุปภาพรวมโครงงาน\n" if is_thai else "### 📌 Project Overview\n"
     elif intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
         prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
-    elif intent in {"FACTOID", "FACTUAL_LOOKUP", "CODE"}:
-        prefill = "จากเอกสารที่เกี่ยวข้อง " if is_thai else "Based on the retrieved document, "
+    elif intent == "EXPLORATORY":
+        prefill = "1. **"
 
     model_name = OLLAMA_MODEL.lower()
     if "gemma" in model_name:
@@ -828,6 +805,15 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
 
     if template_answer:
         answer = template_answer
+        # Fast-Path Shortcut does not need page numbers in citations
+        cleaned_citations = []
+        for c in citations:
+            c_copy = dict(c)
+            c_copy["pages"] = []
+            c_copy["pages_formatted"] = ""
+            cleaned_citations.append(c_copy)
+        citations = cleaned_citations
+
         llm_seconds = 0.0
         stats_out: dict[str, Any] = {
             "prompt_eval_count": 0,
@@ -941,24 +927,6 @@ def stream_answer_question(
     citations = prep["citations"]
     chat_history_str = prep["chat_history_str"]
 
-    # 1. Yield Initial Metadata Event (Instant feedback on intent and retrieved documents)
-    metadata_payload = {
-        "question": question,
-        "session_id": session_id,
-        "intent": intent,
-        "normalized_query": retrieval_details.get("normalized_query", question),
-        "filters": prep["filters"],
-        "sources": sources,
-        "citations": citations,
-        "retrieved_count": len(scored_contexts),
-        "timing": {
-            "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
-            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
-            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
-        },
-    }
-    yield {"event": "metadata", "data": metadata_payload}
-
     if not contexts and retrieval_errors:
         error_msg = (
             "การดึงข้อมูลล้มเหลว: ไม่สามารถเชื่อมต่อกับ Qdrant ได้"
@@ -991,6 +959,34 @@ def stream_answer_question(
     # Check for direct Deterministic Template Response Bypass
     from .template_responder import try_generate_template_response
     template_answer = try_generate_template_response(question, prep)
+
+    if template_answer:
+        # Fast-Path Shortcut does not need page numbers in citations
+        cleaned_citations = []
+        for c in citations:
+            c_copy = dict(c)
+            c_copy["pages"] = []
+            c_copy["pages_formatted"] = ""
+            cleaned_citations.append(c_copy)
+        citations = cleaned_citations
+
+    # 1. Yield Initial Metadata Event (Instant feedback on intent and retrieved documents)
+    metadata_payload = {
+        "question": question,
+        "session_id": session_id,
+        "intent": intent,
+        "normalized_query": retrieval_details.get("normalized_query", question),
+        "filters": prep["filters"],
+        "sources": sources,
+        "citations": citations,
+        "retrieved_count": len(scored_contexts),
+        "timing": {
+            "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        },
+    }
+    yield {"event": "metadata", "data": metadata_payload}
 
     if template_answer:
         cleaned_answer = template_answer

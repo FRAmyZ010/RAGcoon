@@ -26,7 +26,7 @@ else:
     load_dotenv(find_dotenv(usecwd=True))
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 LLM_TIMEOUT = int(os.getenv("LLM_QUERY_TIMEOUT", "60"))
 
 # Persistent HTTP session for connection pooling & low latency
@@ -61,7 +61,12 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "RECOMMENDATION"
     if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
         return "EXPLORATORY"
-    if any(k in q for k in ["summary", "summarize", "overview", "สรุป", "ภาพรวม", "อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
+    if any(k in q for k in [
+        "summary", "summarize", "overview", "สรุป", "ภาพรวม", "อย่างละเอียด",
+        "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture",
+        "methodology", "ขั้นตอนการทำงาน", "การทำงาน", "ทำงานอย่างไร", "อธิบาย",
+        "explain", "describe", "how does", "how it works", "การทำงานของระบบ"
+    ]):
         return "DEEP_DIVE"
     # Listing and exploratory queries across groups / years / advisors
     if any(k in q for k in [
@@ -214,14 +219,18 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
 
     # 2. ค้นหาชื่อโครงงานทั้งหมดที่ตรงกับ Metadata
     matched_titles = []
+    # First pass: Direct full title or prefix match
     for title in sorted(metadata_cache.titles, key=len, reverse=True):
         t_low = title.lower()
         if t_low in q_lower or (len(t_low) > 8 and t_low[:18] in q_lower):
             if title not in matched_titles:
                 matched_titles.append(title)
-        else:
-            # Check if meaningful multi-word phrase in title (e.g. "appointment system", "watering system") is in query
-            words = [w for w in re.split(r"[\s\-_]+", t_low) if len(w) >= 3 and w not in ["the", "and", "for", "system", "systems", "project", "proposal", "using", "with", "based"]]
+
+    # Second pass: Only if NO direct match was found, try multi-word phrase matching
+    if not matched_titles:
+        for title in sorted(metadata_cache.titles, key=len, reverse=True):
+            t_low = title.lower()
+            words = [w for w in re.split(r"[\s\-_]+", t_low) if len(w) >= 3 and w not in ["the", "and", "for", "system", "systems", "project", "proposal", "using", "with", "based", "application", "web"]]
             for i in range(len(words)):
                 phrase = " ".join(words[i:i+2])
                 if len(phrase) >= 8 and phrase in q_lower:
@@ -405,13 +414,21 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
         processor = QueryFilterProcessor(clean_norm)
         _, rule_filters = processor.parse()
         for k, v in rule_filters.items():
-            if k not in filters:
-                filters[k] = v
-            elif k == "author":
-                current_authors = filters[k] if isinstance(filters[k], list) else [filters[k]]
+            if k == "author":
                 rule_authors = v if isinstance(v, list) else [v]
-                merged = list(dict.fromkeys(current_authors + rule_authors))
-                filters[k] = merged if len(merged) > 1 else merged[0]
+                valid_rule_authors = [
+                    a for a in rule_authors
+                    if any(tok.lower() in raw_query.lower() for tok in str(a).split() if len(tok) >= 3)
+                ]
+                if valid_rule_authors:
+                    if k not in filters:
+                        filters[k] = valid_rule_authors if len(valid_rule_authors) > 1 else valid_rule_authors[0]
+                    else:
+                        current_authors = filters[k] if isinstance(filters[k], list) else [filters[k]]
+                        merged = list(dict.fromkeys(current_authors + valid_rule_authors))
+                        filters[k] = merged if len(merged) > 1 else merged[0]
+            elif k not in filters:
+                filters[k] = v
 
         valid_intents = {"RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"}
         rule_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))

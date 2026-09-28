@@ -12,7 +12,7 @@ _THAI_TECHNICAL_KEYWORDS = [
 ]
 
 _ENGLISH_TECHNICAL_KEYWORDS = {
-    "how", "why", "work", "works", "working", "explain", "explanation", "describe",
+    "why", "explain", "explanation", "describe",
     "architecture", "methodology", "algorithm", "algorithms", "flowchart", "workflow",
     "sensor", "sensors", "microcontroller", "hardware", "software", "tool", "tools",
     "framework", "library", "database", "db", "sql", "table", "schema", "code",
@@ -31,19 +31,36 @@ def _has_technical_keywords(query: str, project_title: Optional[str] = None) -> 
     if project_title:
         q_clean = q_clean.replace(project_title.lower(), "")
 
+    # Count/listing queries (how many, count, number of, กี่โครงงาน) are pure metadata lookups
+    is_count_query = any(k in q_clean for k in [
+        "how many", "how much", "number of", "total of", "count",
+        "กี่โครงงาน", "กี่โปรเจกต์", "กี่เรื่อง", "กี่เล่ม", "ทั้งหมดกี่", "มีกี่"
+    ])
+
     for kw in _THAI_TECHNICAL_KEYWORDS:
         if kw in q_clean:
             return True
 
-    eng_tokens = set(re.findall(r"[a-z0-9]+", q_clean))
-    if any(k in eng_tokens for k in _ENGLISH_TECHNICAL_KEYWORDS):
-        return True
-
-    return any(phrase in q_clean for phrase in [
+    tech_phrases = [
         "ทำงานอย่างไร", "การทำงาน", "สถาปัตยกรรม", "ขั้นตอนการ",
         "เปรียบเทียบ", "ต่างกันอย่างไร", "แนะนำ", "ช่วยแนะนำ",
-        "how does", "how it works", "explain the", "compare",
-    ])
+        "how does", "how do", "how is", "how are", "how to", "how it works",
+        "how was", "how were", "how did", "explain the", "compare",
+    ]
+    if any(phrase in q_clean for phrase in tech_phrases):
+        return True
+
+    eng_tokens = set(re.findall(r"[a-z0-9]+", q_clean))
+    if not is_count_query:
+        if any(k in eng_tokens for k in _ENGLISH_TECHNICAL_KEYWORDS):
+            return True
+    else:
+        # If count query, only disqualify if explicitly asking about internal components
+        explicit_tech_in_count = {"sensor", "sensors", "algorithm", "code", "accuracy", "hardware", "software"}
+        if any(k in eng_tokens for k in explicit_tech_in_count):
+            return True
+
+    return False
 
 
 def _to_thai_year(year_val: Any) -> str:
@@ -88,6 +105,7 @@ def try_generate_template_response(
         return None
 
     q_lower = question.lower()
+    is_thai = any("\u0e00" <= c <= "\u0e7f" for c in question)
     is_count_query = any(k in q_lower for k in ["กี่โครงงาน", "กี่โปรเจกต์", "กี่เรื่อง", "กี่เล่ม", "ทั้งหมดกี่", "how many", "count", "number of"])
 
     # =========================================================================
@@ -99,7 +117,8 @@ def try_generate_template_response(
         is_asking_advisor_projects = any(k in q_lower for k in [
             "project", "projects", "โครงงาน", "โปรเจกต์", "เรื่องไหน",
             "อะไรบ้าง", "มีอะไรบ้าง", "ที่ปรึกษา", "ดูแล", "list", "ทั้งหมด",
-            "ขอรายชื่อ", "รายชื่อ", "กี่เรื่อง", "กี่เล่ม"
+            "ขอรายชื่อ", "รายชื่อ", "กี่เรื่อง", "กี่เล่ม", "oversee", "supervised",
+            "advise", "advised", "supervise"
         ])
 
         if is_asking_advisor_projects and not filters.get("project_title"):
@@ -141,40 +160,73 @@ def try_generate_template_response(
             count = len(distinct_projects)
 
             if is_count_query:
-                titles_bullet = "\n".join([
-                    f"- **{p.get('project_title')}** ({p.get('year') or 'ไม่ระบุปี'})"
-                    for p in distinct_projects
-                ])
-                return (
-                    f"**{matched_advisor}** เป็นอาจารย์ที่ปรึกษาทั้งหมด **{count} โครงงาน** ในระบบครับ:\n\n"
-                    f"{titles_bullet}\n\n"
-                    f"> 💡 *สามารถสอบถามรายละเอียดเพิ่มเติมของแต่ละโครงงานได้ครับ เช่น 'ใครเป็นผู้จัดทำโครงงาน {distinct_projects[0].get('project_title')}'*"
-                )
+                if is_thai:
+                    titles_bullet = "\n".join([
+                        f"- **{p.get('project_title')}** ({p.get('year') or 'ไม่ระบุปี'})"
+                        for p in distinct_projects
+                    ])
+                    return (
+                        f"**{matched_advisor}** เป็นอาจารย์ที่ปรึกษาทั้งหมด **{count} โครงงาน** ในระบบครับ:\n\n"
+                        f"{titles_bullet}\n\n"
+                        f"> 💡 *สามารถสอบถามรายละเอียดเพิ่มเติมของแต่ละโครงงานได้ครับ เช่น 'ใครเป็นผู้จัดทำโครงงาน {distinct_projects[0].get('project_title')}'*"
+                    )
+                else:
+                    titles_bullet = "\n".join([
+                        f"- **{p.get('project_title')}** ({p.get('year') or 'Year not specified'})"
+                        for p in distinct_projects
+                    ])
+                    sample_title = distinct_projects[0].get('project_title', '') if distinct_projects else ''
+                    return (
+                        f"**{matched_advisor}** advised a total of **{count} project(s)** in the repository:\n\n"
+                        f"{titles_bullet}\n\n"
+                        f"> 💡 *You can ask for more details about any project, e.g., 'Who are the authors of {sample_title}?'*"
+                    )
 
             # Markdown Table Output
-            rows = []
-            for idx, p in enumerate(distinct_projects, 1):
-                p_title = p.get("project_title", "-")
-                p_year = p.get("year", "-")
-                p_prog = p.get("program") or "Computer Engineering"
-                p_authors = p.get("author", "-")
-                p_source = p.get("source", "เอกสารต้นฉบับ")
-                p_pages = p.get("pages_formatted") or ""
-                page_info = f" (หน้า {p_pages})" if p_pages and p_pages != "?" else ""
-                rows.append(
-                    f"| {idx} | **{p_title}** | {p_year} | {p_prog} | {p_authors} | 📄 `{p_source}`{page_info} |"
+            if is_thai:
+                rows = []
+                for idx, p in enumerate(distinct_projects, 1):
+                    p_title = p.get("project_title", "-")
+                    p_year = p.get("year", "-")
+                    p_prog = p.get("program") or "Computer Engineering"
+                    p_authors = p.get("author", "-")
+                    p_source = p.get("source", "เอกสารต้นฉบับ")
+                    rows.append(
+                        f"| {idx} | **{p_title}** | {p_year} | {p_prog} | {p_authors} | 📄 `{p_source}` |"
+                    )
+
+                table_body = "\n".join(rows)
+                sample_title = distinct_projects[0].get("project_title", "") if distinct_projects else ""
+
+                return (
+                    f"### 📋 รายชื่อโครงงานที่มี **{matched_advisor}** เป็นอาจารย์ที่ปรึกษา (ทั้งหมด {count} โครงงาน)\n\n"
+                    f"| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | สาขาวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n"
+                    f"| :---: | :--- | :---: | :---: | :--- | :--- |\n"
+                    f"{table_body}\n\n"
+                    f"> 💡 *ท่านสามารถพิมพ์สอบถามรายละเอียดเชิงลึก เช่น \"อธิบายสถาปัตยกรรมของโครงงาน {sample_title}\" หรือ \"ใช้เซนเซอร์อะไรบ้าง\" ได้ครับ*"
                 )
+            else:
+                rows = []
+                for idx, p in enumerate(distinct_projects, 1):
+                    p_title = p.get("project_title", "-")
+                    p_year = p.get("year", "-")
+                    p_prog = p.get("program") or "Computer Engineering"
+                    p_authors = p.get("author", "-")
+                    p_source = p.get("source", "Original Document")
+                    rows.append(
+                        f"| {idx} | **{p_title}** | {p_year} | {p_prog} | {p_authors} | 📄 `{p_source}` |"
+                    )
 
-            table_body = "\n".join(rows)
-            sample_title = distinct_projects[0].get("project_title", "") if distinct_projects else ""
+                table_body = "\n".join(rows)
+                sample_title = distinct_projects[0].get("project_title", "") if distinct_projects else ""
 
-            return (
-                f"### 📋 รายชื่อโครงงานที่มี **{matched_advisor}** เป็นอาจารย์ที่ปรึกษา (ทั้งหมด {count} โครงงาน)\n\n"
-                f"| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | สาขาวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n"
-                f"| :---: | :--- | :---: | :---: | :--- | :--- |\n"
-                f"{table_body}\n\n"
-                f"> 💡 *ท่านสามารถพิมพ์สอบถามรายละเอียดเชิงลึก เช่น \"อธิบายสถาปัตยกรรมของโครงงาน {sample_title}\" หรือ \"ใช้เซนเซอร์อะไรบ้าง\" ได้ครับ*"
-            )
+                return (
+                    f"### 📋 Projects Advised by **{matched_advisor}** (Total: {count} projects)\n\n"
+                    f"| # | Project Title | Academic Year | Program | Author(s) | Source Document |\n"
+                    f"| :---: | :--- | :---: | :---: | :--- | :--- |\n"
+                    f"{table_body}\n\n"
+                    f"> 💡 *You can ask for deeper details, e.g., 'What hardware was used in {sample_title}?'*"
+                )
 
     # =========================================================================
     # Case 2: Project Single Attribute Lookup (1:1 Project Info)
@@ -205,58 +257,101 @@ def try_generate_template_response(
         school = target_citation.get("school") or "Applied Digital Technology"
         program = target_citation.get("program") or "Computer Engineering"
         source = target_citation.get("source", "เอกสารต้นฉบับ")
-        pages = target_citation.get("pages_formatted") or ""
-        page_info = f" (หน้า {pages})" if pages and pages != "?" else ""
 
         # Specific Question: Who is Advisor?
-        if any(k in q_lower for k in ["advisor", "ที่ปรึกษา", "ใครเป็นที่ปรึกษา", "อาจารย์ที่ปรึกษาคือใคร", "who is the advisor", "who is advisor"]):
-            return (
-                f"อาจารย์ที่ปรึกษาของโครงงาน **{p_title}** คือ **{advisor}** ครับ\n\n"
-                f"- **คณะกรรมการตรวจโครงงาน (Committee)**: {committee}\n"
-                f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
-                f"- **เอกสารอ้างอิง**: 📄 `{source}`{page_info}"
-            )
+        if any(k in q_lower for k in ["advisor", "ที่ปรึกษา", "ใครเป็นที่ปรึกษา", "อาจารย์ที่ปรึกษาคือใคร", "who is the advisor", "who is advisor", "who advised"]):
+            if is_thai:
+                return (
+                    f"อาจารย์ที่ปรึกษาของโครงงาน **{p_title}** คือ **{advisor}** ครับ\n\n"
+                    f"- **คณะกรรมการตรวจโครงงาน (Committee)**: {committee}\n"
+                    f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
+                    f"- **เอกสารอ้างอิง**: 📄 `{source}`"
+                )
+            else:
+                return (
+                    f"The advisor for **{p_title}** is **{advisor}**.\n\n"
+                    f"- **Examination Committee**: {committee}\n"
+                    f"- **Academic Year**: {year}\n"
+                    f"- **Reference Document**: 📄 `{source}`"
+                )
 
         # Specific Question: Who are Authors?
         if any(k in q_lower for k in ["ผู้จัดทำ", "ใครทำ", "ใครจัดทำ", "ผู้แต่ง", "author", "authors", "who created", "who made", "who wrote"]):
-            return (
-                f"ผู้จัดทำโครงงาน **{p_title}** ได้แก่:\n\n"
-                f"**{authors}**\n\n"
-                f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
-                f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
-                f"- **เอกสารอ้างอิง**: 📄 `{source}`{page_info}"
-            )
+            if is_thai:
+                return (
+                    f"ผู้จัดทำโครงงาน **{p_title}** ได้แก่:\n\n"
+                    f"**{authors}**\n\n"
+                    f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
+                    f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
+                    f"- **เอกสารอ้างอิง**: 📄 `{source}`"
+                )
+            else:
+                return (
+                    f"The author(s) of **{p_title}** are:\n\n"
+                    f"**{authors}**\n\n"
+                    f"- **Advisor**: {advisor}\n"
+                    f"- **Academic Year**: {year}\n"
+                    f"- **Reference Document**: 📄 `{source}`"
+                )
 
         # Specific Question: What Year?
         if any(k in q_lower for k in ["ปีไหน", "ปีอะไร", "ปีการศึกษา", "ทำปีไหน", "when", "what year"]):
-            return (
-                f"โครงงาน **{p_title}** จัดทำขึ้นในปีการศึกษา **{year}** (พ.ศ. {thai_year}) ครับ\n\n"
-                f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
-                f"- **ผู้จัดทำ**: {authors}\n"
-                f"- **เอกสารอ้างอิง**: 📄 `{source}`{page_info}"
-            )
+            if is_thai:
+                return (
+                    f"โครงงาน **{p_title}** จัดทำขึ้นในปีการศึกษา **{year}** (พ.ศ. {thai_year}) ครับ\n\n"
+                    f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
+                    f"- **ผู้จัดทำ**: {authors}\n"
+                    f"- **เอกสารอ้างอิง**: 📄 `{source}`"
+                )
+            else:
+                return (
+                    f"Project **{p_title}** was conducted in academic year **{year}**.\n\n"
+                    f"- **Advisor**: {advisor}\n"
+                    f"- **Author(s)**: {authors}\n"
+                    f"- **Reference Document**: 📄 `{source}`"
+                )
 
         # Specific Question: Committee?
         if any(k in q_lower for k in ["กรรมการ", "คณะกรรมการ", "committee", "examiner", "examining"]):
-            return (
-                f"คณะกรรมการประเมินโครงงาน **{p_title}** ได้แก่:\n\n"
-                f"- **อาจารย์ที่ปรึกษา (Advisor)**: {advisor}\n"
-                f"- **คณะกรรมการ (Committee)**: {committee}\n\n"
-                f"- **เอกสารอ้างอิง**: 📄 `{source}`{page_info}"
-            )
+            if is_thai:
+                return (
+                    f"คณะกรรมการประเมินโครงงาน **{p_title}** ได้แก่:\n\n"
+                    f"- **อาจารย์ที่ปรึกษา (Advisor)**: {advisor}\n"
+                    f"- **คณะกรรมการ (Committee)**: {committee}\n\n"
+                    f"- **เอกสารอ้างอิง**: 📄 `{source}`"
+                )
+            else:
+                return (
+                    f"The examination committee for **{p_title}**:\n\n"
+                    f"- **Advisor**: {advisor}\n"
+                    f"- **Committee Members**: {committee}\n\n"
+                    f"- **Reference Document**: 📄 `{source}`"
+                )
 
         # General Project Overview Info
         if any(k in q_lower for k in ["ข้อมูล", "รายละเอียดเบื้องต้น", "about", "overview", "คือใคร", "เรื่องอะไร"]):
-            return (
-                f"ข้อมูลเบื้องต้นของโครงงาน **{p_title}**:\n\n"
-                f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
-                f"- **คณะกรรมการประเมิน (Committee)**: {committee}\n"
-                f"- **ผู้จัดทำ**: {authors}\n"
-                f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
-                f"- **สำนักวิชา / สาขาวิชา**: {school} / {program}\n"
-                f"- **เอกสารต้นฉบับ**: 📄 `{source}`{page_info}\n\n"
-                f"> 💡 *หากต้องการทราบข้อมูลสเปกฮาร์ดแวร์ เทคโนโลยีที่ใช้ หรือการทำงาน สามารถพิมพ์ถามได้เลยครับ*"
-            )
+            if is_thai:
+                return (
+                    f"ข้อมูลเบื้องต้นของโครงงาน **{p_title}**:\n\n"
+                    f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
+                    f"- **คณะกรรมการประเมิน (Committee)**: {committee}\n"
+                    f"- **ผู้จัดทำ**: {authors}\n"
+                    f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
+                    f"- **สำนักวิชา / สาขาวิชา**: {school} / {program}\n"
+                    f"- **เอกสารต้นฉบับ**: 📄 `{source}`\n\n"
+                    f"> 💡 *หากต้องการทราบข้อมูลสเปกฮาร์ดแวร์ เทคโนโลยีที่ใช้ หรือการทำงาน สามารถพิมพ์ถามได้เลยครับ*"
+                )
+            else:
+                return (
+                    f"Overview of project **{p_title}**:\n\n"
+                    f"- **Advisor**: {advisor}\n"
+                    f"- **Committee**: {committee}\n"
+                    f"- **Author(s)**: {authors}\n"
+                    f"- **Academic Year**: {year}\n"
+                    f"- **School / Program**: {school} / {program}\n"
+                    f"- **Source Document**: 📄 `{source}`\n\n"
+                    f"> 💡 *You can ask for technical specifications, technologies used, or system architecture.*"
+                )
 
     # =========================================================================
     # Case 3: Year Grouping Listing (Group Listing)
@@ -281,7 +376,10 @@ def try_generate_template_response(
             thai_year = _to_thai_year(matched_year)
 
             if is_count_query:
-                return f"ในปีการศึกษา **{matched_year}** (พ.ศ. {thai_year}) มีโครงงานในระบบทั้งหมด **{count} โครงงาน** ครับ"
+                if is_thai:
+                    return f"ในปีการศึกษา **{matched_year}** (พ.ศ. {thai_year}) มีโครงงานในระบบทั้งหมด **{count} โครงงาน** ครับ"
+                else:
+                    return f"In academic year **{matched_year}**, there are **{count} project(s)** in the repository."
 
             items = []
             for idx, p in enumerate(distinct_projects, 1):
@@ -289,13 +387,11 @@ def try_generate_template_response(
                 p_authors = p.get("author", "-")
                 p_adv = p.get("advisor", "-")
                 p_source = p.get("source", "")
-                p_pages = p.get("pages_formatted") or ""
-                page_info = f" (หน้า {p_pages})" if p_pages and p_pages != "?" else ""
                 items.append(
                     f"{idx}. **{p_title}**\n"
                     f"   - **ผู้จัดทำ**: {p_authors}\n"
                     f"   - **อาจารย์ที่ปรึกษา**: {p_adv}\n"
-                    f"   - **เอกสาร**: 📄 `{p_source}`{page_info}"
+                    f"   - **เอกสาร**: 📄 `{p_source}`"
                 )
 
             list_body = "\n\n".join(items)

@@ -21,6 +21,7 @@ def test_has_technical_keywords():
     assert _has_technical_keywords("ปี 2020 มีโปรเจกต์อะไรบ้าง") is False
     assert _has_technical_keywords("ใครทำโปรเจกต์ BSLD") is False
     assert _has_technical_keywords("อาจารย์สุรพล ดูแลกี่เรื่อง") is False
+    assert _has_technical_keywords("How many projects did Professor Surapol oversee in total?") is False
 
 
 def test_to_thai_year():
@@ -197,3 +198,89 @@ def test_program_major_template():
     assert resp is not None
     assert "Multimedia Technology & Animation" in resp
     assert "AI Image Animator" in resp
+
+
+def test_advisor_projects_count_english():
+    prep = {
+        "intent": "EXPLORATORY",
+        "filters": {"advisor": "Aj. Surapol Vorapatratorn"},
+        "citations": [
+            {
+                "project_title": "Gem car tracking application",
+                "advisor": "Asst. Prof Surapol Vorapatratorn",
+                "year": "2023",
+                "source": "Pre-Project_Gem_Car2.pdf",
+            },
+            {
+                "project_title": "ONLINE MFU-LECTURER APPOINTMENT SYSTEM",
+                "advisor": "Aj. Dr. Surapol Vorapatratorn",
+                "year": "2020",
+                "source": "97_MFU_APPOINTMENT.pdf",
+            },
+            {
+                "project_title": "ONLINE VEHICLE ACCESS MONITORING",
+                "advisor": "Aj. Surapol Vorapatratorn",
+                "year": "2020",
+                "source": "Online-Vehicle-access.pdf",
+            },
+        ],
+    }
+    resp = try_generate_template_response("How many projects did Professor Surapol oversee in total?", prep)
+    assert resp is not None
+    assert "Aj. Surapol Vorapatratorn" in resp
+    assert "advised a total of **3 project(s)**" in resp
+    assert "Gem car tracking application" in resp
+    assert "ONLINE MFU-LECTURER APPOINTMENT SYSTEM" in resp
+    assert "ONLINE VEHICLE ACCESS MONITORING" in resp
+
+
+def test_template_responses_do_not_contain_pages():
+    prep = {
+        "intent": "EXPLORATORY",
+        "filters": {"advisor": "Aj. Surapol Vorapatratorn"},
+        "citations": [
+            {
+                "project_title": "Gem car tracking application",
+                "advisor": "Aj. Surapol Vorapatratorn",
+                "author": "Alice, Bob",
+                "year": "2023",
+                "program": "Computer Engineering",
+                "source": "Pre-Project_Gem_Car2_edit2_V2.pdf",
+                "pages_formatted": "27",
+            }
+        ],
+    }
+    # Advisor Table Listing (Thai)
+    resp_th = try_generate_template_response("อาจารย์ surapol มีโครงงานอะไรบ้าง", prep)
+    assert resp_th is not None
+    assert "หน้า 27" not in resp_th
+    assert "Page 27" not in resp_th
+    assert "Pre-Project_Gem_Car2_edit2_V2.pdf" in resp_th
+
+    # Advisor Table Listing (English)
+    resp_en = try_generate_template_response("projects advised by Aj. Surapol Vorapatratorn", prep)
+    assert resp_en is not None
+    assert "Page 27" not in resp_en
+    assert "หน้า 27" not in resp_en
+
+    # Single Project Attribute Lookup
+    prep_single = {
+        "intent": "FACTOID",
+        "filters": {"project_title": "Gem car tracking application"},
+        "citations": [
+            {
+                "project_title": "Gem car tracking application",
+                "advisor": "Aj. Surapol Vorapatratorn",
+                "author": "Alice, Bob",
+                "year": "2023",
+                "program": "Computer Engineering",
+                "source": "Pre-Project_Gem_Car2_edit2_V2.pdf",
+                "pages_formatted": "27",
+            }
+        ],
+    }
+    resp_adv = try_generate_template_response("ใครเป็นที่ปรึกษาของ Gem car tracking application", prep_single)
+    assert resp_adv is not None
+    assert "หน้า 27" not in resp_adv
+    assert "Page 27" not in resp_adv
+
