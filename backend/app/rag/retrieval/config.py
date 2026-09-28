@@ -74,10 +74,10 @@ INTENT_CONFIG: dict[str, dict[str, Any]] = {
         "thinking": False,
     },
     "EXPLORATORY": {
-        "top_k": 40,
-        "rerank_top_n": 10,
-        "num_predict": 768,
-        "max_context_chunks": 6,
+        "top_k": 60,
+        "rerank_top_n": 20,
+        "num_predict": 1024,
+        "max_context_chunks": 15,
         "thinking": False,
     },
     "CODE": {

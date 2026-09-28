@@ -63,17 +63,20 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
         return "EXPLORATORY"
     if any(k in q for k in ["summary", "summarize", "overview", "สรุป", "ภาพรวม", "อย่างละเอียด", "in detail", "deep dive", "ละเอียด", "สถาปัตยกรรม", "architecture", "methodology", "ขั้นตอนการทำงาน", "การทำงานของระบบ"]):
         return "DEEP_DIVE"
+    # Listing and exploratory queries across groups / years / advisors
+    if any(k in q for k in [
+        "ขอรายชื่อ", "รายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์", "list all", "all projects",
+        "show all", "list", "survey", "มีอะไรบ้าง", "อะไรบ้าง", "มีโครงงานอะไร", "โครงงานทั้งหมด",
+        "โปรเจกต์ทั้งหมด", "โครงงานในปี", "โปรเจกต์ในปี", "any project", "which project", "ขอเอกสาร"
+    ]):
+        return "EXPLORATORY"
     # Specific factual questions about a project (microcontroller, sensor, tool, author, advisor, year, objective, etc.)
     if any(k in q for k in ["what", "who", "when", "which", "how many", "ใคร", "อะไร", "ปีไหน", "เมื่อไหร่", "sensor", "sensors", "microcontroller", "hardware", "tool", "tools", "database", "author", "advisor", "objective"]):
         return "FACTOID"
     if any(adv_word in q for adv_word in ["advisor", "advised", "ที่ปรึกษา", "ดูแล"]) and any(proj_word in q for proj_word in ["project", "projects", "โครงงาน", "โปรเจกต์"]):
-        if any(k in q for k in ["มีอะไรบ้าง", "อะไรบ้าง", "list", "which", "recommend", "แนะนำ", "บ้าง", "survey"]):
-            return "EXPLORATORY"
         if not project_title_present and not any(w in q for w in ["นี้", "this", "it", "โปรเจกต์นี้"]):
             return "EXPLORATORY"
         return "FACTOID"
-    if any(k in q for k in ["มีอะไรบ้าง", "ขอเอกสาร", "any project", "list", "survey", "further", "บ้าง", "projects", "โครงงานไหน", "which project"]):
-        return "EXPLORATORY"
     return "FACTOID"
 
 
@@ -195,7 +198,7 @@ def _extract_last_referenced_project(chat_history: Optional[str]) -> Optional[st
 def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Optional[tuple[str, dict[str, Any], str]]:
     """
     Fast-Path Shortcut:
-    ตรวจจับคำถามที่มีชื่อโปรเจกต์ หรือชื่ออาจารย์ที่ปรึกษาชัดเจน หรือคำถามต่อเนื่อง (Follow-up) จาก Chat History
+    ตรวจจับคำถามที่มีชื่อโปรเจกต์, ปีการศึกษา, หรือชื่ออาจารย์ที่ปรึกษาชัดเจน หรือคำถามต่อเนื่อง (Follow-up) จาก Chat History
     ช่วยลดเวลา Query Processing จาก ~8s เหลือ ~0.001s ทันที
     """
     if not raw_query or not raw_query.strip():
@@ -205,15 +208,28 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
     q_clean = raw_query.strip()
     q_lower = q_clean.lower()
 
-    # 1. ค้นหาชื่อโครงงานทั้งหมดที่ตรงกับ Metadata
+    # 1. สกัดปีการศึกษา (2020, 2563, ปี 63, etc.)
+    from .extractor import _extract_year
+    matched_year, _ = _extract_year(raw_query)
+
+    # 2. ค้นหาชื่อโครงงานทั้งหมดที่ตรงกับ Metadata
     matched_titles = []
-    for title in metadata_cache.titles:
+    for title in sorted(metadata_cache.titles, key=len, reverse=True):
         t_low = title.lower()
         if t_low in q_lower or (len(t_low) > 8 and t_low[:18] in q_lower):
             if title not in matched_titles:
                 matched_titles.append(title)
+        else:
+            # Check if meaningful multi-word phrase in title (e.g. "appointment system", "watering system") is in query
+            words = [w for w in re.split(r"[\s\-_]+", t_low) if len(w) >= 3 and w not in ["the", "and", "for", "system", "systems", "project", "proposal", "using", "with", "based"]]
+            for i in range(len(words)):
+                phrase = " ".join(words[i:i+2])
+                if len(phrase) >= 8 and phrase in q_lower:
+                    if title not in matched_titles:
+                        matched_titles.append(title)
+                    break
 
-    # 1.1 ถ้าไม่มีชื่อในคำถาม แต่เป็นคำถามต่อเนื่อง (Follow-up query) ให้ดึงโปรเจกต์ล่าสุดจาก Chat History
+    # 2.1 ถ้าไม่มีชื่อในคำถาม แต่เป็นคำถามต่อเนื่อง (Follow-up query) ให้ดึงโปรเจกต์ล่าสุดจาก Chat History
     if not matched_titles and chat_history and chat_history.strip():
         follow_up_markers = [
             "the project", "this project", "this system", "that project", "it", "they", "them",
@@ -228,7 +244,7 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
             if last_proj:
                 matched_titles = [last_proj]
 
-    # 2. ค้นหาชื่ออาจารย์ที่ปรึกษา (รองรับชื่อเล่น/คำนำหน้าภาษาไทย)
+    # 3. ค้นหาชื่ออาจารย์ที่ปรึกษา (รองรับชื่อเล่น/คำนำหน้าภาษาไทย)
     matched_advisor = None
     advisor_aliases = {
         "สุรพล": "Aj. Surapol Vorapatratorn",
@@ -252,7 +268,7 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
                 matched_advisor = adv
                 break
 
-    # 3. Intent Detection
+    # 4. Intent Detection
     intent = _detect_intent_by_rules(raw_query, project_title_present=bool(matched_titles))
 
     # Fast-path case 1: เปรียบเทียบหลายโครงงาน (COMPARISON)
@@ -271,6 +287,8 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
             filters["project_title"] = matched_title
         if matched_advisor:
             filters["advisor"] = matched_advisor
+        if matched_year:
+            filters["year"] = matched_year
         # Extract remaining question keywords to keep search specific to the question asked
         clean_keywords = q_clean
         for t in matched_titles:
@@ -278,8 +296,25 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
         norm_q = f"{matched_title} {clean_keywords}".strip() if clean_keywords else matched_title
         return norm_q, filters, intent
 
-    # Fast-path case 2: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
-    if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร"]):
+    # Fast-path case 3: Hybrid Filtering (Advisor + Year + Topic Keywords, or Advisor + Year)
+    if matched_advisor and matched_year:
+        filters = {"advisor": matched_advisor, "year": matched_year}
+        clean_keywords = q_clean
+        for alias in list(advisor_aliases.keys()) + [matched_advisor, matched_year]:
+            clean_keywords = re.sub(rf"\b{re.escape(str(alias))}\b", "", clean_keywords, flags=re.IGNORECASE).strip()
+        # Clean common Thai noise words
+        clean_keywords = re.sub(r"มีโครงงานเกี่ยวกับ|ที่มีอาจารย์|เป็นที่ปรึกษา|ในปี|บ้างไหม|อาจารย์|ที่ปรึกษา|โครงงาน|โปรเจกต์|จัดทำ|เกี่ยวกับ", "", clean_keywords).strip()
+        norm_q = f"{clean_keywords} {matched_advisor}".strip() if clean_keywords else f"senior projects advised by {matched_advisor} in {matched_year}"
+        return norm_q, filters, intent
+
+    # Fast-path case 4: ค้นหาโครงงานตามปีการศึกษา (Group / Exploratory by Year)
+    if matched_year and any(k in q_lower for k in ["โครงงาน", "โปรเจกต์", "project", "projects", "รายชื่อ", "ทั้งหมด", "มีอะไรบ้าง", "อะไรบ้าง", "ปีการศึกษา", "ปี"]):
+        filters = {"year": matched_year}
+        norm_q = f"senior projects in academic year {matched_year}"
+        return norm_q, filters, "EXPLORATORY"
+
+    # Fast-path case 5: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
+    if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร", "รายชื่อ", "ทั้งหมด"]):
         filters = {"advisor": matched_advisor}
         norm_q = f"senior projects advised by {matched_advisor}"
         return norm_q, filters, "EXPLORATORY"

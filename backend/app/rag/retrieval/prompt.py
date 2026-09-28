@@ -583,8 +583,8 @@ def _prepare_rag_context(
         min_score = 0.0001
     elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
-        max_total_projects = 6
-        min_score = 0.0001
+        max_total_projects = 15
+        min_score = -1.0
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
         max_total_projects = 4

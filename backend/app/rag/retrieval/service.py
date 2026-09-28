@@ -12,6 +12,7 @@ from .config import DEFAULT_TOP_K, DEFAULT_TOP_N, INTENT_CONFIG
 from .extractor import QueryFilterProcessor
 from .filters import build_qdrant_filter
 from .normalizer import normalize_user_query as normalize_query
+from .hybrid import hybrid_search
 from .rerank import rerank
 from .semantic import semantic_search
 
@@ -107,7 +108,7 @@ def _diversify_candidates_by_project(results: list[dict], max_per_project: int =
         if count < max_per_project:
             diversified.append(item)
             proj_counts[proj_key] = count + 1
-    return diversified if len(diversified) >= 6 else results
+    return diversified if diversified else results
 
 
 def search(query: str, chat_history: str | None = None) -> list[str]:
@@ -124,9 +125,9 @@ def search(query: str, chat_history: str | None = None) -> list[str]:
     qdrant_filter = build_qdrant_filter(filters)
     print("QDRANT FILTER:", qdrant_filter)
 
-    results = semantic_search(clean_query, top_k, metadata_filters=filters)
+    results = hybrid_search(clean_query, top_k, metadata_filters=filters)
     if not results:
-        print("No results after semantic + filter")
+        print("No results after hybrid + filter")
         return []
 
     results = _filter_boilerplate_candidates(results)
@@ -200,15 +201,15 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 seen_texts = set()
                 for p_title in compared:
                     p_filters = {"project_title": p_title}
-                    p_res = semantic_search(f"{p_title} overview methodology architecture features technology limitations", per_proj_k, metadata_filters=p_filters)
+                    p_res = hybrid_search(f"{p_title} overview methodology architecture features technology limitations", per_proj_k, metadata_filters=p_filters)
                     if not p_res:
-                        p_res = semantic_search(p_title, per_proj_k, metadata_filters=p_filters)
+                        p_res = hybrid_search(p_title, per_proj_k, metadata_filters=p_filters)
                     for item in p_res:
                         txt = item.get("text")
                         if txt not in seen_texts:
                             seen_texts.add(txt)
                             all_results.append(item)
-                results = all_results if all_results else semantic_search(clean_query, top_k)
+                results = all_results if all_results else hybrid_search(clean_query, top_k)
             else:
                 sub_queries = [p.strip() for p in re.split(r"\s+(?:vs|versus|กับ|and)\s+", clean_query, flags=re.IGNORECASE) if p.strip()]
                 if len(sub_queries) >= 2:
@@ -216,17 +217,17 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                     all_results = []
                     seen_texts = set()
                     for sq in sub_queries:
-                        sq_res = semantic_search(sq, split_k)
+                        sq_res = hybrid_search(sq, split_k)
                         for item in sq_res:
                             txt = item.get("text")
                             if txt not in seen_texts:
                                 seen_texts.add(txt)
                                 all_results.append(item)
-                    results = all_results if all_results else semantic_search(clean_query, top_k)
+                    results = all_results if all_results else hybrid_search(clean_query, top_k)
                 else:
-                    results = semantic_search(clean_query, top_k)
+                    results = hybrid_search(clean_query, top_k)
         else:
-            results = semantic_search(clean_query, top_k, metadata_filters=filters)
+            results = hybrid_search(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
 
         results = _filter_boilerplate_candidates(results)
@@ -237,7 +238,8 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 results = _filter_recommendation_candidates(results, target_domains)
             results = _diversify_candidates_by_project(results, max_per_project=2)
         elif intent == "EXPLORATORY" and results:
-            results = _diversify_candidates_by_project(results, max_per_project=2)
+            results = _diversify_candidates_by_project(results, max_per_project=1)
+            top_n = max(top_n, len(results))
 
         print(f"Retrieved (before rerank): {len(results)} results")
 
@@ -323,19 +325,3 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
             "query_variants": [],
             "retrieved_count": 0,
         }
-
-
-def hybrid_search(
-    query: str,
-    top_k: int = DEFAULT_TOP_K,
-    top_n: int = DEFAULT_TOP_N,
-    metadata_filters: dict | None = None,
-) -> list[dict]:
-    """Compatibility wrapper for the current semantic-search plus rerank pipeline."""
-    clean_query, filters, _ = process_query_with_llm(query)
-
-    if metadata_filters:
-        filters.update(metadata_filters)
-
-    results = semantic_search(clean_query, top_k, metadata_filters=filters)
-    return rerank(clean_query, results, top_n)
