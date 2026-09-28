@@ -20,9 +20,13 @@ def scan_pdf_document(file_path):
             "committee": None,
             "keywords": None,
             "year": None,
+            "school": None,
+            "program": None,
+            "course": None,
         }
 
         # 2. Collect metadata first so every page receives the final payload.
+        file_basename = os.path.basename(file_path)
         page_texts = [
             page.extract_text(x_tolerance=1, y_tolerance=2) or ""
             for page in pdf.pages
@@ -30,7 +34,10 @@ def scan_pdf_document(file_path):
         for text in page_texts[:5]:
             if not text:
                 continue
-            page_meta = extract_project_metadata(text)
+            try:
+                page_meta = extract_project_metadata(text, filename=file_basename)
+            except TypeError:
+                page_meta = extract_project_metadata(text)
             for key, value in page_meta.items():
                 if value is None:
                     continue

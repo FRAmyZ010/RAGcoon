@@ -168,14 +168,17 @@ def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]
     return advisor, committee
 
 
-def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
+def extract_project_metadata(first_page_text: str, filename: str | None = None) -> dict[str, str | None]:
     metadata: dict[str, str | None] = {
         "project_title": None,
         "author": None,
         "advisor": None,
         "committee": None,
         "keywords": None,
-        "year": None
+        "year": None,
+        "school": None,
+        "program": None,
+        "course": None,
     }
 
     # Skip front-matter pages that should not extract titles/authors (e.g. acknowledgements, table of contents)
@@ -302,5 +305,45 @@ def extract_project_metadata(first_page_text: str) -> dict[str, str | None]:
     year_match = re.search(r"\b(20[12]\d)\b", first_page_text)
     if year_match:
         metadata["year"] = year_match.group(1)
+
+    # --- School / สำนักวิชา ---
+    school_match = re.search(
+        r"\b(?:SCHOOL|FACULTY)\s+OF\s+([A-Za-z\s]+?)(?=\s+MAE|\s+20\d\d|\s+B[AE]CHELOR|\s+THIS|\s*$)",
+        first_page_text,
+        re.IGNORECASE,
+    )
+    if school_match:
+        raw_school = school_match.group(1).strip()
+        if "information" in raw_school.lower():
+            metadata["school"] = "School of Information Technology"
+        else:
+            metadata["school"] = f"School of {raw_school.title()}"
+    elif re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text):
+        th_school = re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text).group(1).strip()
+        metadata["school"] = f"สำนักวิชา{th_school}"
+    elif re.search(r"computer\s+engineering", first_page_text, re.IGNORECASE):
+        metadata["school"] = "School of Information Technology"
+
+    # --- Program / สาขาวิชา ---
+    prog_match = re.search(
+        r"\b(?:IN|OF)\s+(COMPUTER\s+ENGINEERING|INFORMATION\s+TECHNOLOGY|SOFTWARE\s+ENGINEERING)\b",
+        first_page_text,
+        re.IGNORECASE,
+    )
+    if prog_match:
+        metadata["program"] = prog_match.group(1).title()
+    elif re.search(r"วิศวกรรมคอมพิวเตอร์", first_page_text):
+        metadata["program"] = "Computer Engineering"
+    elif metadata["school"] == "School of Information Technology":
+        metadata["program"] = "Computer Engineering"
+
+    # --- Course / รายวิชา / ประเภทโครงงาน ---
+    combined_ctx = f"{filename or ''} {first_page_text}"
+    if re.search(r"(?:PRE[\-\s_]*PROJECT|CPE\s*491|1301491)", combined_ctx, re.IGNORECASE):
+        metadata["course"] = "Pre-Project (CPE491)"
+    elif re.search(r"(?:SENIOR[\-\s_]*PROJECT|CPE\s*492|1301492|COMPUTER\s+ENGINEERING\s+PROJECT)", combined_ctx, re.IGNORECASE):
+        metadata["course"] = "Senior Project (CPE492)"
+    elif metadata["project_title"]:
+        metadata["course"] = "Senior Project (CPE492)"
 
     return metadata

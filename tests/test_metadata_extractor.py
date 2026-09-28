@@ -41,3 +41,24 @@ def test_extract_approval_committee_with_adviser():
     advisor, committee = _extract_approval_committee(lines)
     assert advisor == "Asst. Prof. Dr. Suppakarn Chansareewittaya"
     assert committee == ["Dr. Mahamah Sebakor", "Dr. Surapong Uttama"]
+
+
+def test_extract_academic_metadata():
+    sample_text = """
+    Gem car tracking application
+    NOTCHANON SRISANSAKUL
+    A COMPUTER ENGINEERING PROJECT SUBMITTED TO
+    MAE FAH LUANG UNIVERSITY IN PARTIAL FULFILLMENT OF
+    THE REQUIREMENTS FOR THE DEGREE OF
+    BACHELOR OF ENGINEERING
+    IN COMPUTER ENGINEERING
+    SCHOOL OF INFORMATION TECHNOLOGY
+    MAE FAH LUANG UNIVERSITY
+    2022
+    """
+    meta = extract_project_metadata(sample_text, filename="Pre-Project_Gem_Car2.pdf")
+    assert meta["school"] == "School of Information Technology"
+    assert meta["program"] == "Computer Engineering"
+    assert meta["course"] == "Pre-Project (CPE491)"
+    assert meta["project_title"] == "Gem car tracking application"
+
