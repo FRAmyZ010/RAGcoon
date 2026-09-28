@@ -184,7 +184,8 @@ def test_school_template():
         "citations": [
             {
                 "project_title": "Network Security Project",
-                "school": "School of Information Technology",
+                "school": "Applied Digital Technology",
+                "program": "Computer Engineering",
                 "course": "Senior Project (CPE492)",
                 "advisor": "Dr. Smith",
                 "year": "2021",
@@ -192,7 +193,28 @@ def test_school_template():
             }
         ],
     }
-    resp = try_generate_template_response("สำนักวิชาเทคโนโลยีสารสนเทศ มีโครงงานอะไรบ้าง", prep)
+    resp = try_generate_template_response("สำนักวิชา Applied Digital Technology มีโครงงานอะไรบ้าง", prep)
     assert resp is not None
-    assert "School of Information Technology" in resp
+    assert "Applied Digital Technology" in resp
     assert "Network Security Project" in resp
+
+
+def test_program_major_template():
+    prep = {
+        "intent": "EXPLORATORY",
+        "filters": {},
+        "citations": [
+            {
+                "project_title": "AI Image Animator",
+                "program": "Multimedia Technology & Animation",
+                "course": "Senior Project (CPE492)",
+                "advisor": "Dr. Animator",
+                "year": "2023",
+                "source": "mta.pdf",
+            }
+        ],
+    }
+    resp = try_generate_template_response("โครงงานสาขา Multimedia Technology & Animation มีอะไรบ้าง", prep)
+    assert resp is not None
+    assert "Multimedia Technology & Animation" in resp
+    assert "AI Image Animator" in resp

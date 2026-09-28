@@ -33,6 +33,44 @@ _TITLE_WORDS = {
     "vehicle", "wallpaper", "watering", "web", "website", "wireless", "wlan",
 }
 
+_KNOWN_PROGRAMS = [
+    (
+        "Digital Technology for Business Innovation",
+        re.compile(
+            r"\b(?:Digital\s+Technology\s+(?:for\s+)?Business\s+Innovation|เทคโนโลยีดิจิทัลเพื่อนวัตกรรมทางธุรกิจ)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Digital Engineering & Communications",
+        re.compile(
+            r"\b(?:Digital\s+Engineering\s*(?:&|and)\s*Communications?|Digital\s+Engineering|วิศวกรรมดิจิทัล(?:\s*และการสื่อสาร)?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Multimedia Technology & Animation",
+        re.compile(
+            r"\b(?:Multimedia\s+Technology\s*(?:&|and)\s*Animation|Multimedia\s+Technology|เทคโนโลยีมัลติมีเดีย(?:\s*และแอนิเมชัน)?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Software Engineering",
+        re.compile(
+            r"\b(?:Software\s+Engineering|วิศวกรรมซอฟต์แวร์)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Computer Engineering",
+        re.compile(
+            r"\b(?:Computer\s+Engineering|วิศวกรรมคอมพิวเตอร์|CPE\s*49[12])\b",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
 
 def _clean_name_spacing(name: str | None) -> str | None:
     """Clean missing spaces after dots and in CamelCase/TitleCase words from OCR/PDF."""
@@ -306,36 +344,50 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
     if year_match:
         metadata["year"] = year_match.group(1)
 
-    # --- School / สำนักวิชา ---
-    school_match = re.search(
-        r"\b(?:SCHOOL|FACULTY)\s+OF\s+([A-Za-z\s]+?)(?=\s+MAE|\s+20\d\d|\s+B[AE]CHELOR|\s+THIS|\s*$)",
-        first_page_text,
-        re.IGNORECASE,
-    )
-    if school_match:
-        raw_school = school_match.group(1).strip()
-        if "information" in raw_school.lower():
-            metadata["school"] = "School of Information Technology"
-        else:
-            metadata["school"] = f"School of {raw_school.title()}"
-    elif re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text):
-        th_school = re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text).group(1).strip()
-        metadata["school"] = f"สำนักวิชา{th_school}"
-    elif re.search(r"computer\s+engineering", first_page_text, re.IGNORECASE):
-        metadata["school"] = "School of Information Technology"
+    # --- Program (สาขาวิชา) & School (สำนักวิชา) ---
+    # ตรวจสอบ 5 สาขาวิชา:
+    # 1. Computer Engineering
+    # 2. Software Engineering
+    # 3. Multimedia Technology & Animation
+    # 4. Digital Engineering & Communications
+    # 5. Digital Technology for Business Innovation
+    # หากพบในหน้าแรก ให้ระบุเป็นสาขา และกำหนดสำนักวิชาเป็น "Applied Digital Technology"
+    matched_program = None
+    for prog_name, pattern in _KNOWN_PROGRAMS:
+        if pattern.search(first_page_text) or (filename and pattern.search(filename)):
+            matched_program = prog_name
+            break
 
-    # --- Program / สาขาวิชา ---
-    prog_match = re.search(
-        r"\b(?:IN|OF)\s+(COMPUTER\s+ENGINEERING|INFORMATION\s+TECHNOLOGY|SOFTWARE\s+ENGINEERING)\b",
-        first_page_text,
-        re.IGNORECASE,
-    )
-    if prog_match:
-        metadata["program"] = prog_match.group(1).title()
-    elif re.search(r"วิศวกรรมคอมพิวเตอร์", first_page_text):
-        metadata["program"] = "Computer Engineering"
-    elif metadata["school"] == "School of Information Technology":
-        metadata["program"] = "Computer Engineering"
+    if matched_program:
+        metadata["program"] = matched_program
+        metadata["school"] = "Applied Digital Technology"
+    else:
+        # Fallback หากไม่ตรงกับ 5 สาขาวิชาหลัก
+        prog_match = re.search(
+            r"\b(?:IN|OF)\s+([A-Za-z\s]+?)(?=\s+MAE|\s+20\d\d|\s+THIS|\s*$)",
+            first_page_text,
+            re.IGNORECASE,
+        )
+        if prog_match:
+            metadata["program"] = prog_match.group(1).title().strip()
+
+        school_match = re.search(
+            r"\b(?:SCHOOL|FACULTY)\s+OF\s+([A-Za-z\s]+?)(?=\s+MAE|\s+20\d\d|\s+B[AE]CHELOR|\s+THIS|\s*$)",
+            first_page_text,
+            re.IGNORECASE,
+        )
+        if school_match:
+            raw_school = school_match.group(1).strip()
+            if any(k in raw_school.lower() for k in ["information", "applied digital", "digital"]):
+                metadata["school"] = "Applied Digital Technology"
+            else:
+                metadata["school"] = f"School of {raw_school.title()}"
+        elif re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text):
+            th_school = re.search(r"สำนักวิชา\s*([ก-๙A-Za-z\s]+)", first_page_text).group(1).strip()
+            if any(k in th_school for k in ["เทคโนโลยีสารสนเทศ", "เทคโนโลยีดิจิทัลประยุกต์"]):
+                metadata["school"] = "Applied Digital Technology"
+            else:
+                metadata["school"] = f"สำนักวิชา{th_school}"
 
     # --- Course / รายวิชา / ประเภทโครงงาน ---
     combined_ctx = f"{filename or ''} {first_page_text}"

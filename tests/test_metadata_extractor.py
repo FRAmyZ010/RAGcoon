@@ -57,8 +57,23 @@ def test_extract_academic_metadata():
     2022
     """
     meta = extract_project_metadata(sample_text, filename="Pre-Project_Gem_Car2.pdf")
-    assert meta["school"] == "School of Information Technology"
+    assert meta["school"] == "Applied Digital Technology"
     assert meta["program"] == "Computer Engineering"
     assert meta["course"] == "Pre-Project (CPE491)"
     assert meta["project_title"] == "Gem car tracking application"
+
+
+def test_all_five_majors_mapped_to_applied_digital_technology():
+    majors = [
+        ("BACHELOR OF ENGINEERING IN COMPUTER ENGINEERING", "Computer Engineering"),
+        ("BACHELOR OF SCIENCE IN SOFTWARE ENGINEERING", "Software Engineering"),
+        ("BACHELOR OF SCIENCE IN MULTIMEDIA TECHNOLOGY & ANIMATION", "Multimedia Technology & Animation"),
+        ("BACHELOR OF ENGINEERING IN DIGITAL ENGINEERING & COMMUNICATIONS", "Digital Engineering & Communications"),
+        ("BACHELOR OF SCIENCE IN DIGITAL TECHNOLOGY FOR BUSINESS INNOVATION", "Digital Technology for Business Innovation"),
+    ]
+    for text_fragment, expected_program in majors:
+        full_text = f"Sample Project Title\nJohn Doe\n{text_fragment}\n2023"
+        meta = extract_project_metadata(full_text)
+        assert meta["program"] == expected_program, f"Failed for {text_fragment}"
+        assert meta["school"] == "Applied Digital Technology", f"School must be Applied Digital Technology for {expected_program}"
 

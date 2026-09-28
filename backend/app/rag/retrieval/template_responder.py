@@ -202,7 +202,7 @@ def try_generate_template_response(
         if year == "None":
             year = "ไม่ระบุปี"
         thai_year = _to_thai_year(year) if year != "ไม่ระบุปี" else "-"
-        school = target_citation.get("school") or "School of Information Technology"
+        school = target_citation.get("school") or "Applied Digital Technology"
         program = target_citation.get("program") or "Computer Engineering"
         course = target_citation.get("course") or "Senior Project (CPE492)"
         source = target_citation.get("source", "เอกสารต้นฉบับ")
@@ -367,7 +367,46 @@ def try_generate_template_response(
     # =========================================================================
     # Case 5: School / Program Grouping
     # =========================================================================
-    if any(k in q_lower for k in ["สำนักวิชา", "school of information technology", "สำนักไอที"]):
+    _PROG_QUERY_MAP = [
+        ("Software Engineering", ["software engineering", "วิศวกรรมซอฟต์แวร์"]),
+        ("Multimedia Technology & Animation", ["multimedia", "animation", "มัลติมีเดีย", "แอนิเมชัน"]),
+        ("Digital Engineering & Communications", ["digital engineering", "วิศวกรรมดิจิทัล"]),
+        ("Digital Technology for Business Innovation", ["business innovation", "นวัตกรรมทางธุรกิจ"]),
+        ("Computer Engineering", ["computer engineering", "วิศวกรรมคอมพิวเตอร์"]),
+    ]
+    for prog_canonical, prog_triggers in _PROG_QUERY_MAP:
+        if any(pt in q_lower for pt in prog_triggers) and any(w in q_lower for w in ["สาขา", "โครงงาน", "โปรเจกต์", "project", "projects", "มีอะไรบ้าง", "กี่เรื่อง"]):
+            matching = [
+                c for c in citations
+                if prog_canonical.lower() in str(c.get("program", "")).lower()
+                or not c.get("program")
+            ]
+            if matching:
+                seen_titles = set()
+                distinct = []
+                for c in matching:
+                    t = c.get("project_title") or c.get("source")
+                    if t and t not in seen_titles:
+                        seen_titles.add(t)
+                        distinct.append(c)
+                if distinct and not _has_technical_keywords(question):
+                    items = []
+                    for idx, p in enumerate(distinct, 1):
+                        items.append(
+                            f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
+                            f"   - **รายวิชา**: {p.get('course') or 'Senior Project (CPE492)'}\n"
+                            f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
+                            f"   - **เอกสาร**: 📄 `{p.get('source')}`"
+                        )
+                    return (
+                        f"### 🎓 รายชื่อโครงงานในสาขาวิชา **{prog_canonical}** (ทั้งหมด {len(distinct)} โครงงาน)\n\n"
+                        + "\n\n".join(items)
+                    )
+
+    if any(k in q_lower for k in [
+        "สำนักวิชา", "applied digital technology", "school of applied digital technology",
+        "school of information technology", "สำนักไอที", "เทคโนโลยีดิจิทัลประยุกต์"
+    ]):
         seen_titles = set()
         distinct = []
         for c in citations:
@@ -381,12 +420,13 @@ def try_generate_template_response(
             for idx, p in enumerate(distinct, 1):
                 items.append(
                     f"{idx}. **{p.get('project_title')}** (ปี {p.get('year') or '-'})\n"
+                    f"   - **สาขาวิชา**: {p.get('program') or 'Computer Engineering'}\n"
                     f"   - **รายวิชา**: {p.get('course') or 'Senior Project (CPE492)'}\n"
                     f"   - **อาจารย์ที่ปรึกษา**: {p.get('advisor') or '-'}\n"
                     f"   - **เอกสาร**: 📄 `{p.get('source')}`"
                 )
             return (
-                f"### 🏛️ รายชื่อโครงงานภายใต้ **สำนักวิชาเทคโนโลยีสารสนเทศ (School of Information Technology)** (ทั้งหมด {len(distinct)} โครงงาน)\n\n"
+                f"### 🏛️ รายชื่อโครงงานภายใต้ **สำนักวิชา Applied Digital Technology** (ทั้งหมด {len(distinct)} โครงงาน)\n\n"
                 + "\n\n".join(items)
             )
 
