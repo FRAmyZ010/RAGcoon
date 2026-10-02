@@ -18,11 +18,9 @@ if TYPE_CHECKING:
         get_embed_model,
         get_reranker,
     )
-    from .debug import run_sample_queries
     from .extractor import extract_query_and_filters
     from .filters import build_qdrant_filter
     from .normalizer import normalize_user_query as normalize_query
-    from .performance import format_performance_summary
     from .prompt import answer_question, stream_answer_question, stream_llm_response
     from .rerank import normalize_scores, rerank
     from .semantic import semantic_search
@@ -35,12 +33,10 @@ _EXPORTS = {
     "stream_llm_response": (".prompt", "stream_llm_response"),
     "build_qdrant_filter": (".filters", "build_qdrant_filter"),
     "extract_query_and_filters": (".extractor", "extract_query_and_filters"),
-    "format_performance_summary": (".performance", "format_performance_summary"),
     "hybrid_search": (".service", "hybrid_search"),
     "normalize_query": (".normalizer", "normalize_user_query"),
     "normalize_scores": (".rerank", "normalize_scores"),
     "rerank": (".rerank", "rerank"),
-    "run_sample_queries": (".debug", "run_sample_queries"),
     "search": (".service", "search"),
     "search_with_details": (".service", "search_with_details"),
     "semantic_search": (".semantic", "semantic_search"),
@@ -70,14 +66,12 @@ __all__ = (
     "build_qdrant_filter",
     "client",
     "extract_query_and_filters",
-    "format_performance_summary",
     "get_embed_model",
     "get_reranker",
     "hybrid_search",
     "normalize_query",
     "normalize_scores",
     "rerank",
-    "run_sample_queries",
     "search",
     "search_with_details",
     "semantic_search",

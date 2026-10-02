@@ -20,7 +20,7 @@ def rerank(query: str, docs_with_payload: list[dict], top_n: int) -> list[dict]:
 
     docs = [doc["text"] for doc in docs_with_payload]
     pairs = [[query, doc] for doc in docs]
-    scores = get_reranker().predict(pairs)
+    scores = get_reranker().predict(pairs, show_progress_bar=False, batch_size=32)
 
     scored = list(zip(docs_with_payload, scores))
     ranked = sorted(scored, key=lambda item: item[1], reverse=True)
