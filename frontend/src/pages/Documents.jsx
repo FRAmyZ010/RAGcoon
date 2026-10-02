@@ -28,7 +28,6 @@ import {
   openDocumentPreview,
   uploadDocument,
   MAX_TOTAL_UPLOAD_BYTES,
-  MAX_BATCH_UPLOAD_FILES,
   MAX_TOTAL_UPLOAD_MB,
 } from "../services/documentsApi";
 import { clearAuth } from "../services/authApi";
@@ -44,6 +43,7 @@ function splitCommaList(value) {
 function statusChipClass(status) {
   if (status === "Ready") return "bg-green-100 text-green-800";
   if (status === "Failed") return "bg-red-100 text-red-800";
+  if (status === "Pending") return "bg-slate-100 text-slate-700";
   return "bg-yellow-100 text-yellow-800";
 }
 
@@ -222,7 +222,6 @@ export default function DocumentsManagement() {
 
     const warnings = [];
     const accepted = [];
-    let hitMaxFiles = false;
     let hitMaxTotal = false;
     const queueNames = new Set(
       uploadQueue.map((item) => item.name.toLowerCase())
@@ -259,10 +258,6 @@ export default function DocumentsManagement() {
         warnings.push(`${name} มีชื่อไฟล์ซ้ำในระบบแล้ว`);
         continue;
       }
-      if (uploadQueue.length + accepted.length >= MAX_BATCH_UPLOAD_FILES) {
-        hitMaxFiles = true;
-        continue;
-      }
       if (runningTotal + file.size > MAX_TOTAL_UPLOAD_BYTES) {
         hitMaxTotal = true;
         continue;
@@ -273,9 +268,6 @@ export default function DocumentsManagement() {
       runningTotal += file.size;
     }
 
-    if (hitMaxFiles) {
-      warnings.push(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์`);
-    }
     if (hitMaxTotal) {
       warnings.push(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
     }
@@ -778,7 +770,9 @@ export default function DocumentsManagement() {
                               ? "bg-green-100 text-green-700"
                               : row.status === "Failed"
                                 ? "bg-red-100 text-red-700"
-                                : "bg-yellow-100 text-yellow-700"
+                                : row.status === "Pending"
+                                  ? "bg-slate-100 text-slate-700"
+                                  : "bg-yellow-100 text-yellow-700"
                           }`}
                         >
                           {row.status}
@@ -1057,7 +1051,7 @@ export default function DocumentsManagement() {
                   <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
                   <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · รวมไม่เกิน {MAX_TOTAL_UPLOAD_MB}MB
+                    PDF · รวมไม่เกิน {MAX_TOTAL_UPLOAD_MB}MB
                   </p>
                 </>
               )}

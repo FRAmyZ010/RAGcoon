@@ -1,15 +1,19 @@
+import logging
 import os
 import shutil
-from fastapi import UploadFile
+import uuid
+from typing import Any
 from sqlalchemy.orm import Session, joinedload
 from app.models.project import Project
 from app.models.document import Document
 from app.schemas.document import ProcessingStatus
 
+logger = logging.getLogger(__name__)
+
 UPLOAD_DIR = "storage/documents"
-# No per-file size cap; enforce total size at batch/API selection layer.
-MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB total per batch selection
-MAX_BATCH_UPLOAD_FILES = 10
+# No per-file count cap; enforce total size at batch/API selection layer.
+MAX_TOTAL_UPLOAD_BYTES = 100 * 1024 * 1024  # 100MB total per batch selection
+MAX_TOTAL_UPLOAD_MB = MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)
 
 
 class DocumentUploadError(Exception):
@@ -39,7 +43,7 @@ def _assert_pdf_file(temp_file_path: str, filename: str | None) -> None:
         raise DocumentUploadError("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้")
     if size > MAX_TOTAL_UPLOAD_BYTES:
         raise DocumentUploadError(
-            f"ขนาดไฟล์รวมเกิน {MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)}MB "
+            f"ขนาดไฟล์เกิน {MAX_TOTAL_UPLOAD_MB}MB "
             f"(ขนาดปัจจุบัน {size / (1024 * 1024):.1f}MB)"
         )
 
@@ -54,22 +58,37 @@ def _assert_pdf_file(temp_file_path: str, filename: str | None) -> None:
         raise DocumentUploadError("รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น")
 
 
-def process_document_upload_auto(
-    db: Session,
-    file: UploadFile
-) -> Document:
+def _safe_filename(filename: str | None) -> str:
+    raw = filename.replace(" ", "_") if filename else "uploaded.pdf"
+    return os.path.basename(raw) or "uploaded.pdf"
+
+
+def accept_document_upload(db: Session, file: Any) -> Document:
     """
-    Automated Ingestion Flow:
-    1. จัดเก็บไฟล์ PDF ชั่วคราวลง Disk Storage
-    2. ตรวจสอบขนาด / PDF header
-    3. เรียก RAG Pipeline เพื่อสกัด Metadata
-    4. ปฏิเสธถ้า project_title ซ้ำ (409)
-    5. บันทึก PostgreSQL + Qdrant
+    Fast accept path:
+    1. Save PDF to disk
+    2. Validate size / PDF header / duplicate filename
+    3. Insert Document row as PENDING
+    4. Return immediately (ingest runs separately in background)
     """
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    safe_filename = file.filename.replace(" ", "_") if file.filename else "uploaded.pdf"
-    temp_file_path = os.path.join(UPLOAD_DIR, f"temp_{safe_filename}")
+    original_filename = file.filename or "uploaded.pdf"
+    existing_filename = (
+        db.query(Document)
+        .filter(Document.filename == original_filename)
+        .first()
+    )
+    if existing_filename:
+        raise DocumentUploadError(
+            f'พบไฟล์ชื่อซ้ำ: "{original_filename}" '
+            "กรุณาลบไฟล์เดิมก่อน หรือเปลี่ยนชื่อไฟล์",
+            status_code=409,
+        )
+
+    safe_name = _safe_filename(file.filename)
+    unique = uuid.uuid4().hex[:12]
+    temp_file_path = os.path.join(UPLOAD_DIR, f"pending_{unique}_{safe_name}")
 
     with open(temp_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -77,24 +96,70 @@ def process_document_upload_auto(
     try:
         _assert_pdf_file(temp_file_path, file.filename)
 
-        original_filename = file.filename or "uploaded.pdf"
-        existing_filename = (
-            db.query(Document)
-            .filter(Document.filename == original_filename)
-            .first()
+        document = Document(
+            project_id=None,
+            filename=original_filename,
+            file_path=temp_file_path,
+            title=original_filename,
+            status=ProcessingStatus.PENDING.value,
         )
-        if existing_filename:
-            raise DocumentUploadError(
-                f'พบไฟล์ชื่อซ้ำ: "{original_filename}" '
-                "กรุณาลบไฟล์เดิมก่อน หรือเปลี่ยนชื่อไฟล์",
-                status_code=409,
-            )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+
+        final_file_path = os.path.join(UPLOAD_DIR, f"{document.id}_{safe_name}")
+        if os.path.exists(temp_file_path):
+            os.rename(temp_file_path, final_file_path)
+        document.file_path = final_file_path
+        db.commit()
+        db.refresh(document)
+        return document
+    except DocumentUploadError:
+        if os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+        raise
+    except Exception:
+        if os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+        raise
+
+
+def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
+    """
+    Background ingest for an accepted PENDING document:
+    PENDING → PROCESSING → COMPLETED | FAILED
+    """
+    document = get_document_by_id(db=db, document_id=document_id)
+    if not document:
+        logger.warning("ingest skipped: document %s not found", document_id)
+        return None
+
+    if document.status not in (
+        ProcessingStatus.PENDING.value,
+        ProcessingStatus.PROCESSING.value,
+    ):
+        return document
+
+    document.status = ProcessingStatus.PROCESSING.value
+    db.commit()
+    db.refresh(document)
+
+    file_path = document.file_path
+    try:
+        if not file_path or not os.path.exists(file_path):
+            raise DocumentUploadError("ไม่พบไฟล์บนดิสก์สำหรับประมวลผล")
 
         from app.rag.embedding.pdf_scanning import scan_pdf_document
         from app.rag.embedding.text_processor import chunk_extracted_data
         from app.rag.embedding.vector_store import upload_to_qdrant
 
-        pages = scan_pdf_document(temp_file_path)
+        pages = scan_pdf_document(file_path)
         if not pages:
             raise DocumentUploadError("ไม่พบข้อความในไฟล์ PDF หรือไฟล์ชำรุด")
 
@@ -108,18 +173,30 @@ def process_document_upload_auto(
             )
 
         extracted_meta = pages[0].get("metadata", {})
-        project_title = extracted_meta.get("project_title") or file.filename or "Untitled Project"
-        academic_year = int(extracted_meta["year"]) if extracted_meta.get("year") and str(extracted_meta["year"]).isdigit() else None
+        project_title = (
+            extracted_meta.get("project_title")
+            or document.filename
+            or "Untitled Project"
+        )
+        academic_year = (
+            int(extracted_meta["year"])
+            if extracted_meta.get("year") and str(extracted_meta["year"]).isdigit()
+            else None
+        )
         advisor = extracted_meta.get("advisor")
         authors = extracted_meta.get("author")
         supervisory_committee = extracted_meta.get("committee")
         if isinstance(supervisory_committee, list):
-            supervisory_committee = ", ".join(str(item) for item in supervisory_committee if item)
+            supervisory_committee = ", ".join(
+                str(item) for item in supervisory_committee if item
+            )
         keywords = extracted_meta.get("keywords")
         if isinstance(keywords, list):
             keywords = ", ".join(str(item) for item in keywords if item)
 
-        existing_project = db.query(Project).filter(Project.title == project_title).first()
+        existing_project = (
+            db.query(Project).filter(Project.title == project_title).first()
+        )
         if existing_project:
             raise DuplicateDocumentError(project_title)
 
@@ -127,61 +204,78 @@ def process_document_upload_auto(
             title=project_title,
             academic_year=academic_year,
             advisor=advisor,
-            authors=authors
+            authors=authors,
         )
         db.add(project)
         db.commit()
         db.refresh(project)
 
-        final_file_path = os.path.join(UPLOAD_DIR, f"{project.id}_{safe_filename}")
-        if os.path.exists(temp_file_path):
-            os.rename(temp_file_path, final_file_path)
-
         for page in pages:
             page_meta = page.get("metadata")
             if isinstance(page_meta, dict):
-                page_meta["source"] = os.path.basename(final_file_path)
+                page_meta["source"] = os.path.basename(file_path)
 
-        document = Document(
-            project_id=project.id,
-            filename=file.filename or "uploaded.pdf",
-            file_path=final_file_path,
-            title=project_title,
-            supervisory_committee=supervisory_committee,
-            keywords=keywords,
-            status=ProcessingStatus.PROCESSING.value
-        )
-        db.add(document)
+        document.project_id = project.id
+        document.title = project_title
+        document.supervisory_committee = supervisory_committee
+        document.keywords = keywords
         db.commit()
-        db.refresh(document)
 
         chunks = chunk_extracted_data(pages)
         success = upload_to_qdrant(chunks)
+        document.status = (
+            ProcessingStatus.COMPLETED.value
+            if success
+            else ProcessingStatus.FAILED.value
+        )
+        db.commit()
+        db.refresh(document)
+        return document
 
-        document.status = ProcessingStatus.COMPLETED.value if success else ProcessingStatus.FAILED.value
-
-    except DocumentUploadError:
-        if os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except OSError:
-                pass
-        raise
+    except DocumentUploadError as e:
+        logger.warning("ingest failed for document %s: %s", document_id, e.message)
+        db.rollback()
+        document = get_document_by_id(db=db, document_id=document_id)
+        if document:
+            document.status = ProcessingStatus.FAILED.value
+            db.commit()
+            db.refresh(document)
+        return document
     except Exception as e:
-        if os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except OSError:
-                pass
-        # Normalize common PDF parse failures to 400
-        message = str(e)
-        if any(token in message.lower() for token in ("pdf", "syntax", "decrypt", "trailer", "eof")):
-            raise DocumentUploadError(f"ไฟล์ PDF เสียหรืออ่านไม่ได้: {message}") from e
-        raise
+        logger.exception("ingest error for document %s: %s", document_id, e)
+        db.rollback()
+        document = get_document_by_id(db=db, document_id=document_id)
+        if document:
+            document.status = ProcessingStatus.FAILED.value
+            db.commit()
+            db.refresh(document)
+        return document
 
-    db.commit()
-    db.refresh(document)
-    return document
+
+def ingest_document_task(document_id: int) -> None:
+    """BackgroundTasks entrypoint — opens its own DB session."""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ingest_document_by_id(db=db, document_id=document_id)
+    finally:
+        db.close()
+
+
+def process_document_upload_auto(
+    db: Session,
+    file: Any
+) -> Document:
+    """
+    Synchronous accept + ingest (for callers that need a finished document).
+    Prefer accept_document_upload + ingest_document_task for API uploads.
+    """
+    document = accept_document_upload(db=db, file=file)
+    ingest_document_by_id(db=db, document_id=document.id)
+    refreshed = get_document_by_id(db=db, document_id=document.id)
+    return refreshed or document
+
 
 def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Document]:
     return (
@@ -193,6 +287,7 @@ def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Docum
         .all()
     )
 
+
 def get_document_by_id(db: Session, document_id: int) -> Document | None:
     return (
         db.query(Document)
@@ -200,6 +295,7 @@ def get_document_by_id(db: Session, document_id: int) -> Document | None:
         .filter(Document.id == document_id)
         .first()
     )
+
 
 def resolve_document_file_path(
     db: Session,
@@ -212,6 +308,7 @@ def resolve_document_file_path(
     if not os.path.exists(document.file_path):
         return None, None
     return document.file_path, document.filename or os.path.basename(document.file_path)
+
 
 def find_document_for_citation(
     db: Session,
@@ -268,6 +365,7 @@ def find_document_for_citation(
 
     return None
 
+
 def enrich_citations_with_document_ids(
     db: Session,
     citations: list[dict] | None,
@@ -301,6 +399,7 @@ def enrich_citations_with_document_ids(
         enriched.append(citation)
 
     return enriched
+
 
 def _purge_document_row_and_orphan_project(db: Session, document: Document) -> None:
     """
