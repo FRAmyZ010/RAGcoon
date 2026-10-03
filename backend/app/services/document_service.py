@@ -279,14 +279,22 @@ def process_document_upload_auto(
 
 
 def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Document]:
-    pending_last = case(
-        (Document.status == ProcessingStatus.PENDING.value, 1),
-        else_=0,
+    status_rank = case(
+        (Document.status == ProcessingStatus.FAILED.value, 0),
+        (Document.status == ProcessingStatus.COMPLETED.value, 1),
+        (Document.status == ProcessingStatus.PROCESSING.value, 2),
+        (Document.status == ProcessingStatus.PENDING.value, 3),
+        else_=4,
     )
     return (
         db.query(Document)
         .options(joinedload(Document.project))
-        .order_by(pending_last.asc(), Document.upload_date.desc())
+        .order_by(
+            status_rank.asc(),
+            Document.upload_date.desc(),
+            Document.title.asc(),
+            Document.filename.asc(),
+        )
         .offset(skip)
         .limit(limit)
         .all()

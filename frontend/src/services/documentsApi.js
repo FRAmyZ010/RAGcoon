@@ -174,6 +174,9 @@ export function mapDocumentToRow(doc) {
   };
 
   const uploadDate = doc.upload_date ? new Date(doc.upload_date) : null;
+  const uploadedAt = uploadDate && !Number.isNaN(uploadDate.getTime())
+    ? uploadDate.getTime()
+    : 0;
 
   return {
     id: doc.id,
@@ -186,6 +189,7 @@ export function mapDocumentToRow(doc) {
     keywords: doc.keywords || "—",
     supervisoryCommittee: doc.supervisory_committee || "—",
     status: statusMap[doc.status] || doc.status || "Processing",
+    uploadedAt,
     date: uploadDate
       ? uploadDate.toLocaleDateString("en-GB", {
           day: "2-digit",

@@ -320,6 +320,13 @@ export default function DocumentsManagement() {
     setActiveMenuId(id);
   };
 
+  const STATUS_SORT_RANK = {
+    Failed: 0,
+    Ready: 1,
+    Processing: 2,
+    Pending: 3,
+  };
+
   const filteredFiles = filesData
     .filter((row) => {
       const q = searchQuery.trim().toLowerCase();
@@ -330,9 +337,17 @@ export default function DocumentsManagement() {
     })
     .slice()
     .sort((a, b) => {
-      const aPending = a.status === "Pending" ? 1 : 0;
-      const bPending = b.status === "Pending" ? 1 : 0;
-      return aPending - bPending;
+      const rankA = STATUS_SORT_RANK[a.status] ?? 99;
+      const rankB = STATUS_SORT_RANK[b.status] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
+
+      const dateA = a.uploadedAt || 0;
+      const dateB = b.uploadedAt || 0;
+      if (dateA !== dateB) return dateB - dateA;
+
+      const titleA = String(a.title || a.filename || "").toLowerCase();
+      const titleB = String(b.title || b.filename || "").toLowerCase();
+      return titleA.localeCompare(titleB);
     });
 
   const selectedCount = selectedIds.size;
