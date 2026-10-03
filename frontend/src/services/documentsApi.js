@@ -61,8 +61,12 @@ async function rejectIfNotOk(res, fallback) {
   throw await parseErrorDetail(res, fallback);
 }
 
-export async function listDocuments() {
-  const res = await fetch(DOCUMENTS_BASE, {
+export async function listDocuments({ skip = 0, limit = 200 } = {}) {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  });
+  const res = await fetch(`${DOCUMENTS_BASE}?${params}`, {
     headers: authHeaders(),
   });
   await rejectIfNotOk(res, `Failed to load documents (${res.status})`);
