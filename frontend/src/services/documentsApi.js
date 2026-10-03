@@ -189,6 +189,7 @@ export function mapDocumentToRow(doc) {
     keywords: doc.keywords || "—",
     supervisoryCommittee: doc.supervisory_committee || "—",
     status: statusMap[doc.status] || doc.status || "Processing",
+    statusMessage: doc.status_message || null,
     uploadedAt,
     date: uploadDate
       ? uploadDate.toLocaleDateString("en-GB", {

@@ -677,19 +677,34 @@ export default function DocumentsManagement() {
                         </span>
                       </td>
                       <td className="py-1.5 px-2">
-                        <span
-                          className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                            row.status === "Ready"
-                              ? "bg-green-100 text-green-700"
-                              : row.status === "Failed"
-                                ? "bg-red-100 text-red-700"
-                                : row.status === "Pending"
-                                  ? "bg-slate-100 text-slate-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {row.status}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className={`w-fit px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                              row.status === "Ready"
+                                ? "bg-green-100 text-green-700"
+                                : row.status === "Failed"
+                                  ? "bg-red-100 text-red-700"
+                                  : row.status === "Pending"
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-yellow-100 text-yellow-700"
+                            }`}
+                            title={
+                              row.status === "Failed" && row.statusMessage
+                                ? row.statusMessage
+                                : undefined
+                            }
+                          >
+                            {row.status}
+                          </span>
+                          {row.status === "Failed" && row.statusMessage && (
+                            <span
+                              className="max-w-[220px] truncate text-[10px] leading-snug text-red-600"
+                              title={row.statusMessage}
+                            >
+                              {row.statusMessage}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1.5 px-2 text-gray-500 whitespace-nowrap">{row.date}</td>
                       <td className="py-1.5 px-2 text-center">
@@ -806,6 +821,11 @@ export default function DocumentsManagement() {
                     </span>
                   )}
                 </div>
+                {detailsRow.status === "Failed" && detailsRow.statusMessage && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {detailsRow.statusMessage}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

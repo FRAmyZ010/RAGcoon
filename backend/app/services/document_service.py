@@ -103,6 +103,7 @@ def accept_document_upload(db: Session, file: Any) -> Document:
             file_path=temp_file_path,
             title=original_filename,
             status=ProcessingStatus.PENDING.value,
+            status_message=None,
         )
         db.add(document)
         db.commit()
@@ -148,6 +149,7 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         return document
 
     document.status = ProcessingStatus.PROCESSING.value
+    document.status_message = None
     db.commit()
     db.refresh(document)
 
@@ -224,11 +226,12 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
 
         chunks = chunk_extracted_data(pages)
         success = upload_to_qdrant(chunks)
-        document.status = (
-            ProcessingStatus.COMPLETED.value
-            if success
-            else ProcessingStatus.FAILED.value
-        )
+        if success:
+            document.status = ProcessingStatus.COMPLETED.value
+            document.status_message = None
+        else:
+            document.status = ProcessingStatus.FAILED.value
+            document.status_message = "อัปโหลดไปยัง vector store (Qdrant) ไม่สำเร็จ"
         db.commit()
         db.refresh(document)
         return document
@@ -239,6 +242,7 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         document = get_document_by_id(db=db, document_id=document_id)
         if document:
             document.status = ProcessingStatus.FAILED.value
+            document.status_message = e.message
             db.commit()
             db.refresh(document)
         return document
@@ -248,6 +252,7 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         document = get_document_by_id(db=db, document_id=document_id)
         if document:
             document.status = ProcessingStatus.FAILED.value
+            document.status_message = f"เกิดข้อผิดพลาดระหว่างประมวลผล: {e}"
             db.commit()
             db.refresh(document)
         return document
