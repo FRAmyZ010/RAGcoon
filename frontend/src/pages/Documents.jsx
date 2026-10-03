@@ -320,13 +320,20 @@ export default function DocumentsManagement() {
     setActiveMenuId(id);
   };
 
-  const filteredFiles = filesData.filter((row) => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
-    return [row.title, row.authors, row.advisor, row.year]
-      .map((value) => String(value ?? "").toLowerCase())
-      .some((value) => value.includes(q));
-  });
+  const filteredFiles = filesData
+    .filter((row) => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return [row.title, row.authors, row.advisor, row.year]
+        .map((value) => String(value ?? "").toLowerCase())
+        .some((value) => value.includes(q));
+    })
+    .slice()
+    .sort((a, b) => {
+      const aPending = a.status === "Pending" ? 1 : 0;
+      const bPending = b.status === "Pending" ? 1 : 0;
+      return aPending - bPending;
+    });
 
   const selectedCount = selectedIds.size;
   const allVisibleSelected =

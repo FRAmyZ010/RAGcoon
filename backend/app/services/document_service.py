@@ -3,6 +3,7 @@ import os
 import shutil
 import uuid
 from typing import Any
+from sqlalchemy import case
 from sqlalchemy.orm import Session, joinedload
 from app.models.project import Project
 from app.models.document import Document
@@ -278,10 +279,14 @@ def process_document_upload_auto(
 
 
 def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Document]:
+    pending_last = case(
+        (Document.status == ProcessingStatus.PENDING.value, 1),
+        else_=0,
+    )
     return (
         db.query(Document)
         .options(joinedload(Document.project))
-        .order_by(Document.upload_date.desc())
+        .order_by(pending_last.asc(), Document.upload_date.desc())
         .offset(skip)
         .limit(limit)
         .all()
