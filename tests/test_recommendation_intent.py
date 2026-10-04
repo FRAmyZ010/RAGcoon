@@ -23,11 +23,13 @@ def test_recommendation_intent_detection():
         "แนะนำโปรเจกต์ที่น่าสนใจและเอาไปต่อยอดได้หน่อย",
         "Suggest some good computer engineering projects",
         "มีหัวข้อโปรเจกต์ไหนน่าสนใจเอาไปทำเป็น Senior Project บ้าง",
+        "Are there any projects worth developing further into a mobile app senior project?",
     ]
     for q in queries:
         norm_q, filters, intent = process_query_with_llm(q)
         print(f"Query: '{q}' -> Intent: {intent} | Filters: {filters}")
         assert intent == "RECOMMENDATION", f"Expected RECOMMENDATION, got {intent} for '{q}'"
+        assert "year" not in filters, f"Expected no year filter, got {filters.get('year')} for '{q}'"
     print("✅ Intent Detection for RECOMMENDATION passed!")
 
 

@@ -7,8 +7,8 @@ _THAI_TECHNICAL_KEYWORDS = [
     "โฟลว์", "ผังงาน", "ฮาร์ดแวร์", "ซอฟต์แวร์", "เซนเซอร์", "เซ็นเซอร์",
     "ไมโครคอนโทรลเลอร์", "บอร์ด", "เครื่องมือ", "ฐานข้อมูล", "ตาราง", "โค้ด",
     "ความแม่นยำ", "ผลการทดลอง", "การประเมิน", "เปรียบเทียบ", "ต่างกัน",
-    "แนะนำ", "ต่อยอด", "ข้อดี", "ข้อเสีย", "ข้อจำกัด", "รายละเอียดเชิงลึก",
-    "ใช้อะไร", "ใช้อุปกรณ์",
+    "แนะนำ", "ต่อยอด", "ทำต่อ", "พัฒนาต่อ", "พัฒนา", "ข้อดี", "ข้อเสีย", "ข้อจำกัด", "รายละเอียดเชิงลึก",
+    "ใช้อะไร", "ใช้อุปกรณ์", "แอป", "แอพ", "โมบาย", "เว็บ", "ไอโอที",
 ]
 
 _ENGLISH_TECHNICAL_KEYWORDS = {
@@ -18,8 +18,11 @@ _ENGLISH_TECHNICAL_KEYWORDS = {
     "framework", "library", "database", "db", "sql", "table", "schema", "code",
     "accuracy", "result", "results", "evaluation", "testing", "difference", "differences",
     "compare", "comparison", "recommend", "recommendation", "suggest", "suggestion",
-    "idea", "future work", "pros", "cons", "advantage", "limitation", "limitations",
+    "idea", "ideas", "future work", "pros", "cons", "advantage", "limitation", "limitations",
     "esp32", "esp8266", "arduino", "lora", "lorawan", "ble", "bluetooth", "iot",
+    "mobile", "app", "apps", "application", "applications", "android", "ios", "tracking", "gps",
+    "web", "website", "platform", "online", "portal", "cloud",
+    "develop", "developing", "development", "worth", "suitable", "build", "extend",
 }
 
 _DISQUALIFIED_INTENTS = {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}

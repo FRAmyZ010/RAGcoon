@@ -52,12 +52,22 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
     """Rule-based intent detection fallback."""
     q = raw_query.lower()
     # 1. COMPARISON has highest priority (e.g. compare, comparison, เปรียบเทียบ, vs, versus, between ... and)
-    # Even if project titles contain words like 'recommendation' or 'code', the user's action is to compare!
     if any(k in q for k in ["compare", "comparison", "เปรียบเทียบ", "เทียบ", "แตกต่าง", " vs ", "versus", "ไหนดีกว่า", "ดีที่สุด", "matrix", "แมทริกซ์", "ให้คะแนน", "ประเมิน", "evaluate", "scoring", "score", "between"]):
         return "COMPARISON"
     if any(k in q for k in ["code", "source code", "sql", "select", "function", "คำสั่ง", "โค้ด", "ฟังก์ชัน", ".php", ".py", ".js", ".java"]):
         return "CODE"
-    if any(k in q for k in ["recommend", "recommendation", "suggest", "suggestion", "แนะนำ", "น่าสนใจ", "น่าทำ", "ต่อยอด", "future work", "further study", "ไอเดีย", "เลือกหัวข้อ"]):
+    recommend_triggers = [
+        "recommend", "recommendation", "suggest", "suggestion",
+        "แนะนำ", "น่าสนใจ", "น่าทำ", "ต่อยอด", "ทำต่อ", "พัฒนาต่อ",
+        "future work", "further study", "further work", "further research",
+        "further develop", "further development", "develop further", "developing further",
+        "worth developing", "worth doing", "worth pursuing", "worth",
+        "build upon", "building upon",
+        "ไอเดีย", "เลือกหัวข้อ", "หัวข้อน่าสนใจ", "project idea", "project ideas",
+        "topic idea", "topic ideas", "senior project idea", "senior project ideas",
+        "good project to", "good topic", "suitable for",
+    ]
+    if any(k in q for k in recommend_triggers):
         return "RECOMMENDATION"
     if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
         return "EXPLORATORY"
@@ -72,7 +82,7 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
     if any(k in q for k in [
         "ขอรายชื่อ", "รายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์", "list all", "all projects",
         "show all", "list", "survey", "มีอะไรบ้าง", "อะไรบ้าง", "มีโครงงานอะไร", "โครงงานทั้งหมด",
-        "โปรเจกต์ทั้งหมด", "โครงงานในปี", "โปรเจกต์ในปี", "any project", "which project", "ขอเอกสาร"
+        "โปรเจกต์ทั้งหมด", "โครงงานในปี", "โปรเจกต์ในปี", "which project", "ขอเอกสาร"
     ]):
         return "EXPLORATORY"
     # Specific factual questions about a project (microcontroller, sensor, tool, author, advisor, year, objective, etc.)
@@ -113,12 +123,12 @@ def _build_dynamic_system_prompt() -> str:
 
 Your task is to analyze the user's raw query (which may be in Thai, English, have typos, informal slang, or relative dates) and return a JSON object with:
 1. "normalized_query": Search query translated into concise, technical English keywords for semantic vector search (e.g. translate Thai terms 'บลูทูธ' -> 'Bluetooth low energy BLE', 'เครือข่ายไร้สาย' -> 'wireless networks', 'นัดหมายอาจารย์' -> 'lecturer appointment', 'คนไข้' -> 'patient discharge', 'ประหยัดพลังงาน' -> 'energy saving'). All subject topics, tech domains, and search keywords belong here.
-2. "advisor": Exact matching advisor from the KNOWN ADVISORS list. (Thai names/prefixes like 'อาจารย์สุรพล' / 'อ.สุรพล' / 'สุรพล' must be mapped to 'Aj. Surapol Vorapatratorn', 'อ.มาหะมะ' / 'มาหะมะ' -> 'Dr. Mahamah Sebakor', etc.). Return null if asking WHO is the advisor or if not mentioned.
-3. "author": Exact matching author name(s) from the KNOWN AUTHORS list. If multiple authors are mentioned, return a list/array of author names (e.g. ["FANA YAHLEE", "ROMTHEERA WANG"]). If single author, return a string (e.g. "PHUMPHOL CHANRUNGSRICHAY"). If not mentioned, return null.
-4. "year": 4-digit academic year in Christian Era (e.g. convert Thai year 2565 or 65 -> 2022, 2563 or 63 -> 2020). Return null if no year is specified.
+2. "advisor": Exact matching advisor from the KNOWN ADVISORS list. (Thai names/prefixes like 'อาจารย์สุรพล' / 'อ.สุรพล' / 'สุรพล' must be mapped to 'Aj. Surapol Vorapatratorn', 'อ.มาหะมะ' / 'มาหะมะ' -> 'Dr. Mahamah Sebakor', etc.). Return null if asking WHO is the advisor or if not mentioned in the CURRENT query.
+3. "author": Exact matching author name(s) from the KNOWN AUTHORS list. If multiple authors are mentioned, return a list/array of author names (e.g. ["FANA YAHLEE", "ROMTHEERA WANG"]). If single author, return a string (e.g. "PHUMPHOL CHANRUNGSRICHAY"). If not mentioned in the CURRENT query, return null.
+4. "year": 4-digit academic year in Christian Era (e.g. convert Thai year 2565 or 65 -> 2022, 2563 or 63 -> 2020). Return null if no year is specified in the CURRENT query.
 5. "project_title": Exact project title from the KNOWN PROJECTS list if specifically referenced, otherwise null.
 6. "intent": One of ["RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"].
-   - "RECOMMENDATION": Asking for project recommendations, ideas, suggestions, interesting topics to study or build upon (e.g. "แนะนำโปรเจกต์หน่อย", "Could you recommend some projects?", "มีโปรเจกต์ไหนน่าสนใจเอาไปทำต่อยอดได้บ้าง", "Suggest some good projects"). DO NOT lock project_title filter.
+   - "RECOMMENDATION": Asking for project recommendations, ideas, suggestions, interesting topics to study, build upon, or develop further (e.g. "แนะนำโปรเจกต์หน่อย", "Could you recommend some projects?", "Are there any projects worth developing further into a mobile app?", "มีโปรเจกต์ไหนน่าสนใจเอาไปทำต่อยอดได้บ้าง"). DO NOT lock project_title or year filters.
    - "EXPLORATORY": Surveying, listing, or searching multiple projects in a specific domain or advised by a specific teacher (e.g. "มีโปรเจกต์เกี่ยวกับ IoT อะไรบ้าง", "อาจารย์สุรพล ดูแลโปรเจกต์อะไรบ้าง", "List all web projects"). DO NOT lock project_title filter.
    - "DEEP_DIVE": In-depth analysis of a single named project (e.g. "อธิบายระบบ X อย่างละเอียด", "Architecture of project Y").
    - "COMPARISON": Direct pairwise comparison between 2 specific named projects (e.g. "เปรียบเทียบ A กับ B", "Compare X and Y").
@@ -141,12 +151,18 @@ KNOWN YEARS:
 OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO CODEBLOCKS):
 {{
   "normalized_query": "English technical search keywords",
-  "advisor": "Exact Advisor Name or null",
-  "author": ["Author 1", "Author 2"] or "Exact Author Name" or null,
-  "year": "2022 or null",
-  "project_title": "Exact Title or null",
-  "intent": "EXPLORATORY"
-}}"""
+  "advisor": null,
+  "author": null,
+  "year": null,
+  "project_title": null,
+  "intent": "FACTOID"
+}}
+
+IMPORTANT:
+- Leave advisor, author, year, project_title as null unless explicitly stated in the CURRENT user query.
+- Never invent or assume a year, advisor, author, or project title.
+- If asking for ideas, suggestions, or projects to develop further/build upon, intent MUST be "RECOMMENDATION".
+"""
     _cached_meta_hash = current_meta_hash
     return _cached_system_prompt
 
@@ -319,17 +335,120 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
 
     # Fast-path case 4: ค้นหาโครงงานตามปีการศึกษา (Group / Exploratory by Year)
     if matched_year and any(k in q_lower for k in ["โครงงาน", "โปรเจกต์", "project", "projects", "รายชื่อ", "ทั้งหมด", "มีอะไรบ้าง", "อะไรบ้าง", "ปีการศึกษา", "ปี"]):
-        filters = {"year": matched_year}
-        norm_q = f"senior projects in academic year {matched_year}"
-        return norm_q, filters, "EXPLORATORY"
+        if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
+            from .template_responder import _has_technical_keywords
+            if not _has_technical_keywords(raw_query):
+                filters = {"year": matched_year}
+                norm_q = f"senior projects in academic year {matched_year}"
+                return norm_q, filters, "EXPLORATORY"
 
     # Fast-path case 5: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
     if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร", "รายชื่อ", "ทั้งหมด"]):
-        filters = {"advisor": matched_advisor}
-        norm_q = f"senior projects advised by {matched_advisor}"
-        return norm_q, filters, "EXPLORATORY"
+        if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
+            from .template_responder import _has_technical_keywords
+            if not _has_technical_keywords(raw_query):
+                filters = {"advisor": matched_advisor}
+                norm_q = f"senior projects advised by {matched_advisor}"
+                return norm_q, filters, "EXPLORATORY"
 
     return None
+
+
+def _clean_filter_value(val: Any) -> Optional[str]:
+    """Return cleaned string or None if falsy / null-like."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s or s.lower() in {"null", "none", "nil", "n/a", "undefined", '""', "''"}:
+        return None
+    return s
+
+
+def _is_year_explicitly_in_query(query: str, candidate_year: str) -> bool:
+    """Check whether candidate_year is explicitly present or referenced in query."""
+    if not candidate_year or not query:
+        return False
+    clean_cand = str(candidate_year).strip()
+    q_low = query.lower()
+    if clean_cand in q_low:
+        return True
+    try:
+        ce_int = int(clean_cand)
+        be_str = str(ce_int + 543)
+        if be_str in q_low:
+            return True
+        short_be = be_str[-2:]
+        if re.search(rf"(?:ปี|พ\.ศ\.)\s*['\"]?{short_be}\b", q_low):
+            return True
+    except (ValueError, TypeError):
+        pass
+    from .extractor import _extract_year
+    extracted, _ = _extract_year(query)
+    if extracted and extracted == clean_cand:
+        return True
+    if any(rel in q_low for rel in ["ปีล่าสุด", "ปีที่แล้ว", "latest year", "last year", "most recent year"]):
+        return True
+    return False
+
+
+def _is_advisor_explicitly_in_query(query: str, candidate_advisor: str, chat_history: Optional[str] = None) -> bool:
+    """Check whether candidate_advisor is explicitly mentioned in query or follow-up pronoun."""
+    if not candidate_advisor or not query:
+        return False
+    q_low = query.lower()
+    advisor_aliases = {
+        "สุรพล": "Aj. Surapol Vorapatratorn",
+        "surapol": "Aj. Surapol Vorapatratorn",
+        "มาหะมะ": "Aj. Dr.Mahamah Sebakor",
+        "mahamah": "Aj. Dr.Mahamah Sebakor",
+        "ทศพร": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
+        "tossapon": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
+        "ณัฐพล": "Assoc.Prof. Nattapol Aunsri, Ph.D",
+        "nattapol": "Assoc.Prof. Nattapol Aunsri, Ph.D",
+        "ภัทรมน": "Asst. Prof. Pattaramon Vuttipittayamongkol, Ph.D",
+        "pattaramon": "Asst. Prof. Pattaramon Vuttipittayamongkol, Ph.D",
+    }
+    for alias, canon in advisor_aliases.items():
+        if canon.lower() == candidate_advisor.lower() and alias in q_low:
+            return True
+    name_tokens = [
+        w for w in re.findall(r"[a-z]+", candidate_advisor.lower())
+        if len(w) >= 3 and w not in {"prof", "asst", "assoc", "doctor", "lecturer", "dr", "aj", "phd", "wg", "cdr"}
+    ]
+    if any(tok in q_low for tok in name_tokens):
+        return True
+    if chat_history and any(p in q_low for p in ["his project", "his projects", "her project", "her projects", "ของเขา", "ของท่าน", "อาจารย์ท่านนี้"]):
+        if candidate_advisor.lower() in chat_history.lower():
+            return True
+    return False
+
+
+def _is_title_explicitly_in_query(query: str, candidate_title: str, chat_history: Optional[str] = None) -> bool:
+    """Check whether candidate_title is explicitly mentioned in query or follow-up pronoun."""
+    if not candidate_title or not query:
+        return False
+    q_low = query.lower()
+    t_low = candidate_title.lower()
+    if t_low in q_low or (len(t_low) > 8 and t_low[:18] in q_low):
+        return True
+    words = [w for w in re.split(r"[\s\-_]+", t_low) if len(w) >= 3 and w not in ["the", "and", "for", "system", "systems", "project", "proposal", "using", "with", "based", "application", "web"]]
+    for i in range(len(words)):
+        phrase = " ".join(words[i:i+2])
+        if len(phrase) >= 8 and phrase in q_low:
+            return True
+    if chat_history and any(p in q_low for p in ["the project", "this project", "this system", "that project", "โปรเจกต์นี้", "โครงงานนี้", "ระบบนี้"]):
+        if candidate_title.lower() in chat_history.lower():
+            return True
+    return False
+
+
+def _is_author_explicitly_in_query(query: str, candidate_author: str) -> bool:
+    """Check whether candidate_author name tokens are in query."""
+    if not candidate_author or not query:
+        return False
+    q_low = query.lower()
+    name_tokens = [w for w in re.findall(r"[a-z]+", candidate_author.lower()) if len(w) >= 3 and w not in _NON_NAME_WORDS]
+    return any(tok in q_low for tok in name_tokens)
 
 
 def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -> tuple[str, dict[str, Any], str]:
@@ -351,64 +470,82 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     # 1. เรียก Ollama วิเคราะห์คำถามแบบ Dynamic
     llm_result = _call_ollama_for_query_parsing(raw_query, chat_history=chat_history)
 
+    domain_map = {
+        "web": ["web", "platform", "เว็บ", "portal", "website", "dashboard", "frontend", "backend", "fullstack", "react", "html", "php"],
+        "iot": ["iot", "sensor", "hardware", "arduino", "esp32", "อุปกรณ์", "เซนเซอร์", "watering"],
+        "automation": ["automation", "automatic", "อัตโนมัติ", "control", "monitoring"],
+        "machine learning": ["machine learning", "ai", "deep learning", "prediction", "ทำนาย", "classification"],
+        "energy": ["energy", "saving", "ประหยัดพลังงาน", "access point", "power"],
+        "mobile": ["mobile", "app", "apps", "android", "ios", "tracking", "gps", "มือถือ"],
+        "healthcare": ["health", "hospital", "patient", "discharge", "โรงพยาบาล", "คนไข้"],
+        "cybersecurity": ["security", "network", "penetration", "attack", "ความปลอดภัย"],
+    }
+
     if llm_result:
         norm_query = llm_result.get("normalized_query", "").strip() or raw_query
         filters: dict[str, Any] = {}
         intent = str(llm_result.get("intent", "")).upper().strip()
 
-        if llm_result.get("advisor"):
-            raw_advisor = str(llm_result["advisor"]).strip()
+        advisor_raw = _clean_filter_value(llm_result.get("advisor"))
+        if advisor_raw:
             matched_advisor = None
             for ca in metadata_cache.advisors:
-                if raw_advisor.lower() == ca.lower() or raw_advisor.lower() in ca.lower():
+                if advisor_raw.lower() == ca.lower() or advisor_raw.lower() in ca.lower():
                     matched_advisor = ca
                     break
-            filters["advisor"] = matched_advisor or raw_advisor
+            cand_advisor = matched_advisor or advisor_raw
+            if _is_advisor_explicitly_in_query(raw_query, cand_advisor, chat_history):
+                filters["advisor"] = cand_advisor
 
-        if llm_result.get("year"):
-            filters["year"] = str(llm_result["year"]).strip()
+        year_raw = _clean_filter_value(llm_result.get("year"))
+        if year_raw:
+            if _is_year_explicitly_in_query(raw_query, year_raw):
+                filters["year"] = year_raw
 
-        if llm_result.get("project_title"):
-            raw_title = str(llm_result["project_title"]).strip()
+        title_raw = _clean_filter_value(llm_result.get("project_title"))
+        if title_raw:
             matched_title = None
             for ct in metadata_cache.titles:
-                if raw_title.lower() == ct.lower():
+                if title_raw.lower() == ct.lower():
                     matched_title = ct
                     break
-                if ct.lower() in raw_title.lower() or raw_title.lower() in ct.lower():
+                if ct.lower() in title_raw.lower() or title_raw.lower() in ct.lower():
                     matched_title = ct
                     break
-                if len(ct) > 10 and len(raw_title) > 10 and (ct.lower()[:20] == raw_title.lower()[:20]):
+                if len(ct) > 10 and len(title_raw) > 10 and (ct.lower()[:20] == title_raw.lower()[:20]):
                     matched_title = ct
                     break
-            filters["project_title"] = matched_title or raw_title
+            cand_title = matched_title or title_raw
+            if _is_title_explicitly_in_query(raw_query, cand_title, chat_history):
+                filters["project_title"] = cand_title
 
-        if llm_result.get("author"):
-            raw_author = llm_result["author"]
-            raw_authors_list = raw_author if isinstance(raw_author, list) else [raw_author]
+        author_raw = llm_result.get("author")
+        if author_raw:
+            raw_authors_list = author_raw if isinstance(author_raw, list) else [author_raw]
             resolved_authors = []
             for item in raw_authors_list:
-                for sub_item in str(item).split(","):
+                cleaned_item = _clean_filter_value(item)
+                if not cleaned_item:
+                    continue
+                for sub_item in cleaned_item.split(","):
                     s = sub_item.strip()
-                    if not s:
+                    if not s or s.lower() in {"null", "none"}:
                         continue
                     matched = None
                     for ca in metadata_cache.authors:
-                        if s.lower() == ca.lower():
+                        if s.lower() == ca.lower() or s.lower() in ca.lower():
                             matched = ca
                             break
-                        elif s.lower() in ca.lower():
-                            matched = ca
                     resolved_name = matched or s
-                    if resolved_name not in resolved_authors:
-                        resolved_authors.append(resolved_name)
+                    if _is_author_explicitly_in_query(raw_query, resolved_name):
+                        if resolved_name not in resolved_authors:
+                            resolved_authors.append(resolved_name)
             if resolved_authors:
                 filters["author"] = resolved_authors if len(resolved_authors) > 1 else resolved_authors[0]
 
-        if llm_result.get("keywords"):
-            kw = str(llm_result["keywords"]).strip()
-            if kw and kw.lower() not in norm_query.lower():
-                norm_query = f"{norm_query} {kw}".strip()
+        keywords_raw = _clean_filter_value(llm_result.get("keywords"))
+        if keywords_raw and keywords_raw.lower() not in norm_query.lower():
+            norm_query = f"{norm_query} {keywords_raw}".strip()
 
         # Hybrid Enrichment: ถ้า LLM พลาด filter สำคัญ ให้ตัว extractor ดึงเสริม
         clean_norm = normalize_user_query(raw_query)
@@ -419,7 +556,7 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
                 rule_authors = v if isinstance(v, list) else [v]
                 valid_rule_authors = [
                     a for a in rule_authors
-                    if any(tok.lower() in raw_query.lower() for tok in str(a).split() if len(tok) >= 3)
+                    if _is_author_explicitly_in_query(raw_query, str(a))
                 ]
                 if valid_rule_authors:
                     if k not in filters:
@@ -428,12 +565,19 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
                         current_authors = filters[k] if isinstance(filters[k], list) else [filters[k]]
                         merged = list(dict.fromkeys(current_authors + valid_rule_authors))
                         filters[k] = merged if len(merged) > 1 else merged[0]
-            elif k not in filters:
-                filters[k] = v
+            elif k == "year":
+                if _is_year_explicitly_in_query(raw_query, str(v)):
+                    filters[k] = v
+            elif k == "advisor":
+                if _is_advisor_explicitly_in_query(raw_query, str(v), chat_history):
+                    filters[k] = v
+            elif k == "project_title":
+                if _is_title_explicitly_in_query(raw_query, str(v), chat_history):
+                    filters[k] = v
 
         valid_intents = {"RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"}
         rule_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
-        if rule_intent == "COMPARISON" or intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
+        if rule_intent in {"COMPARISON", "RECOMMENDATION", "CODE"} or intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             intent = rule_intent
 
         if filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not filters.get("project_title"):
@@ -450,19 +594,15 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
         elif intent in {"RECOMMENDATION", "EXPLORATORY"}:
             filters.pop("project_title", None)
             filters.pop("author", None)
+            if intent == "RECOMMENDATION":
+                # Only keep year if explicitly requested in raw query
+                if "year" in filters and not _is_year_explicitly_in_query(raw_query, str(filters["year"])):
+                    filters.pop("year", None)
+                if "advisor" in filters and not _is_advisor_explicitly_in_query(raw_query, str(filters["advisor"]), chat_history):
+                    filters.pop("advisor", None)
 
         if intent == "RECOMMENDATION":
             domain_keywords = []
-            domain_map = {
-                "web": ["web", "platform", "เว็บ", "application", "system"],
-                "iot": ["iot", "sensor", "hardware", "arduino", "esp32", "อุปกรณ์", "เซนเซอร์", "watering"],
-                "automation": ["automation", "automatic", "อัตโนมัติ", "control", "monitoring"],
-                "machine learning": ["machine learning", "ai", "deep learning", "prediction", "ทำนาย", "classification"],
-                "energy": ["energy", "saving", "ประหยัดพลังงาน", "access point", "power"],
-                "mobile": ["mobile", "app", "android", "ios", "tracking", "gps", "มือถือ"],
-                "healthcare": ["health", "hospital", "patient", "discharge", "โรงพยาบาล", "คนไข้"],
-                "cybersecurity": ["security", "network", "penetration", "attack", "ความปลอดภัย"],
-            }
             for d_name, kw_list in domain_map.items():
                 if any(kw in raw_query.lower() for kw in kw_list):
                     domain_keywords.append(d_name)
@@ -488,4 +628,16 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     elif fallback_intent in {"RECOMMENDATION", "EXPLORATORY"}:
         fallback_filters.pop("project_title", None)
         fallback_filters.pop("author", None)
+        if fallback_intent == "RECOMMENDATION":
+            if "year" in fallback_filters and not _is_year_explicitly_in_query(raw_query, str(fallback_filters["year"])):
+                fallback_filters.pop("year", None)
+            if "advisor" in fallback_filters and not _is_advisor_explicitly_in_query(raw_query, str(fallback_filters["advisor"]), chat_history):
+                fallback_filters.pop("advisor", None)
+            domain_keywords = []
+            for d_name, kw_list in domain_map.items():
+                if any(kw in raw_query.lower() for kw in kw_list):
+                    domain_keywords.append(d_name)
+            if domain_keywords:
+                fallback_filters["target_domains"] = domain_keywords
+
     return clean_q, fallback_filters, fallback_intent

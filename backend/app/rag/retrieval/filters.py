@@ -15,7 +15,7 @@ def build_qdrant_filter(filters: dict | None) -> Filter | None:
     for key, value in filters.items():
         if key not in VALID_FILTER_KEYS:
             continue
-        if value is None or value == "" or value == []:
+        if value is None or value == "" or value == [] or str(value).strip().lower() in ("null", "none", "n/a", "undefined"):
             continue
 
         if key == "author":
