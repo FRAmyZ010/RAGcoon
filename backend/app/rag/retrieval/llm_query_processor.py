@@ -155,7 +155,7 @@ def _call_ollama_for_query_parsing(raw_query: str, chat_history: Optional[str] =
     """เรียก Ollama Local API เพื่อประมวลผล Query โดยนำบริบทสนทนาก่อนหน้า (chat_history) มาร่วมวิเคราะห์"""
     system_prompt = _build_dynamic_system_prompt()
     if chat_history and chat_history.strip():
-        user_prompt = f"Recent Conversation History:\n{chat_history.strip()}\n\nCurrent User Query: \"{raw_query}\"\n(Note: Resolve any pronouns like 'โปรเจกต์นี้', 'เขา', 'it', 'this project', 'his/her' using the recent conversation history to find the referenced project/advisor/year)\nJSON Output:"
+        user_prompt = f"Recent Conversation History:\n{chat_history.strip()}\n\nCurrent User Query: \"{raw_query}\"\n(Note: Resolve explicit pronouns like 'โปรเจกต์นี้', 'this project', 'it' ONLY when the user explicitly refers to the previous entity. If the current query does not explicitly specify a filter or is a new/domain question, leave that filter null and do NOT inherit filters from previous turns.)\nJSON Output:"
     else:
         user_prompt = f"User Query: \"{raw_query}\"\nJSON Output:"
 
@@ -238,17 +238,18 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
                         matched_titles.append(title)
                     break
 
-    # 2.1 ถ้าไม่มีชื่อในคำถาม แต่เป็นคำถามต่อเนื่อง (Follow-up query) ให้ดึงโปรเจกต์ล่าสุดจาก Chat History
+    # 2.1 ดึงโปรเจกต์ล่าสุดจาก Chat History เฉพาะเมื่อผู้ใช้ระบุคำสรรพนามชี้เฉพาะ (Explicit Pronouns) ถึงโปรเจกต์ก่อนหน้าเท่านั้น
     if not matched_titles and chat_history and chat_history.strip():
-        follow_up_markers = [
-            "the project", "this project", "this system", "that project", "it", "they", "them",
-            "who carried out", "who did", "who is", "who made", "who created", "who developed",
-            "author", "authors", "advisor", "advisors", "sensor", "sensors", "hardware", "tool", "tools",
-            "limitation", "limitations", "objective", "objectives", "methodology", "feature", "features",
-            "โปรเจกต์นี้", "โครงงานนี้", "ระบบนี้", "นี้", "เขา", "ใครทำ", "ใครเป็นคนทำ", "ใครเป็นผู้จัดทำ",
-            "ข้อจำกัด", "วัตถุประสงค์", "เซนเซอร์", "ที่ปรึกษา", "พัฒนาโดยใคร", "ทำอะไรได้บ้าง"
+        explicit_follow_up_markers = [
+            "the project", "this project", "this system", "that project", "about it", "of it",
+            "โปรเจกต์นี้", "โครงงานนี้", "ระบบนี้", "เรื่องนี้", "โครงการนี้",
         ]
-        if any(marker in q_lower for marker in follow_up_markers):
+        # Never inherit when asking a generic recommendation or multi-project exploratory query
+        is_generic_query = any(k in q_lower for k in [
+            "recommend", "แนะนำ", "similar", "คล้าย", "list", "รายชื่อ", "ทั้งหมด",
+            "all projects", "กี่โครงงาน", "กี่โปรเจกต์", "how many", "มีอะไรบ้าง", "อะไรบ้าง"
+        ])
+        if any(marker in q_lower for marker in explicit_follow_up_markers) and not is_generic_query:
             last_proj = _extract_last_referenced_project(chat_history)
             if last_proj:
                 matched_titles = [last_proj]
