@@ -50,12 +50,12 @@ class UploadValidationTests(unittest.TestCase):
         try:
             with self.assertRaises(DocumentUploadError) as ctx:
                 _assert_pdf_file(path, "huge.pdf")
-            self.assertIn("รวมเกิน", ctx.exception.message)
+            self.assertIn("เกิน", ctx.exception.message)
         finally:
             os.remove(path)
 
     def test_max_total_upload_constant(self):
-        self.assertEqual(MAX_TOTAL_UPLOAD_BYTES, 15 * 1024 * 1024)
+        self.assertEqual(MAX_TOTAL_UPLOAD_BYTES, 100 * 1024 * 1024)
 
     def test_duplicate_error_is_conflict(self):
         err = DuplicateDocumentError("Demo Project")

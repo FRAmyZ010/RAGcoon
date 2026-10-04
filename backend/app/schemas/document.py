@@ -25,6 +25,7 @@ class DocumentResponse(DocumentBase):
     project_id: int | None = None
     file_path: str
     status: ProcessingStatus
+    status_message: str | None = None
     upload_date: datetime
     academic_year: int | None = None
     authors: str | None = None

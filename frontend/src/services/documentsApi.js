@@ -1,7 +1,6 @@
 const DOCUMENTS_BASE = "/api/v1/documents";
-/** No per-file size cap; only the batch total limit applies. */
-export const MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024;
-export const MAX_BATCH_UPLOAD_FILES = 10;
+/** No max file-count cap; only the batch total size limit applies. */
+export const MAX_TOTAL_UPLOAD_BYTES = 100 * 1024 * 1024;
 export const MAX_TOTAL_UPLOAD_MB = MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024);
 const AUTH_TOKEN_KEY = "token";
 
@@ -62,8 +61,12 @@ async function rejectIfNotOk(res, fallback) {
   throw await parseErrorDetail(res, fallback);
 }
 
-export async function listDocuments() {
-  const res = await fetch(DOCUMENTS_BASE, {
+export async function listDocuments({ skip = 0, limit = 200 } = {}) {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  });
+  const res = await fetch(`${DOCUMENTS_BASE}?${params}`, {
     headers: authHeaders(),
   });
   await rejectIfNotOk(res, `Failed to load documents (${res.status})`);
@@ -99,16 +102,13 @@ export async function uploadDocument(file, options = {}) {
 }
 
 /**
- * Upload up to MAX_BATCH_UPLOAD_FILES PDFs. Returns { results, summary }.
- * Partial success is normal (HTTP 200 with failed items in results).
+ * Upload multiple PDFs in one request (total ≤ MAX_TOTAL_UPLOAD_BYTES).
+ * Returns { results, summary }. Partial success is normal (HTTP 200).
  */
 export async function uploadDocumentsBatch(files) {
   const list = Array.from(files || []);
   if (list.length === 0) {
     throw new Error("ไม่ได้เลือกไฟล์");
-  }
-  if (list.length > MAX_BATCH_UPLOAD_FILES) {
-    throw new Error(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
   }
 
   const totalBytes = list.reduce((sum, file) => sum + (file.size || 0), 0);
@@ -169,11 +169,14 @@ export function mapDocumentToRow(doc) {
   const statusMap = {
     COMPLETED: "Ready",
     PROCESSING: "Processing",
-    PENDING: "Processing",
+    PENDING: "Pending",
     FAILED: "Failed",
   };
 
   const uploadDate = doc.upload_date ? new Date(doc.upload_date) : null;
+  const uploadedAt = uploadDate && !Number.isNaN(uploadDate.getTime())
+    ? uploadDate.getTime()
+    : 0;
 
   return {
     id: doc.id,
@@ -186,6 +189,8 @@ export function mapDocumentToRow(doc) {
     keywords: doc.keywords || "—",
     supervisoryCommittee: doc.supervisory_committee || "—",
     status: statusMap[doc.status] || doc.status || "Processing",
+    statusMessage: doc.status_message || null,
+    uploadedAt,
     date: uploadDate
       ? uploadDate.toLocaleDateString("en-GB", {
           day: "2-digit",

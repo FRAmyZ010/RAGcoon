@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import App from "./App.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
 import DocumentsManagement from "./pages/Documents.jsx";
+import FeedbackPage from "./pages/Feedback.jsx";
 import LoginPage from "./pages/Login.jsx";
 import Placeholder from "./pages/Placeholder.jsx";
 import "./index.css";
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/chat" element={<App />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/feedback" element={<FeedbackPage />} />
         <Route
           path="/documents"
           element={
