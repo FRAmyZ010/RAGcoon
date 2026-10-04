@@ -8,7 +8,7 @@ try:
 except Exception:
     pass
 
-from .config import DEFAULT_TOP_K, DEFAULT_TOP_N, INTENT_CONFIG
+from .config import DEFAULT_TOP_K, DEFAULT_TOP_N, INTENT_CONFIG, client, COLLECTION_NAME
 from .extractor import QueryFilterProcessor
 from .filters import build_qdrant_filter
 from .normalizer import normalize_user_query as normalize_query
@@ -191,6 +191,87 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         print("NORMALIZED / CLEAN QUERY:", clean_query)
         print("INTENT:", intent)
         print("FILTERS:", filters)
+
+        # =========================================================================
+        # True Fast-Path Shortcut: Direct Metadata Payload Retrieval
+        # Bypasses expensive Embedding Vector Search and Cross-Encoder Reranker
+        # for pure metadata queries (advisor, authors, year, committee, count)
+        # =========================================================================
+        from .template_responder import _has_technical_keywords
+
+        is_pure_metadata = False
+        matched_title = filters.get("project_title")
+        matched_advisor = filters.get("advisor")
+        matched_year = filters.get("year")
+        q_low = query.lower()
+
+        if intent in {"FACTOID", "EXPLORATORY"} and filters and not _has_technical_keywords(query, project_title=matched_title):
+            if matched_title:
+                is_pure_metadata = True
+            elif matched_advisor and any(k in q_low for k in [
+                "project", "projects", "โครงงาน", "โปรเจกต์", "เรื่องไหน",
+                "อะไรบ้าง", "มีอะไรบ้าง", "ที่ปรึกษา", "ดูแล", "list", "ทั้งหมด",
+                "ขอรายชื่อ", "รายชื่อ", "กี่เรื่อง", "กี่เล่ม", "oversee", "supervised",
+                "advise", "advised", "supervise", "how many", "count", "number of"
+            ]):
+                is_pure_metadata = True
+            elif matched_year and any(k in q_low for k in [
+                "โครงงาน", "โปรเจกต์", "project", "projects", "รายชื่อ", "ทั้งหมด",
+                "มีอะไรบ้าง", "อะไรบ้าง", "ปีการศึกษา", "ปี", "how many", "count", "number of"
+            ]):
+                is_pure_metadata = True
+
+        if is_pure_metadata:
+            fast_start = time.perf_counter()
+            qdrant_filter = build_qdrant_filter(filters)
+            records, _ = client.scroll(
+                collection_name=COLLECTION_NAME,
+                scroll_filter=qdrant_filter,
+                limit=100,
+                with_payload=True,
+                with_vectors=False,
+            )
+            if records:
+                seen_titles = set()
+                fast_results = []
+                for r in records:
+                    p = r.payload or {}
+                    p_title = p.get("project_title") or p.get("title") or p.get("source")
+                    if p_title:
+                        if p_title not in seen_titles:
+                            seen_titles.add(p_title)
+                            fast_results.append({
+                                "id": r.id,
+                                "score": 1.0,
+                                "text": p.get("content", ""),
+                                "payload": p,
+                            })
+                    else:
+                        fast_results.append({
+                            "id": r.id,
+                            "score": 1.0,
+                            "text": p.get("content", ""),
+                            "payload": p,
+                        })
+
+                fast_seconds = time.perf_counter() - fast_start
+                total_seconds = time.perf_counter() - total_start
+                print(f"\n⚡ [FAST-PATH] Direct Metadata Scroll: Found {len(fast_results)} project(s) in {fast_seconds:.3f}s (Vector Search & Cross-Encoder Bypassed)")
+                return {
+                    "results": fast_results,
+                    "errors": [],
+                    "timing": {
+                        "query_proc_seconds": query_proc_seconds,
+                        "retrieval_seconds": fast_seconds,
+                        "rerank_seconds": 0.0,
+                        "total_seconds": total_seconds,
+                    },
+                    "normalized_query": normalized_query,
+                    "filters": filters,
+                    "intent": intent,
+                    "query_variants": [],
+                    "retrieved_count": len(fast_results),
+                }
 
         retrieval_start = time.perf_counter()
         if intent == "COMPARISON":
