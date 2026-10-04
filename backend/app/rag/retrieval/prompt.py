@@ -166,25 +166,16 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     q_lower = question.lower()
     if intent == "RECOMMENDATION":
         return """4. Evidence-Based Project Recommendations:
-   Recommend 2 to 3 DISTINCT matching senior projects from the context.
-
-   CRITICAL RULES:
-   - DISTINCT PROJECTS ONLY: Never list duplicate projects.
-   - DIRECT & CONCISE: Present concrete facts with citations [Source: <file>, Page <X>]. Zero fluff, zero filler.
+   First determine whether each candidate project has an explicit relationship to the requested domain (classify internally as DIRECT MATCH, PARTIAL MATCH, or INSUFFICIENT EVIDENCE).
+   Only DIRECT MATCH and relevant PARTIAL MATCH projects may appear. Do NOT recommend a project merely because it shares generic terms (e.g. application, system, data, online).
 
    Structure:
+   ### Recommended Projects
 
-   ## Recommended Projects
-
-   ### 1. [Project Title]
-   - **Domain & Core Features**: [Key goals and problem solved] [Source: <file>, Page <X>]
-   - **Tech Stack & Hardware**: [Exact languages, frameworks, hardware from document] [Source: <file>, Page <X>]
-   - **Why It Fits**: [1 concise sentence explaining fit]
-
-   ### 2. [Next Distinct Project Title]
-   - **Domain & Core Features**: [Key goals and problem solved] [Source: <file>, Page <X>]
-   - **Tech Stack & Hardware**: [Exact languages, frameworks, hardware from document] [Source: <file>, Page <X>]
-   - **Why It Fits**: [1 concise sentence explaining fit]
+   #### [Project Title]
+   - **Document Evidence**: [Only information explicitly documented in the retrieved context] [Source: <file>, Page <X>]
+   - **Why It Fits**: [Concise 1-sentence explanation of relevance to the requested topic]
+   - **Possible Extension**: [AI-generated suggestion clearly labeled as an extension, NOT a documented feature of the original project]
 
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
@@ -202,23 +193,51 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    ## Sources
    - List each project source filename and pages."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
-        return """4. Concise Technical Breakdown: Directly address the question with concise bullet points:
-   - **Core Objective**: [1-2 sentences] [Source: <file>, Page <X>]
-   - **Methodology & Architecture**: [Key operational flow] [Source: <file>, Page <X>]
-   - **Technologies & Hardware**: [Documented tech stack] [Source: <file>, Page <X>]
-   - **Results & Evaluation**: [Documented results] [Source: <file>, Page <X>]
+        return """4. Structured DEEP_DIVE Analysis:
+   Use this exact structure (describe ONLY documented components and relationships; if information is absent, state 'Not specified in the retrieved document.'):
+
+   ### 📌 Project Overview
+   Explain the documented purpose.
+
+   ### 🏗️ System Architecture
+   Describe ONLY documented components and relationships. (Never assume Frontend, Backend, REST API, Database, Docker, Cloud unless explicitly documented).
+
+   ### 🔄 Data Flow
+   Describe the documented flow. Use a text diagram when evidence supports it:
+   Component A
+       ↓
+   Component B
+       ↓
+   Component C
+   Every arrow must be supported by the document.
+
+   ### 🛠️ Technologies & Hardware
+   List ONLY explicitly documented technologies/hardware.
+
+   ### 👤 User Interaction
+   Explain documented user actions.
+
+   ### 🔔 External Services / Notifications
+   Explain documented external services.
+
+   ### ⚠️ Not Specified
+   Clearly identify architecture or technology information that is missing in the document.
+
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "COMPARISON":
-        return """4. Structured Comparison with Citations:
-   Create a concise comparison table and dimension breakdown:
+        return """4. Evidence-Based Structured Comparison:
+   ONLY compare documented attributes (Project purpose, Main features, Users, Workflow, Technologies, Hardware, Software, Database, External services, Limitations, Documented results).
+   DO NOT invent evaluations (NEVER assign Easy/Medium/Hard, Low/Medium/High, Simple/Complex, Better/Worse).
+   If evidence is missing for an attribute, state: 'Not specified in the retrieved document.'
 
    ## Comparison Overview
    | Dimension | [Project A Title] | [Project B Title] |
    |---|---|---|
-   | Technical Complexity | Evidence & Methodology [Source: <file>, Page <X>] | Evidence & Methodology [Source: <file>, Page <X>] |
-   | Practicality | Documented Use Case [Source: <file>, Page <X>] | Documented Use Case [Source: <file>, Page <X>] |
-   | Technology Stack | Documented technologies ONLY | Documented technologies ONLY |
+   | Purpose & Scope | Documented Purpose [Source: <file>, Page <X>] | Documented Purpose [Source: <file>, Page <X>] |
+   | Core Features | Documented Features [Source: <file>, Page <X>] | Documented Features [Source: <file>, Page <X>] |
+   | Technologies & Hardware | Documented tech stack ONLY | Documented tech stack ONLY |
+   | Database | Documented DB or 'Not specified' | Documented DB or 'Not specified' |
 
    ## Key Differences
    - Concise bullet points comparing the core systems strictly from document evidence.
@@ -227,26 +246,31 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    - [Project A Title]: <Filename.pdf>, Pages: <Pages>
    - [Project B Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "CODE":
-        return """4. Technical Code & Database Schema Extraction:
-   - Extract and present exact code snippets, SQL queries, database tables/schemas, algorithms, or technical configurations with citations [Source: <file>, Page <X>].
-   - If database table structures or columns are present in the documents, detail them concisely.
+        return """4. Code & Technical Implementation Extraction:
+   - Only provide code if actual code or SQL exists in the retrieved context.
+   - If the context only contains database diagrams, table descriptions, or screenshots without actual SQL, state:
+     'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
+   - If nothing relevant exists, state:
+     'The retrieved document does not specify the requested code or SQL.'
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     else:  # FACTOID / FACTUAL_LOOKUP
         if any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
             return """4. Structured Component Breakdown with Inline Citations:
-   Present the components found in the retrieved documents clearly and concisely:
+   Present ONLY components explicitly documented in the retrieved text:
 
    ### 📋 Component Summary
-   - **Microcontroller**: <exact microcontroller name> [Source: <file>, Page <X>]
-   - **Sensors**: <list sensors> [Source: <file>, Page <X>]
-   - **Key Associated Hardware**: <list key modules> [Source: <file>, Page <X>]
+   - **Microcontroller**: <exact microcontroller name or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
+   - **Sensors**: <list sensors or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
+   - **Key Associated Hardware**: <list key modules or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
 
    ## Sources
    - <Project Title>: <Filename.pdf>, Pages: <Pages>"""
         else:
             return """4. Direct Answer with Citations:
-   Provide an exact, concise factual answer directly answering the question in 1-2 sentences, with the exact citation [Source: <file>, Page <X>] appended. Conclude with a '## Sources' line."""
+   Answer directly using the smallest amount of relevant evidence. Do not add unsupported information.
+   Include exact inline citation [Source: <file>, Page <X>] immediately after the factual statement.
+   Conclude with a '## Sources' line."""
 
 
 def _calculate_token_breakdown(
@@ -312,15 +336,17 @@ def _build_full_prompt(
         else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
     )
 
-    system_content = f"""You are an expert academic QA assistant for a university senior project repository.
-Use ONLY the retrieved context below.
+    system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
+Your primary objective is: MAXIMIZE FACTUAL ACCURACY AND SOURCE GROUNDING.
+You answer questions using ONLY the retrieved document context below.
 
-CRITICAL RULES:
-1. STRICTLY CONCISE & DIRECT (เอาแต่เนื้อ ไม่มีน้ำ): {concise_rule} Start IMMEDIATELY with the direct answer. Never write introductory filler (e.g., 'Based on the context...', 'Here is the answer...', 'To answer your question...', 'According to the retrieved documents...').
-2. NO REASONING MONOLOGUE: Never output internal thinking, self-talk, verification steps, or reasoning processes (never write 'I need to...', 'Let me check...', 'First, I will...', 'So the answer is...').
-3. ACCURATE CITATIONS: Every factual claim must include an exact citation: [Source: <source_file>, Page <page_number>]. If page number is unavailable, write [Source: <source_file>, Page: unavailable]. Never guess page numbers.
-4. ZERO Cross-Document Contamination: The context contains numbered documents. Analyze each document strictly on its own. Never mix or transfer details across documents.
-5. If information is not found in the context, state 'Not specified in the retrieved document' (หรือ 'ไม่ระบุในเอกสาร').
+CORE OPERATIONAL RULES:
+1. ABSOLUTE SOURCE-GROUNDING: The retrieved context is the ONLY authoritative source. Never invent information, never use model memory, never infer tech stacks (Web app ≠ React, Mobile app ≠ Flutter, ER diagram ≠ MySQL). If context lacks evidence, state: 'Not specified in the retrieved document.'
+2. EVIDENCE-FIRST GENERATION: Every factual claim must be explicitly supported by the context and have an exact inline citation: [Source: <source_file>, Page <page_number>]. Never invent page numbers.
+3. PROJECT ISOLATION: Never transfer technologies, features, authors, or advisors between projects. If multiple projects are present, isolate each project strictly.
+4. NO INTERNAL REASONING: Zero preamble, zero filler, zero chain-of-thought monologue (never write 'Let me check...', 'I need to...', 'First, I will...'). Start directly with the answer.
+5. NO UNSUPPORTED NUMBERS OR RATINGS: Never invent accuracy, performance metrics, or subjective ratings (never assign Easy/Medium/Hard or Low/High without explicit document proof).
+6. GOLDEN RULE: When in doubt, DO NOT guess. A short answer completely supported by the document is vastly superior to a detailed answer containing unsupported assumptions.
 {intent_instruction}
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""

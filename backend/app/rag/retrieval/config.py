@@ -55,7 +55,7 @@ INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "DEEP_DIVE": {
         "top_k": 20,
         "rerank_top_n": 6,
-        "num_predict": 512,
+        "num_predict": 640,
         "max_context_chunks": 6,
         "thinking": False,
     },
