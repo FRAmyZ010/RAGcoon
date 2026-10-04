@@ -17,6 +17,13 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react";
+import {
+  loadChatThreads,
+  removeChatThread,
+  threadTitleFromMessages,
+  toApiMessages,
+  upsertChatThread,
+} from "./services/chatHistory";
 import { openDocumentPreview } from "./services/documentsApi";
 
 const SUGGESTIONS = [
@@ -36,13 +43,14 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [workspaces, setWorkspaces] = useState([]);
+  const [threads, setThreads] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
   const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New chat");
   const [showCitationsIndex, setShowCitationsIndex] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [feedback, setFeedback] = useState({});
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -56,7 +64,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchWorkspaces();
+    const stored = loadChatThreads();
+    setThreads(stored);
+    const latest = stored[0];
+    if (latest) {
+      setActiveWorkspaceId(latest.id);
+      setActiveWorkspaceTitle(latest.title);
+      setMessages(latest.messages);
+    }
     if (window.innerWidth >= 1024) {
       setSidebarOpen(true);
     }
@@ -70,91 +85,78 @@ export default function App() {
     resizeComposer();
   }, [input]);
 
-  const fetchWorkspaces = async () => {
-    try {
-      const res = await fetch("/api/v1/chat/workspaces");
-      if (res.ok) {
-        setWorkspaces(await res.json());
-      }
-    } catch (err) {
-      console.error("Failed to load workspaces:", err);
-    }
-  };
-
-  const handleNewWorkspace = () => {
-    const newWorkspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
-    setActiveWorkspaceId(newWorkspaceId);
+  const openDraftChat = () => {
+    setActiveWorkspaceId(null);
     setActiveWorkspaceTitle("New chat");
     setMessages([]);
     setShowCitationsIndex(null);
     setFeedback({});
+    setPendingDeleteId(null);
     inputRef.current?.focus();
   };
 
-  const handleSelectWorkspace = async (ws) => {
-    setActiveWorkspaceId(ws.workspace_id);
-    setActiveWorkspaceTitle(ws.title);
-    setLoading(true);
+  const handleSelectThread = (thread) => {
+    setActiveWorkspaceId(thread.id);
+    setActiveWorkspaceTitle(thread.title);
+    setMessages(thread.messages);
     setShowCitationsIndex(null);
-
+    setFeedback({});
+    setPendingDeleteId(null);
     if (window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
+  };
 
-    try {
-      const res = await fetch(`/api/v1/chat/workspaces/${ws.workspace_id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const formattedMessages = [];
-
-        data.queries.forEach((q) => {
-          formattedMessages.push({ role: "user", text: q.query_text });
-          formattedMessages.push({
-            role: "bot",
-            text: q.response_text,
-            citations: q.retrieved_docs?.citations || [],
-            meta: q.retrieved_docs?.timing
-              ? `Total ${formatSeconds(q.retrieved_docs.timing.total_seconds)}s`
-              : "",
-          });
-        });
-
-        setMessages(formattedMessages);
-      }
-    } catch (err) {
-      console.error("Failed to load workspace detail:", err);
-    } finally {
-      setLoading(false);
+  const handleDeleteThread = (threadId) => {
+    setThreads((prev) => removeChatThread(prev, threadId));
+    setPendingDeleteId(null);
+    if (activeWorkspaceId === threadId) {
+      openDraftChat();
     }
   };
 
+  const persistSuccessfulThread = (workspaceId, nextMessages) => {
+    const savedBot = nextMessages.some(
+      (message) => message.role === "bot" && message.text.trim() && message.meta !== "Error"
+    );
+    if (!workspaceId || !savedBot) return;
+
+    const thread = {
+      id: workspaceId,
+      title: threadTitleFromMessages(nextMessages),
+      updatedAt: Date.now(),
+      messages: nextMessages,
+    };
+    setThreads((prev) => upsertChatThread(prev, thread));
+    setActiveWorkspaceTitle(thread.title);
+  };
+
   const streamQuery = async (userQuery, workspaceId = activeWorkspaceId, options = {}) => {
-    const { replaceBotIndex = null } = options;
+    const { replaceBotIndex = null, priorMessages = messages } = options;
     setLoading(true);
 
+    let snapshot;
     let botMsgIndex;
     if (replaceBotIndex != null) {
       botMsgIndex = replaceBotIndex;
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[botMsgIndex] = {
-          role: "bot",
-          text: "",
-          citations: [],
-          meta: "Searching...",
-          model: null,
-        };
-        return updated;
-      });
+      snapshot = priorMessages.map((message, index) =>
+        index === botMsgIndex
+          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null }
+          : message
+      );
     } else {
-      botMsgIndex = messages.length + 1;
-      setMessages((prev) => [
-        ...prev,
+      botMsgIndex = priorMessages.length + 1;
+      snapshot = [
+        ...priorMessages,
         { role: "user", text: userQuery },
         { role: "bot", text: "", citations: [], meta: "Searching..." },
-      ]);
+      ];
     }
+    setMessages(snapshot);
 
+    let saved = false;
+    const historyForApi =
+      replaceBotIndex != null ? priorMessages.slice(0, Math.max(replaceBotIndex - 1, 0)) : priorMessages;
     try {
       const response = await fetch("/api/v1/chat/query-stream", {
         method: "POST",
@@ -162,9 +164,13 @@ export default function App() {
         body: JSON.stringify({
           query_text: userQuery,
           workspace_id: workspaceId,
+          messages: toApiMessages(historyForApi),
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Chat stream failed (${response.status})`);
+      }
       if (!response.body) throw new Error("ReadableStream not supported");
 
       const reader = response.body.getReader();
@@ -191,52 +197,54 @@ export default function App() {
             if (data.type === "answer_chunk") {
               currentText += data.content;
               if (data.workspace_id && !workspaceId) {
+                workspaceId = data.workspace_id;
                 setActiveWorkspaceId(data.workspace_id);
-                fetchWorkspaces();
               }
 
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[botMsgIndex] = {
-                  ...updated[botMsgIndex],
-                  text: currentText,
-                  meta: "Generating...",
-                };
-                return updated;
-              });
+              snapshot = snapshot.map((message, index) =>
+                index === botMsgIndex
+                  ? { ...message, text: currentText, meta: "Generating..." }
+                  : message
+              );
+              setMessages(snapshot);
             }
 
             if (data.type === "metadata") {
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[botMsgIndex] = {
-                  ...updated[botMsgIndex],
-                  citations: data.citations || [],
-                  model: data.model || updated[botMsgIndex]?.model || null,
-                  meta: data.timing
-                    ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
-                    : "Completed",
-                };
-                return updated;
-              });
-              fetchWorkspaces();
+              snapshot = snapshot.map((message, index) =>
+                index === botMsgIndex
+                  ? {
+                      ...message,
+                      citations: data.citations || [],
+                      model: data.model || message?.model || null,
+                      meta: data.timing
+                        ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
+                        : "Completed",
+                    }
+                  : message
+              );
+              setMessages(snapshot);
+              saved = true;
             }
           } catch (err) {
             console.error("JSON Stream Parse Error:", err);
           }
         }
       }
+      if (saved || (currentText.trim() && response.ok)) {
+        persistSuccessfulThread(workspaceId, snapshot);
+      }
     } catch (error) {
       console.error("Streaming error:", error);
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[botMsgIndex] = {
-          ...updated[botMsgIndex],
-          text: "Failed to connect to the RAG engine. Please try again.",
-          meta: "Error",
-        };
-        return updated;
-      });
+      snapshot = snapshot.map((message, index) =>
+        index === botMsgIndex
+          ? {
+              ...message,
+              text: "Failed to connect to the RAG engine. Please try again.",
+              meta: "Error",
+            }
+          : message
+      );
+      setMessages(snapshot);
     } finally {
       setLoading(false);
     }
@@ -259,10 +267,12 @@ export default function App() {
     if (!workspaceId) {
       workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
       setActiveWorkspaceId(workspaceId);
-      setActiveWorkspaceTitle("New chat");
     }
 
-    await streamQuery(userQuery, workspaceId, { replaceBotIndex: botIndex });
+    await streamQuery(userQuery, workspaceId, {
+      replaceBotIndex: botIndex,
+      priorMessages: messages,
+    });
   };
 
   const handleSend = async (e) => {
@@ -276,10 +286,9 @@ export default function App() {
     if (!workspaceId) {
       workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
       setActiveWorkspaceId(workspaceId);
-      setActiveWorkspaceTitle("New chat");
     }
 
-    await streamQuery(userQuery, workspaceId);
+    await streamQuery(userQuery, workspaceId, { priorMessages: messages });
   };
 
   const handleSuggestion = async (text) => {
@@ -289,9 +298,8 @@ export default function App() {
     if (!workspaceId) {
       workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
       setActiveWorkspaceId(workspaceId);
-      setActiveWorkspaceTitle("New chat");
     }
-    await streamQuery(text, workspaceId);
+    await streamQuery(text, workspaceId, { priorMessages: messages });
   };
 
   const handleCopy = async (text, idx) => {
@@ -304,7 +312,7 @@ export default function App() {
     }
   };
 
-  const filteredWorkspaces = workspaces.filter((item) =>
+  const filteredThreads = threads.filter((item) =>
     item.title.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -349,7 +357,7 @@ export default function App() {
         </div>
 
         <button
-          onClick={handleNewWorkspace}
+          onClick={openDraftChat}
           className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 bg-white/10 px-3 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-white/20 hover:text-white md:text-base"
         >
           <MessageSquarePlus className="h-4 w-4" />
@@ -370,22 +378,57 @@ export default function App() {
           <div className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Recents
           </div>
-          {filteredWorkspaces.map((ws) => (
-            <button
-              key={ws.workspace_id}
-              onClick={() => handleSelectWorkspace(ws)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition md:text-base ${
-                activeWorkspaceId === ws.workspace_id
-                  ? "bg-white/20 font-semibold text-white"
-                  : "text-gray-300 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-              <span className="truncate">{ws.title}</span>
-            </button>
+          {filteredThreads.map((thread) => (
+            <div key={thread.id}>
+              <div
+                className={`flex w-full items-center gap-1 rounded-lg pr-1 text-sm transition md:text-base ${
+                  activeWorkspaceId === thread.id
+                    ? "bg-white/20 font-semibold text-white"
+                    : "text-gray-300 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSelectThread(thread)}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                  <span className="truncate">{thread.title}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingDeleteId(thread.id)}
+                  className="shrink-0 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-white"
+                  aria-label={`Delete ${thread.title}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {pendingDeleteId === thread.id && (
+                <div className="mb-1 mt-1 flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-gray-200">
+                  <span>ลบแชทนี้?</span>
+                  <span className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteId(null)}
+                      className="rounded px-2 py-1 hover:bg-white/10"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteThread(thread.id)}
+                      className="rounded px-2 py-1 text-red-300 hover:bg-white/10"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
           ))}
 
-          {filteredWorkspaces.length === 0 && (
+          {filteredThreads.length === 0 && (
             <div className="px-2 py-6 text-center text-sm text-gray-500">
               No chats yet. Start a new conversation.
             </div>

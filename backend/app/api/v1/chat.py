@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
@@ -34,7 +34,8 @@ async def query_rag(
             db=db,
             query_text=request.query_text,
             workspace_id=request.workspace_id,
-            parent_query_id=request.parent_query_id
+            parent_query_id=request.parent_query_id,
+            messages=request.messages,
         )
     except Exception as e:
         raise HTTPException(
@@ -45,6 +46,7 @@ async def query_rag(
 @router.post("/query-stream")
 def query_rag_stream(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -55,7 +57,9 @@ def query_rag_stream(
             db=db,
             query_text=request.query_text,
             workspace_id=request.workspace_id,
-            parent_query_id=request.parent_query_id
+            parent_query_id=request.parent_query_id,
+            messages=request.messages,
+            background_tasks=background_tasks,
         ),
         media_type="text/event-stream"
     )
