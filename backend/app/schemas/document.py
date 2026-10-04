@@ -12,6 +12,7 @@ class DocumentBase(BaseModel):
     filename: str
     title: str | None = None
     supervisory_committee: str | None = None
+    keywords: str | None = None
 
 class DocumentCreate(DocumentBase):
     file_path: str
@@ -24,4 +25,27 @@ class DocumentResponse(DocumentBase):
     project_id: int | None = None
     file_path: str
     status: ProcessingStatus
+    status_message: str | None = None
     upload_date: datetime
+    academic_year: int | None = None
+    authors: str | None = None
+    advisor: str | None = None
+
+
+class BatchUploadItemResult(BaseModel):
+    filename: str
+    ok: bool
+    document: DocumentResponse | None = None
+    error: str | None = None
+    status_code: int | None = None
+
+
+class BatchUploadSummary(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+
+
+class BatchUploadResponse(BaseModel):
+    results: list[BatchUploadItemResult]
+    summary: BatchUploadSummary

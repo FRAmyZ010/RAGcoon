@@ -10,9 +10,12 @@ class RoleResponse(BaseModel):
 
 class UserBase(BaseModel):
     username: str
-    email: EmailStr
+    email: str
 
-class UserCreate(UserBase):
+
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
     password: str
     role_id: int
 

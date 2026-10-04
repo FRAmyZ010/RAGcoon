@@ -82,12 +82,38 @@ def run_interactive_streaming_chat():
 
             elif event_type == "done":
                 timing = event_data.get("timing", {})
+                perf = event_data.get("performance", {})
                 citations = event_data.get("citations", [])
                 total_t = timing.get("total_seconds", 0.0)
                 llm_t = timing.get("llm_seconds", 0.0)
+                retrieval_t = timing.get("retrieval_seconds", 0.0) + timing.get("rerank_seconds", 0.0)
 
-                print("\n\n" + "-" * 40)
-                print(f"⏱️ Timing: Total {total_t:.2f}s (LLM: {llm_t:.2f}s)")
+                print("\n\n" + "=" * 60)
+                print("📊 [PERFORMANCE & TOKEN BREAKDOWN]")
+                print("=" * 60)
+                intent_name = perf.get("intent", event_data.get("intent", "FACTUAL_LOOKUP"))
+                thinking_str = "ON" if perf.get("thinking_enabled", False) else "OFF"
+                prompt_tokens = perf.get("input_tokens", 0)
+                out_tokens = perf.get("output_tokens", 0)
+                gen_speed = perf.get("gen_speed_tps", 0.0)
+                ttft = perf.get("ttft_seconds", 0.0)
+                tb = perf.get("token_breakdown", {})
+
+                print(f"• Intent: {intent_name} (Thinking: {thinking_str})")
+                if tb:
+                    print(f"• 📜 System Instruction: ~{tb.get('system_instruction_tokens', 0):,} tokens")
+                    print(f"• 💬 Chat History (Memory): ~{tb.get('chat_history_tokens', 0):,} tokens")
+                    print(f"• 📄 Document Context (Qdrant): ~{tb.get('document_context_tokens', 0):,} tokens ({tb.get('context_char_length', 0):,} chars)")
+                    print(f"• ❓ User Question: ~{tb.get('user_question_tokens', 0):,} tokens")
+                print(f"• 📥 Total Input Tokens: {prompt_tokens:,} tokens")
+                print(f"• 📤 Output Tokens (Answer): {out_tokens:,} tokens")
+                print(f"• ⚡ Generation Speed: {gen_speed:.1f} tokens/sec")
+                print(f"• ⏱️ Time to First Token (TTFT): {ttft:.3f}s")
+                print(f"• ⏱️ LLM Generation Time: {llm_t:.3f}s")
+                print(f"• 🔍 Retrieval & Rerank Time: {retrieval_t:.3f}s")
+                print(f"• 🏁 Total End-to-End Time: {total_t:.3f}s")
+                print("=" * 60)
+
                 if citations:
                     print("📄 Citations:")
                     for c in citations:
@@ -95,7 +121,7 @@ def run_interactive_streaming_chat():
                         pages = c.get("pages_formatted") or ", ".join(c.get("pages", []))
                         source = c.get("source", "")
                         print(f"   • {title} (Source: {source} | Pages: {pages})")
-                print("-" * 40)
+                print("-" * 60)
 
             elif event_type == "error":
                 print(f"\n❌ Error: {event_data.get('error')}")
