@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { MAX_ATTACHMENT_BYTES, submitFeedback } from '../services/feedbackApi';
 import { 
   Home, 
   Folder, 
@@ -21,7 +22,7 @@ import {
   Pencil
 } from 'lucide-react';
 
-export default function App() {
+function App() {
   const [user, setUser] = useState(null);
 
   const handleLogin = (username) => {
@@ -183,7 +184,7 @@ function LoginPage({ onLogin }) {
   );
 }
 
-function FeedbackPage() {
+export default function FeedbackPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState(false);
   const [phone, setPhone] = useState(false);
@@ -192,6 +193,8 @@ function FeedbackPage() {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
 
   const resetForm = () => {
     setName("");
@@ -202,10 +205,12 @@ function FeedbackPage() {
     setMessage("");
     setFile(null);
     setSubmitted(false);
+    setError("");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
     if (!name.trim()) {
       alert("Please enter your name.");
@@ -227,7 +232,29 @@ function FeedbackPage() {
       return;
     }
 
-    setSubmitted(true);
+    if (file && file.size > MAX_ATTACHMENT_BYTES) {
+      setError("ไฟล์แนบเกิน 10MB");
+      return;
+    }
+
+    setSending(true);
+    try {
+      await submitFeedback({
+        name: name.trim(),
+        rating,
+        feedbackType: type,
+        comment: message.trim(),
+        contactGmail: email,
+        contactPhone: phone,
+        file,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitted(false);
+      setError(err.message || "ส่ง Feedback ไม่สำเร็จ");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -378,6 +405,12 @@ function FeedbackPage() {
           </div>
 
           {/* Success message */}
+          {error && (
+            <div className="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+              {error}
+            </div>
+          )}
+
           {submitted && (
             <div className="rounded-md border border-green-400/40 bg-green-500/10 px-3 py-2 text-xs text-green-200">
               Feedback sent successfully.
@@ -388,7 +421,8 @@ function FeedbackPage() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-5 pt-1">
             <button
               type="submit"
-              className="w-full sm:w-[225px] h-10 rounded-md bg-[#f2d331] hover:bg-[#e4c52a] active:scale-[0.99] text-white text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 shadow-sm"
+              disabled={sending}
+              className="w-full sm:w-[225px] h-10 rounded-md bg-[#f2d331] hover:bg-[#e4c52a] active:scale-[0.99] text-white text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
             >
               <Upload className="w-4 h-4" />
               Send Feedback

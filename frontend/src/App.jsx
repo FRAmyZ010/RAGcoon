@@ -8,6 +8,7 @@ import {
   FileText,
   FolderClosed,
   Menu,
+  MessageSquare,
   MessageSquarePlus,
   PanelLeftClose,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
   upsertChatThread,
 } from "./services/chatHistory";
 import { openDocumentPreview } from "./services/documentsApi";
+import { submitFeedback } from "./services/feedbackApi";
 
 const SUGGESTIONS = [
   "What senior projects used IoT or Bluetooth?",
@@ -203,7 +205,12 @@ export default function App() {
 
               snapshot = snapshot.map((message, index) =>
                 index === botMsgIndex
-                  ? { ...message, text: currentText, meta: "Generating..." }
+                  ? {
+                      ...message,
+                      text: currentText,
+                      meta: "Generating...",
+                      queryId: data.query_id ?? message.queryId ?? null,
+                    }
                   : message
               );
               setMessages(snapshot);
@@ -215,6 +222,7 @@ export default function App() {
                   ? {
                       ...message,
                       citations: data.citations || [],
+                      queryId: data.query_id ?? message.queryId ?? null,
                       model: data.model || message?.model || null,
                       meta: data.timing
                         ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
@@ -300,6 +308,23 @@ export default function App() {
       setActiveWorkspaceId(workspaceId);
     }
     await streamQuery(text, workspaceId, { priorMessages: messages });
+  };
+
+  const rateAnswer = async (index, kind) => {
+    setFeedback({ ...feedback, [index]: kind });
+    const queryId = messages[index]?.queryId;
+    if (!queryId) return;
+    try {
+      await submitFeedback({
+        name: "Anonymous",
+        rating: kind === "like" ? 5 : 1,
+        feedbackType: "Others",
+        comment: kind,
+        queryId,
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleCopy = async (text, idx) => {
@@ -443,6 +468,13 @@ export default function App() {
             <FolderClosed className="h-4 w-4" />
             <span>Documents</span>
           </Link>
+          <Link
+            to="/feedback"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span>Feedback</span>
+          </Link>
           <button
             onClick={() => setSidebarOpen(false)}
             className="hidden w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-400 transition hover:bg-white/10 hover:text-white lg:flex md:text-base"
@@ -581,7 +613,7 @@ export default function App() {
                                 )}
 
                                 <button
-                                  onClick={() => setFeedback({ ...feedback, [index]: "like" })}
+                                  onClick={() => rateAnswer(index, "like")}
                                   className={`rounded-md p-1.5 hover:bg-gray-100 ${
                                     feedback[index] === "like" ? "text-green-600" : ""
                                   }`}
@@ -590,7 +622,7 @@ export default function App() {
                                   <ThumbsUp className="h-3.5 w-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => setFeedback({ ...feedback, [index]: "dislike" })}
+                                  onClick={() => rateAnswer(index, "dislike")}
                                   className={`rounded-md p-1.5 hover:bg-gray-100 ${
                                     feedback[index] === "dislike" ? "text-red-600" : ""
                                   }`}

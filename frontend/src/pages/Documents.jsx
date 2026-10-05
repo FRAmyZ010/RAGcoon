@@ -483,6 +483,13 @@ export default function DocumentsManagement() {
               <span>Documents</span>
             </Link>
             <Link
+              to="/feedback-admin"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Feedback</span>
+            </Link>
+            <Link
               to="/chat"
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >

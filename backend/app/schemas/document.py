@@ -1,6 +1,6 @@
 from enum import Enum
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 class ProcessingStatus(str, Enum):
     PENDING = "PENDING"
@@ -30,6 +30,12 @@ class DocumentResponse(DocumentBase):
     academic_year: int | None = None
     authors: str | None = None
     advisor: str | None = None
+
+    @model_validator(mode="after")
+    def explain_legacy_failure(self):
+        if self.status == ProcessingStatus.FAILED and not (self.status_message or "").strip():
+            self.status_message = "ไม่ทราบสาเหตุ เพราะอัปโหลดก่อนระบบบันทึกเหตุผล"
+        return self
 
 
 class BatchUploadItemResult(BaseModel):

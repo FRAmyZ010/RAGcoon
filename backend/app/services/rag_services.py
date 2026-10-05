@@ -225,6 +225,7 @@ def process_rag_stream(
                     "type": "answer_chunk",
                     "content": token_text,
                     "workspace_id": active_workspace_id,
+                    "query_id": query_id,
                 }
                 yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
             elif event_type == "error":
@@ -248,6 +249,7 @@ def process_rag_stream(
         metadata_payload = {
             "type": "metadata",
             "workspace_id": active_workspace_id,
+            "query_id": query_id,
             "citations": citations_data,
             "timing": execution_time_data,
             "model": model_name,
