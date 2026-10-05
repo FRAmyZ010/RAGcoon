@@ -334,7 +334,17 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
         return norm_q, filters, intent
 
     # Fast-path case 4: ค้นหาโครงงานตามปีการศึกษา (Group / Exploratory by Year)
-    if matched_year and any(k in q_lower for k in ["โครงงาน", "โปรเจกต์", "project", "projects", "รายชื่อ", "ทั้งหมด", "มีอะไรบ้าง", "อะไรบ้าง", "ปีการศึกษา", "ปี"]):
+    is_explicit_year_list_or_count = any(k in q_lower for k in [
+        "list all", "all projects", "show all", "list", "survey",
+        "รายชื่อ", "ขอรายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์",
+        "มีอะไรบ้าง", "อะไรบ้าง", "มีกี่", "กี่โครงงาน", "กี่โปรเจกต์",
+        "how many", "count", "number of", "total",
+    ]) or bool(re.search(r"^(?:senior\s+)?projects\s+in\s+\d{4}\??$", q_lower.strip()))
+    is_content_query = any(k in q_lower for k in [
+        "what", "which", "how", "why", "who", "gpu", "cpu", "model", "train", "sensor",
+        "hardware", "technology", "algorithm", "dataset", "accuracy", "อะไร", "รุ่นไหน",
+    ])
+    if matched_year and is_explicit_year_list_or_count and not is_content_query:
         if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
             from .template_responder import _has_technical_keywords
             if not _has_technical_keywords(raw_query):
@@ -343,7 +353,10 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
                 return norm_q, filters, "EXPLORATORY"
 
     # Fast-path case 5: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
-    if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร", "รายชื่อ", "ทั้งหมด"]):
+    is_advisor_content_query = any(k in q_lower for k in [
+        "what", "which", "how", "why", "gpu", "cpu", "sensor", "hardware", "technology", "algorithm", "อะไร", "อย่างไร",
+    ])
+    if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร", "รายชื่อ", "ทั้งหมด"]) and not is_advisor_content_query:
         if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
             from .template_responder import _has_technical_keywords
             if not _has_technical_keywords(raw_query):

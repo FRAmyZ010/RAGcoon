@@ -8,7 +8,7 @@ from typing import Any, Optional
 import requests
 from dotenv import load_dotenv
 
-from .config import INTENT_CONFIG
+from .config import DEFAULT_NUM_CTX, INTENT_CONFIG
 from .service import is_boilerplate_text, search, search_with_details
 from .session_manager import session_manager
 
@@ -255,22 +255,11 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    ## Sources
    - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     else:  # FACTOID / FACTUAL_LOOKUP
-        if any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
-            return """4. Structured Component Breakdown with Inline Citations:
-   Present ONLY components explicitly documented in the retrieved text:
-
-   ### 📋 Component Summary
-   - **Microcontroller**: <exact microcontroller name or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
-   - **Sensors**: <list sensors or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
-   - **Key Associated Hardware**: <list key modules or 'Not specified in the retrieved document.'> [Source: <file>, Page <X>]
-
-   ## Sources
-   - <Project Title>: <Filename.pdf>, Pages: <Pages>"""
-        else:
-            return """4. Direct Answer with Citations:
-   Answer directly using the smallest amount of relevant evidence. Do not add unsupported information.
-   Include exact inline citation [Source: <file>, Page <X>] immediately after the factual statement.
-   Conclude with a '## Sources' line."""
+        return """4. Direct & Evidence-Grounded Answer with Citations:
+   - Answer the question directly, flexibly, and accurately based ONLY on explicitly documented evidence in the retrieved context.
+   - If asked for hardware, components, technologies, or tools: list all distinct items explicitly mentioned across the retrieved text as bullet points with their respective citations. Do NOT force predetermined template categories (such as microcontroller or sensor placeholders), and do NOT create placeholder bullets for unmentioned items.
+   - If a requested item is not found in the document, state clearly that it is not specified (never attach a source citation to unmentioned information).
+   - Every factual claim derived from a document must have an exact inline citation [Source: <filename>, Page: <X>]."""
 
 
 def _calculate_token_breakdown(
@@ -344,7 +333,7 @@ CORE PRODUCTION RULES:
 1. ABSOLUTE SOURCE-GROUNDING: The retrieved context is the ONLY authoritative source. Never invent facts, technologies, databases, code, or endpoints. Never infer tech stacks (Web app ≠ React, Mobile app ≠ Flutter, ER diagram ≠ MySQL, Database ≠ PostgreSQL). If evidence is insufficient, state: 'Not specified in the retrieved document.'
 2. CURRENT QUERY & FILTER ISOLATION: Never inherit project, advisor, author, or year filters from previous turns unless explicitly referenced. No explicit constraint in current query = NO FILTER.
 3. PROJECT ISOLATION: Every project is an independent evidence scope. Never transfer technologies, hardware, features, authors, or advisors between projects. For comparisons, evaluate each project on its own evidence.
-4. INLINE CITATION GROUNDING: Every document-derived factual claim must have an inline citation: [Source: <source_file>, Page <page_number>]. The cited page MUST actually support the exact claim. Never fabricate page numbers.
+4. INLINE CITATION GROUNDING & EXACT PAGE NUMBERS: Every factual claim must have an inline citation: [Source: <source_file>, Page: <page_number>]. You MUST cite the EXACT page number from the excerpt header where the fact is written. For example, if "NodeMCU ESP8266" is inside an excerpt marked "PAGE: 36", you MUST cite "Page: 36". NEVER cite a title/abstract page (e.g. Page 5) for a technical component that appears on another page. Never fabricate page numbers.
 5. CODE, FIGURE & DATABASE RULES: A schema is NOT SQL. Figure title ≠ complete figure content. If actual code/SQL is not present in retrieved context, state: 'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
 6. RECOMMENDATION VS AI EXTENSION: Recommendations search across projects by default. Any model-generated extension must be explicitly labeled: 'AI Suggestion:' and never presented as a documented feature.
 7. AGGREGATION & COUNT INTEGRITY: Top-K retrieval results do not prove repository-wide totals. If not exhaustive, state: 'I found X matching projects in the retrieved results, but this does not establish the total number of projects in the repository.'
@@ -380,8 +369,6 @@ Question:
         prefill = "## Recommended Projects\n\n### 1. "
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         prefill = "### 📌 สรุปภาพรวมโครงงาน\n" if is_thai else "### 📌 Project Overview\n"
-    elif intent in {"FACTOID", "FACTUAL_LOOKUP"} and any(w in q_lower for w in ["microcontroller", "sensor", "sensors", "hardware", "tool", "tools", "อุปกรณ์", "บอร์ด", "เซนเซอร์", "ไมโครคอนโทรลเลอร์", "component", "components"]):
-        prefill = "### 📋 สรุปรายการอุปกรณ์\n- **ไมโครคอนโทรลเลอร์ (Microcontroller)**:" if is_thai else "### 📋 Component Summary\n- **Microcontroller**:"
     elif intent == "EXPLORATORY":
         prefill = "1. **"
 
@@ -434,6 +421,7 @@ def get_llm_response(
                 "options": {
                     "temperature": 0.0,
                     "num_predict": num_predict,
+                    "num_ctx": DEFAULT_NUM_CTX,
                     "stop": stop_tokens,
                 },
             },
@@ -512,6 +500,7 @@ def stream_llm_response(
                 "options": {
                     "temperature": 0.0,
                     "num_predict": num_predict,
+                    "num_ctx": DEFAULT_NUM_CTX,
                     "stop": stop_tokens,
                 },
             },
@@ -653,12 +642,12 @@ def _prepare_rag_context(
         else:
             snippet_body = raw_snippet
 
-        page_tag = (
-            f"[Document: {project_title} | Source: {source} | Page: {page_number}]:\n"
-            if page_number
-            else f"[Document: {project_title} | Source: {source} | Page: unavailable]:\n"
+        p_str = str(page_number) if page_number else "unavailable"
+        formatted_snippet = (
+            f"--- [EXCERPT START | Source: {source} | Page: {p_str}] ---\n"
+            f"{snippet_body}\n"
+            f"--- [END OF EXCERPT | CITE AS: [Source: {source}, Page: {p_str}]] ---"
         )
-        formatted_snippet = f"{page_tag}{snippet_body}"
 
         if formatted_snippet not in projects_data[proj_key]["snippets"]:
             if len(projects_data[proj_key]["snippets"]) < max_chunks_per_project:
@@ -685,12 +674,12 @@ def _prepare_rag_context(
                     if raw_t and not _is_boilerplate_chunk(raw_t):
                         t_snippet = " ".join(raw_t.split())
                         p_num = tc.get("payload", {}).get("page_number")
-                        p_tag = (
-                            f"[Document: {proj_payload.get('project_title') or proj_key} | Source: {proj_source or proj_key} | Page: {p_num}]:\n"
-                            if p_num
-                            else f"[Document: {proj_payload.get('project_title') or proj_key} | Source: {proj_source or proj_key} | Page: unavailable]:\n"
+                        p_str = str(p_num) if p_num else "unavailable"
+                        formatted_t_snippet = (
+                            f"--- [EXCERPT START | Source: {proj_source or proj_key} | Page: {p_str}] ---\n"
+                            f"{t_snippet}\n"
+                            f"--- [END OF EXCERPT | CITE AS: [Source: {proj_source or proj_key}, Page: {p_str}]] ---"
                         )
-                        formatted_t_snippet = f"{p_tag}{t_snippet}"
                         if formatted_t_snippet not in projects_data[proj_key]["snippets"]:
                             projects_data[proj_key]["snippets"].append(formatted_t_snippet)
                             if p_num:
@@ -751,7 +740,7 @@ def _prepare_rag_context(
         if keywords:
             context_parts.append(f"Keywords: {keywords}")
         if source:
-            context_parts.append(f"Source: {source} (Pages: {pages_str})")
+            context_parts.append(f"Source: {source}")
 
         doc_idx = len(contexts) + 1
         doc_header = f"=== [DOCUMENT {doc_idx}] : {project_title} ==="

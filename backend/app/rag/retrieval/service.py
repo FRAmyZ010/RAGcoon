@@ -215,11 +215,16 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 "advise", "advised", "supervise", "how many", "count", "number of"
             ]):
                 is_pure_metadata = True
-            elif matched_year and any(k in q_low for k in [
-                "โครงงาน", "โปรเจกต์", "project", "projects", "รายชื่อ", "ทั้งหมด",
-                "มีอะไรบ้าง", "อะไรบ้าง", "ปีการศึกษา", "ปี", "how many", "count", "number of"
-            ]):
-                is_pure_metadata = True
+            elif matched_year:
+                is_year_list_or_count = any(k in q_low for k in [
+                    "list", "show all", "รายชื่อ", "ขอรายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์",
+                    "มีอะไรบ้าง", "อะไรบ้าง", "how many", "count", "number of", "total", "กี่โครงงาน", "กี่โปรเจกต์", "กี่เรื่อง"
+                ]) or bool(re.search(r"^(?:senior\s+)?projects\s+in\s+\d{4}\??$", q_low.strip()))
+                is_content = any(k in q_low for k in [
+                    "what", "which", "how", "why", "who", "gpu", "cpu", "model", "train", "sensor", "hardware", "technology", "อะไร", "รุ่นไหน"
+                ])
+                if is_year_list_or_count and not is_content:
+                    is_pure_metadata = True
 
         if is_pure_metadata:
             fast_start = time.perf_counter()

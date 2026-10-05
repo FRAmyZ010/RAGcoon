@@ -29,19 +29,20 @@ COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
 DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "25"))
 DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "7"))
+DEFAULT_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
 INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "FACTUAL_LOOKUP": {
         "top_k": 25,
         "rerank_top_n": 6,
-        "num_predict": 256,
+        "num_predict": 512,
         "max_context_chunks": 6,
         "thinking": False,
     },
     "FACTOID": {
         "top_k": 25,
         "rerank_top_n": 6,
-        "num_predict": 256,
+        "num_predict": 512,
         "max_context_chunks": 6,
         "thinking": False,
     },

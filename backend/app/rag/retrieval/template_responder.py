@@ -9,6 +9,7 @@ _THAI_TECHNICAL_KEYWORDS = [
     "ความแม่นยำ", "ผลการทดลอง", "การประเมิน", "เปรียบเทียบ", "ต่างกัน",
     "แนะนำ", "ต่อยอด", "ทำต่อ", "พัฒนาต่อ", "พัฒนา", "ข้อดี", "ข้อเสีย", "ข้อจำกัด", "รายละเอียดเชิงลึก",
     "ใช้อะไร", "ใช้อุปกรณ์", "แอป", "แอพ", "โมบาย", "เว็บ", "ไอโอที",
+    "จียูพียู", "โมเดล", "เทรน", "การเรียนรู้", "ชุดข้อมูล", "อาร์เอฟไอดี",
 ]
 
 _ENGLISH_TECHNICAL_KEYWORDS = {
@@ -23,6 +24,9 @@ _ENGLISH_TECHNICAL_KEYWORDS = {
     "mobile", "app", "apps", "application", "applications", "android", "ios", "tracking", "gps",
     "web", "website", "platform", "online", "portal", "cloud",
     "develop", "developing", "development", "worth", "suitable", "build", "extend",
+    "gpu", "cpu", "ram", "model", "models", "train", "training", "dataset", "datasets",
+    "rfid", "nfc", "reader", "readers", "tag", "tags", "beacon", "beacons",
+    "neural", "deep learning", "machine learning", "ai", "classifier", "classification",
 }
 
 _DISQUALIFIED_INTENTS = {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}
