@@ -171,7 +171,14 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Chat stream failed (${response.status})`);
+        let message = `Chat stream failed (${response.status})`;
+        try {
+          const data = await response.json();
+          if (typeof data?.detail === "string") message = data.detail;
+        } catch {
+          /* keep status message */
+        }
+        throw new Error(message);
       }
       if (!response.body) throw new Error("ReadableStream not supported");
 
@@ -247,7 +254,7 @@ export default function App() {
         index === botMsgIndex
           ? {
               ...message,
-              text: "Failed to connect to the RAG engine. Please try again.",
+              text: error?.message || "Failed to connect to the RAG engine. Please try again.",
               meta: "Error",
             }
           : message

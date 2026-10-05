@@ -19,6 +19,7 @@ from app.services.document_service import (
     get_document_by_id,
     delete_document_by_id,
     resolve_document_file_path,
+    record_document_view,
     DocumentUploadError,
     MAX_TOTAL_UPLOAD_BYTES,
     MAX_TOTAL_UPLOAD_MB,
@@ -188,6 +189,8 @@ def download_document_file(
 ):
     """Serve the original PDF for browser preview / download (Public)."""
     file_path, filename = resolve_document_file_path(db=db, document_id=document_id)
+    if file_path:
+        record_document_view(db=db, document_id=document_id)
     if not file_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

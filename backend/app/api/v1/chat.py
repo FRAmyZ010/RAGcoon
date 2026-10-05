@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
@@ -19,6 +19,21 @@ from app.services.rag_services import (
 )
 
 router = APIRouter(prefix="/chat", tags=["Chat & RAG Engine"])
+
+_recent_sends: dict[str, list[float]] = {}
+
+
+def _too_many_sends(client_key: str, limit: int = 8, window_seconds: float = 10) -> bool:
+    import time
+
+    now = time.time()
+    recent = [stamp for stamp in _recent_sends.get(client_key, []) if now - stamp < window_seconds]
+    if len(recent) >= limit:
+        _recent_sends[client_key] = recent
+        return True
+    recent.append(now)
+    _recent_sends[client_key] = recent
+    return False
 
 @router.post("/query", response_model=ChatResponse)
 async def query_rag(
@@ -47,11 +62,18 @@ async def query_rag(
 def query_rag_stream(
     request: ChatRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
     SSE Endpoint สำหรับสตรีมมิ่งคำตอบแบบ Real-time (Server-Sent Events)
     """
+    client_key = http_request.client.host if http_request.client else "unknown"
+    if _too_many_sends(client_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="ส่งข้อความถี่เกินไป รอสักครู่แล้วลองใหม่",
+        )
     return StreamingResponse(
         process_rag_stream(
             db=db,

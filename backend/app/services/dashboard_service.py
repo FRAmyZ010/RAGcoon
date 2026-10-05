@@ -57,6 +57,13 @@ def get_overview(db: Session) -> dict:
         .all()
     )
     keyword_values = [row[0] for row in db.query(Document.keywords).all()]
+    viewed_rows = (
+        db.query(Document)
+        .filter(Document.view_count > 0)
+        .order_by(Document.view_count.desc(), Document.filename.asc())
+        .limit(10)
+        .all()
+    )
     return {
         "total_documents": db.query(func.count(Document.id)).scalar() or 0,
         "total_projects": db.query(func.count(Project.id)).scalar() or 0,
@@ -71,4 +78,13 @@ def get_overview(db: Session) -> dict:
             if day_value is not None
         ],
         "top_keywords": count_keywords(keyword_values),
+        "most_viewed": [
+            {
+                "document_id": row.id,
+                "title": row.title,
+                "filename": row.filename,
+                "view_count": row.view_count or 0,
+            }
+            for row in viewed_rows
+        ],
     }

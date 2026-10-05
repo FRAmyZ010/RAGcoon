@@ -19,6 +19,12 @@ class KeywordCount(BaseModel):
     keyword: str
     count: int
 
+class ViewedDocument(BaseModel):
+    document_id: int
+    title: str | None = None
+    filename: str
+    view_count: int
+
 class OverviewResponse(BaseModel):
     total_documents: int
     total_projects: int
@@ -28,6 +34,7 @@ class OverviewResponse(BaseModel):
     documents_by_year: list[YearCount]
     searches_by_day: list[DayCount]
     top_keywords: list[KeywordCount]
+    most_viewed: list[ViewedDocument]
 
 class SystemVisitCreate(BaseModel):
     ip_address: str | None = None

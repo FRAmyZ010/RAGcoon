@@ -324,6 +324,14 @@ def get_document_by_id(db: Session, document_id: int) -> Document | None:
     )
 
 
+def record_document_view(db: Session, document_id: int) -> None:
+    document = db.get(Document, document_id)
+    if document is None:
+        return
+    document.view_count = (document.view_count or 0) + 1
+    db.commit()
+
+
 def resolve_document_file_path(
     db: Session,
     document_id: int,
