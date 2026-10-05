@@ -16,6 +16,13 @@ Base.metadata.create_all(bind=engine)
 with engine.begin() as conn:
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS status_message TEXT"))
+    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS submitter_name VARCHAR(120)"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS contact_gmail BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS contact_phone BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS attachment_name VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(500)"))
+    conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'Open'"))
 
 # Seed Administrator from env (idempotent — ไม่ reset password ถ้ามี user แล้ว)
 _seed_db = SessionLocal()

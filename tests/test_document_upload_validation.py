@@ -2,7 +2,9 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
+from app.schemas.document import DocumentResponse, ProcessingStatus
 from app.services.document_service import (
     MAX_TOTAL_UPLOAD_BYTES,
     DocumentUploadError,
@@ -56,6 +58,17 @@ class UploadValidationTests(unittest.TestCase):
 
     def test_max_total_upload_constant(self):
         self.assertEqual(MAX_TOTAL_UPLOAD_BYTES, 100 * 1024 * 1024)
+
+    def test_legacy_failed_row_gets_a_reason(self):
+        row = DocumentResponse(
+            id=1,
+            filename="old.pdf",
+            file_path="storage/old.pdf",
+            status=ProcessingStatus.FAILED,
+            status_message=None,
+            upload_date=datetime.now(timezone.utc),
+        )
+        self.assertIn("ไม่ทราบสาเหตุ", row.status_message)
 
     def test_duplicate_error_is_conflict(self):
         err = DuplicateDocumentError("Demo Project")

@@ -200,18 +200,27 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         existing_project = (
             db.query(Project).filter(Project.title == project_title).first()
         )
-        if existing_project:
+        if existing_project and existing_project.id != document.project_id:
             raise DuplicateDocumentError(project_title)
 
-        project = Project(
-            title=project_title,
-            academic_year=academic_year,
-            advisor=advisor,
-            authors=authors,
-        )
-        db.add(project)
-        db.commit()
-        db.refresh(project)
+        if document.project_id and document.project:
+            project = document.project
+            project.title = project_title
+            project.academic_year = academic_year
+            project.advisor = advisor
+            project.authors = authors
+            db.commit()
+            db.refresh(project)
+        else:
+            project = Project(
+                title=project_title,
+                academic_year=academic_year,
+                advisor=advisor,
+                authors=authors,
+            )
+            db.add(project)
+            db.commit()
+            db.refresh(project)
 
         for page in pages:
             page_meta = page.get("metadata")
@@ -313,6 +322,14 @@ def get_document_by_id(db: Session, document_id: int) -> Document | None:
         .filter(Document.id == document_id)
         .first()
     )
+
+
+def record_document_view(db: Session, document_id: int) -> None:
+    document = db.get(Document, document_id)
+    if document is None:
+        return
+    document.view_count = (document.view_count or 0) + 1
+    db.commit()
 
 
 def resolve_document_file_path(

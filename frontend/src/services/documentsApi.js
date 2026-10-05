@@ -21,6 +21,7 @@ export function clearClientAuth() {
   setAuthToken(null);
   localStorage.removeItem("username");
   localStorage.removeItem("role");
+  localStorage.removeItem("ragcoon.chat.v1");
 }
 
 function redirectToLoginIfUnauthorized(status) {

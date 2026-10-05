@@ -1,6 +1,7 @@
 const STORAGE_KEY = "ragcoon.chat.v1";
 const TITLE_MAX = 40;
 const MAX_TURNS = 3;
+const STORAGE_BUDGET = 4_500_000;
 
 function isMessage(value) {
   return (
@@ -49,17 +50,30 @@ export function loadChatThreads() {
 }
 
 export function saveChatThreads(threads) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      threads: threads.map((thread) => ({
+  let remaining = threads.slice();
+  while (remaining.length > 0) {
+    const payload = JSON.stringify({
+      threads: remaining.map((thread) => ({
         id: thread.id,
         title: thread.title,
         updatedAt: thread.updatedAt,
         messages: thread.messages,
       })),
-    })
-  );
+    });
+    if (payload.length > STORAGE_BUDGET) {
+      remaining.pop();
+      continue;
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, payload);
+      return remaining;
+    } catch (error) {
+      if (error?.name !== "QuotaExceededError") throw error;
+      remaining.pop();
+    }
+  }
+  localStorage.removeItem(STORAGE_KEY);
+  return [];
 }
 
 export function upsertChatThread(threads, thread) {
@@ -67,14 +81,12 @@ export function upsertChatThread(threads, thread) {
     thread,
     ...threads.filter((item) => item.id !== thread.id),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
-  saveChatThreads(next);
-  return next;
+  return saveChatThreads(next);
 }
 
 export function removeChatThread(threads, threadId) {
   const next = threads.filter((thread) => thread.id !== threadId);
-  saveChatThreads(next);
-  return next;
+  return saveChatThreads(next);
 }
 
 /** Prior turns only. UI role `bot` is sent as `assistant`. */

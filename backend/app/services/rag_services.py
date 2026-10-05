@@ -17,6 +17,7 @@ from app.schemas.chat import (
     WorkspaceQueryResult,
 )
 from app.rag.retrieval import answer_question, stream_answer_question
+from app.rag.retrieval.prescreen import prescreen_reply
 from app.rag.retrieval.session_manager import session_manager
 from app.services.document_service import enrich_citations_with_document_ids
 
@@ -127,8 +128,13 @@ def process_rag_query(
     """
     active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
     sync_client_messages(active_workspace_id, messages)
+    canned = prescreen_reply(query_text)
     try:
-        rag_output = answer_question(query_text, session_id=active_workspace_id)
+        rag_output = (
+            {"answer": canned, "citations": [], "timing": {}}
+            if canned
+            else answer_question(query_text, session_id=active_workspace_id)
+        )
         answer_text = rag_output.get("answer", "")
         citations_data = rag_output.get("citations", [])
         timing_data = rag_output.get("timing", {})
@@ -204,10 +210,16 @@ def process_rag_stream(
     model_name = None
 
     try:
-        for item in stream_answer_question(
-            question=query_text,
-            session_id=active_workspace_id,
-        ):
+        canned = prescreen_reply(query_text)
+        events = (
+            (
+                {"event": "token", "data": {"token": canned}},
+                {"event": "done", "data": {"answer": canned, "citations": [], "sources": [], "timing": {}}},
+            )
+            if canned
+            else stream_answer_question(question=query_text, session_id=active_workspace_id)
+        )
+        for item in events:
             event_type = item.get("event", "message")
             event_data = item.get("data", {})
 
@@ -225,6 +237,7 @@ def process_rag_stream(
                     "type": "answer_chunk",
                     "content": token_text,
                     "workspace_id": active_workspace_id,
+                    "query_id": query_id,
                 }
                 yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
             elif event_type == "error":
@@ -248,6 +261,7 @@ def process_rag_stream(
         metadata_payload = {
             "type": "metadata",
             "workspace_id": active_workspace_id,
+            "query_id": query_id,
             "citations": citations_data,
             "timing": execution_time_data,
             "model": model_name,
