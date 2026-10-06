@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -10,8 +11,15 @@ from app.models.search_query import SearchQuery
 from app.models.system_visit import SystemVisit
 from app.models.user import User
 
-SEARCH_WINDOW_DAYS = 14
+SEARCH_WINDOWS = (1, 7, 15, 30)
 TOP_KEYWORD_LIMIT = 10
+BANGKOK = ZoneInfo("Asia/Bangkok")
+
+
+def range_start(days: int) -> datetime:
+    now = datetime.now(BANGKOK)
+    start_day = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start_day.astimezone(timezone.utc)
 
 
 def count_keywords(values: list[str | None], limit: int = TOP_KEYWORD_LIMIT) -> list[dict]:
@@ -39,8 +47,9 @@ def record_visit(db: Session, ip_address: str | None, user_agent: str | None) ->
     return row
 
 
-def get_overview(db: Session) -> dict:
-    start = datetime.now(timezone.utc) - timedelta(days=SEARCH_WINDOW_DAYS - 1)
+def get_overview(db: Session, days: int = 7) -> dict:
+    window = days if days in SEARCH_WINDOWS else 7
+    start = range_start(window)
     day = func.date(SearchQuery.created_at)
     search_rows = (
         db.query(day, func.count(SearchQuery.id))
@@ -70,6 +79,8 @@ def get_overview(db: Session) -> dict:
         "total_queries": db.query(func.count(SearchQuery.id)).scalar() or 0,
         "total_feedbacks": db.query(func.count(Feedback.id)).scalar() or 0,
         "total_visits": db.query(func.count(SystemVisit.id)).scalar() or 0,
+        "feedbacks_in_range": db.query(func.count(Feedback.id)).filter(Feedback.created_at >= start).scalar() or 0,
+        "visits_in_range": db.query(func.count(SystemVisit.id)).filter(SystemVisit.visited_at >= start).scalar() or 0,
         "total_users": db.query(func.count(User.id)).scalar() or 0,
         "documents_by_year": [{"year": year, "count": count} for year, count in year_rows],
         "searches_by_day": [

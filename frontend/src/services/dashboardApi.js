@@ -2,9 +2,9 @@ import { clearClientAuth, getAuthToken } from "./documentsApi";
 
 const DASHBOARD_BASE = "/api/v1/dashboard";
 
-export async function fetchOverview() {
+export async function fetchOverview(days = 7) {
   const token = getAuthToken();
-  const res = await fetch(`${DASHBOARD_BASE}/overview`, {
+  const res = await fetch(`${DASHBOARD_BASE}/overview?days=${days}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 

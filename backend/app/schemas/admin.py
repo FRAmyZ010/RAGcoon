@@ -31,6 +31,8 @@ class OverviewResponse(BaseModel):
     total_queries: int
     total_feedbacks: int
     total_visits: int
+    feedbacks_in_range: int = 0
+    visits_in_range: int = 0
     documents_by_year: list[YearCount]
     searches_by_day: list[DayCount]
     top_keywords: list[KeywordCount]

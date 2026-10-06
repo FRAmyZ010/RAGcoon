@@ -202,6 +202,7 @@ def download_document_file(
         media_type="application/pdf",
         filename=filename,
         content_disposition_type="attachment" if download else "inline",
+        headers={"Cache-Control": "no-store"},
     )
 
 @router.get("/{document_id}", response_model=DocumentResponse)

@@ -13,6 +13,13 @@ import {
 import { clearAuth } from "../services/authApi";
 import { fetchOverview } from "../services/dashboardApi";
 
+const RANGES = [
+  { days: 1, label: "1 day" },
+  { days: 7, label: "7 days" },
+  { days: 15, label: "15 days" },
+  { days: 30, label: "1 month" },
+];
+
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/documents", label: "Documents", icon: FolderClosed },
@@ -27,10 +34,10 @@ function localDay(date) {
   return `${year}-${month}-${day}`;
 }
 
-function recentSearches(rows) {
+function recentSearches(rows, dayCount) {
   const counts = new Map((rows || []).map((row) => [String(row.day).slice(0, 10), row.count]));
   const points = [];
-  for (let offset = 13; offset >= 0; offset -= 1) {
+  for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
     const date = new Date();
     date.setHours(12, 0, 0, 0);
     date.setDate(date.getDate() - offset);
@@ -44,47 +51,23 @@ function recentSearches(rows) {
   return points;
 }
 
-function smoothLine(coords) {
-  if (coords.length === 0) return "";
-  let path = `M ${coords[0][0]} ${coords[0][1]}`;
-  for (let index = 0; index < coords.length - 1; index += 1) {
-    const [x0, y0] = coords[index];
-    const [x1, y1] = coords[index + 1];
-    const mid = (x0 + x1) / 2;
-    path += ` C ${mid} ${y0}, ${mid} ${y1}, ${x1} ${y1}`;
-  }
-  return path;
-}
-
 function SearchChart({ points }) {
   const width = 420;
   const height = 180;
-  const padL = 32;
-  const padR = 12;
-  const padT = 16;
-  const padB = 24;
+  const padL = 28;
+  const padR = 8;
+  const padT = 14;
+  const padB = 22;
   const max = Math.max(1, ...points.map((point) => point.count));
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
-  const baseline = padT + innerH;
-  const coords = points.map((point, index) => {
-    const x = padL + (points.length === 1 ? innerW / 2 : (index / (points.length - 1)) * innerW);
-    const y = padT + innerH - (point.count / max) * innerH;
-    return [x, y];
-  });
-  const line = smoothLine(coords);
-  const area = `${line} L ${coords.at(-1)[0]} ${baseline} L ${coords[0][0]} ${baseline} Z`;
-  const peak = coords.reduce((best, coord, index) => (points[index].count > points[best].count ? index : best), 0);
+  const slot = points.length > 0 ? innerW / points.length : innerW;
+  const barWidth = Math.max(3, Math.min(16, slot * 0.55));
   const ticks = [...new Set([0, Math.ceil(max / 2), max])];
+  const labelEvery = points.length > 20 ? 5 : points.length > 8 ? 2 : 1;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Search activity">
-      <defs>
-        <linearGradient id="searchFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#7d9a84" stopOpacity="0.32" />
-          <stop offset="100%" stopColor="#7d9a84" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
       {ticks.map((tick) => {
         const y = padT + innerH - (tick / max) * innerH;
         return (
@@ -96,38 +79,36 @@ function SearchChart({ points }) {
           </g>
         );
       })}
-      <path d={area} fill="url(#searchFill)" />
-      <path d={line} fill="none" stroke="#5f8a6e" strokeWidth="2.25" strokeLinejoin="round" />
-      {coords.map(([x, y], index) =>
-        points[index].count > 0 ? (
-          <circle
-            key={points[index].day}
-            cx={x}
-            cy={y}
-            r={index === peak ? 4.5 : 3}
-            fill={index === peak ? "#e4c56a" : "#5f8a6e"}
-            stroke="#fff"
-            strokeWidth="1.5"
-          />
-        ) : null
-      )}
-      {coords.map(([x], index) =>
-        index % 2 === 0 ? (
-          <text key={points[index].day} x={x} y={height - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
-            {points[index].label}
-          </text>
-        ) : null
-      )}
+      {points.map((point, index) => {
+        const barHeight = (point.count / max) * innerH;
+        const x = padL + index * slot + (slot - barWidth) / 2;
+        const y = padT + innerH - barHeight;
+        return (
+          <g key={point.day}>
+            {point.count > 0 && (
+              <rect x={x} y={y} width={barWidth} height={Math.max(barHeight, 3)} rx="2" fill="#6d9478" />
+            )}
+            {index % labelEvery === 0 && (
+              <text x={padL + index * slot + slot / 2} y={height - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+                {point.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
     </svg>
   );
 }
 
-function Panel({ title, hint, children }) {
+function Panel({ title, hint, action, children }) {
   return (
     <section className="flex min-h-[240px] flex-col rounded-xl bg-white p-4 shadow-sm">
-      <div className="mb-3">
-        <h2 className="text-sm font-bold text-gray-900">{title}</h2>
-        <p className="text-[11px] text-gray-500">{hint}</p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+          <p className="text-[11px] text-gray-500">{hint}</p>
+        </div>
+        {action}
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </section>
@@ -139,14 +120,17 @@ export default function Dashboard() {
   const location = useLocation();
   const displayName = localStorage.getItem("username") || "Admin";
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [rangeDays, setRangeDays] = useState(7);
   const [query, setQuery] = useState("");
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetchOverview()
+    setChartLoading(true);
+    fetchOverview(rangeDays)
       .then((data) => {
         if (!cancelled) setOverview(data);
       })
@@ -154,16 +138,22 @@ export default function Dashboard() {
         if (!cancelled) setError(err.message || "โหลด Dashboard ไม่สำเร็จ");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setChartLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rangeDays]);
 
-  const searches = useMemo(() => recentSearches(overview?.searches_by_day), [overview]);
+  const rangeLabel = RANGES.find((item) => item.days === rangeDays)?.label ?? "7 days";
+  const searches = useMemo(
+    () => recentSearches(overview?.searches_by_day, rangeDays),
+    [overview, rangeDays]
+  );
   const searchToday = searches.at(-1)?.count ?? 0;
-  const searchWindow = searches.reduce((sum, point) => sum + point.count, 0);
   const years = useMemo(() => {
     const rows = [...(overview?.documents_by_year || [])];
     rows.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
@@ -182,7 +172,7 @@ export default function Dashboard() {
 
   const cards = [
     { title: "Total Document", count: overview?.total_documents ?? 0, note: overview ? `${overview.total_projects} projects` : "", icon: FileText },
-    { title: "Search Today", count: searchToday, note: overview ? `${searchWindow} in 14 days` : "", icon: Search },
+    { title: "Search Today", count: searchToday, note: "today", icon: Search },
     { title: "Visits", count: overview?.total_visits ?? 0, note: "all visits", icon: Eye },
     { title: "Feedback", count: overview?.total_feedbacks ?? 0, note: "all notes", icon: MessageSquare },
   ];
@@ -311,8 +301,27 @@ export default function Dashboard() {
         </section>
 
         <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-          <Panel title="Search Activity" hint="จำนวนคำถามใน 14 วันล่าสุด">
-            {loading ? (
+          <Panel
+            title="Search Activity"
+            hint={`จำนวนคำถามรายวัน ใน ${rangeLabel}`}
+            action={
+              <div className="flex shrink-0 rounded-lg bg-gray-100 p-0.5">
+                {RANGES.map((item) => (
+                  <button
+                    key={item.days}
+                    type="button"
+                    onClick={() => setRangeDays(item.days)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                      rangeDays === item.days ? "bg-[#5f8a6e] text-white" : "text-gray-600 hover:bg-white"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            {loading || chartLoading ? (
               <p className="text-xs text-gray-500">Loading...</p>
             ) : (
               <div className="h-44">
@@ -321,7 +330,7 @@ export default function Dashboard() {
             )}
           </Panel>
 
-          <Panel title="Documents by years" hint="จำนวนเอกสารตามปีการศึกษา">
+          <Panel title="Documents by years" hint="จำนวนเอกสารทั้งหมด ตามปีการศึกษา">
             {years.length === 0 ? (
               <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสาร"}</p>
             ) : (
@@ -342,7 +351,7 @@ export default function Dashboard() {
             )}
           </Panel>
 
-          <Panel title="Top Keywords" hint="คำที่พบบ่อยในเอกสาร">
+          <Panel title="Top Keywords" hint="คำที่พบบ่อยในเอกสารทั้งหมด">
             <div className="flex max-h-52 flex-col gap-2.5 overflow-y-auto pr-1">
               {keywords.length === 0 && (
                 <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มี keyword"}</p>
@@ -362,7 +371,7 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          <Panel title="Most Viewed Documents" hint="เอกสารที่ถูกเปิดดูมากสุด">
+          <Panel title="Most Viewed Documents" hint="เอกสารที่ถูกเปิดดูมากสุดทั้งหมด">
             <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
               {viewed.length === 0 && (
                 <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสารที่ถูกเปิด"}</p>
