@@ -5,9 +5,9 @@ import App from "./App.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
 import DocumentsManagement from "./pages/Documents.jsx";
 import FeedbackPage from "./pages/Feedback.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
 import FeedbackAdmin from "./pages/FeedbackAdmin.jsx";
 import LoginPage from "./pages/Login.jsx";
-import Placeholder from "./pages/Placeholder.jsx";
 import "./index.css";
 
 let visitSent = false;
@@ -65,7 +65,14 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             </RequireAuth>
           }
         />
-        <Route path="/dashboard" element={<Placeholder title="Dashboard" />} />
+        <Route
+          path="/dashboard"
+          element={
+            <RequireAuth>
+              <Dashboard />
+            </RequireAuth>
+          }
+        />
         <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </BrowserRouter>
