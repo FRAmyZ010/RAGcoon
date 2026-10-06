@@ -1,328 +1,396 @@
-import React, { useState } from 'react';
-import { 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip 
-} from 'recharts';
-import { 
-  LayoutDashboard, 
-  FolderKanban, 
-  MessageSquareQuote, 
-  LogOut, 
-  Search, 
-  Bell, 
-  Calendar, 
-  ChevronLeft, 
-  ChevronRight, 
-  TrendingUp, 
-  Menu, 
-  X,
-  PieChart
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  Bell,
+  Eye,
+  FileText,
+  FolderClosed,
+  LayoutDashboard,
+  LogOut,
+  MessageSquare,
+  Search,
+} from "lucide-react";
+import { clearAuth } from "../services/authApi";
+import { fetchOverview } from "../services/dashboardApi";
 
-const searchActivityData = [
-  { month: 'Jan', current: 100, previous: 120 },
-  { month: 'Feb', current: 130, previous: 110 },
-  { month: 'Mar', current: 120, previous: 160 },
-  { month: 'Apr', current: 175, previous: 110 },
-  { month: 'May', current: 160, previous: 130 },
-  { month: 'Jun', current: 140, previous: 180 },
-  { month: 'Jul', current: 170, previous: 195 },
+const RANGES = [
+  { days: 1, label: "1 day" },
+  { days: 7, label: "7 days" },
+  { days: 15, label: "15 days" },
+  { days: 30, label: "1 month" },
 ];
 
-const documentsByYearData = [
-  { year: '2018', count: 180 },
-  { year: '2019', count: 220 },
-  { year: '2020', count: 110 },
-  { year: '2021', count: 185 },
-  { year: '2023', count: 150 },
-  { year: '2024', count: 180 },
-  { year: '2025', count: 185 },
+const NAV = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/documents", label: "Documents", icon: FolderClosed },
+  { to: "/feedback-admin", label: "Feedback", icon: MessageSquare },
+  { to: "/chat", label: "Chat Workspace", icon: MessageSquare },
 ];
 
-const topKeywords = [
-  { name: 'AI', count: 120, max: 120 },
-  { name: 'Chatbot', count: 95, max: 120 },
-  { name: 'IoT', count: 60, max: 120 },
-  { name: 'Automation', count: 40, max: 120 },
-  { name: 'Robot', count: 30, max: 120 },
-];
+function localDay(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-const mostViewedDocs = [
-  { id: 1, title: 'Network Monitoring Document', views: 23 },
-  { id: 2, title: 'Pet Feeder', views: 20 },
-  { id: 3, title: 'PLC_energy_saver_system', views: 18 },
-  { id: 4, title: 'Mobile Automatic Watering Machine', views: 17 },
-];
+function recentSearches(rows, dayCount) {
+  const counts = new Map((rows || []).map((row) => [String(row.day).slice(0, 10), row.count]));
+  const points = [];
+  for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const day = localDay(date);
+    points.push({
+      day,
+      label: `${date.getDate()}`,
+      count: counts.get(day) || 0,
+    });
+  }
+  return points;
+}
 
-export default function App() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const RAGcoonLogo = ({ size = "normal" }) => (
-    <div className="flex items-center gap-2.5">
-      <div className="w-8 h-8 rounded-xl bg-neutral-800 border border-neutral-700 flex items-center justify-center shrink-0 shadow-inner overflow-hidden relative">
-        <div className="w-full h-full bg-neutral-900 flex items-center justify-center relative">
-          <div className="absolute w-6 h-3 bg-neutral-700 rounded-full top-1.5"></div>
-          <div className="absolute w-1.5 h-1.5 bg-white rounded-full top-2.5 left-1 border border-black flex items-center justify-center">
-            <div className="w-0.5 h-0.5 bg-black rounded-full"></div>
-          </div>
-          <div className="absolute w-1.5 h-1.5 bg-white rounded-full top-2.5 right-1 border border-black flex items-center justify-center">
-            <div className="w-0.5 h-0.5 bg-black rounded-full"></div>
-          </div>
-          <div className="absolute w-1.5 h-1 bg-neutral-300 rounded-b-md bottom-1"></div>
-        </div>
-      </div>
-      {size !== "small" && (
-        <span className="font-mono font-bold text-lg tracking-tight text-white select-none">
-          RAGcoon
-        </span>
-      )}
-    </div>
-  );
+function SearchChart({ points }) {
+  const width = 420;
+  const height = 180;
+  const padL = 28;
+  const padR = 8;
+  const padT = 14;
+  const padB = 22;
+  const max = Math.max(1, ...points.map((point) => point.count));
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+  const slot = points.length > 0 ? innerW / points.length : innerW;
+  const barWidth = Math.max(3, Math.min(16, slot * 0.55));
+  const ticks = [...new Set([0, Math.ceil(max / 2), max])];
+  const labelEvery = points.length > 20 ? 5 : points.length > 8 ? 2 : 1;
 
   return (
-    <div className="h-screen w-screen bg-[#b2b5b8] text-slate-800 font-sans antialiased flex flex-col md:flex-row p-0 md:p-3 gap-0 md:gap-3 overflow-hidden select-none">
-      
-      {/* Mobile Top Nav */}
-      <div className="md:hidden bg-[#2d2e30] text-white p-3 flex justify-between items-center shrink-0 z-40 shadow-md">
-        <RAGcoonLogo />
-        <button 
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-1.5 text-gray-300 hover:text-white rounded-lg focus:outline-none"
-        >
-          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Search activity">
+      {ticks.map((tick) => {
+        const y = padT + innerH - (tick / max) * innerH;
+        return (
+          <g key={tick}>
+            <line x1={padL} x2={width - padR} y1={y} y2={y} stroke="#f3f4f6" />
+            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="10" fill="#9ca3af">
+              {tick}
+            </text>
+          </g>
+        );
+      })}
+      {points.map((point, index) => {
+        const barHeight = (point.count / max) * innerH;
+        const x = padL + index * slot + (slot - barWidth) / 2;
+        const y = padT + innerH - barHeight;
+        return (
+          <g key={point.day}>
+            {point.count > 0 && (
+              <rect x={x} y={y} width={barWidth} height={Math.max(barHeight, 3)} rx="2" fill="#6d9478" />
+            )}
+            {index % labelEvery === 0 && (
+              <text x={padL + index * slot + slot / 2} y={height - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+                {point.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
-      <aside 
-        className={`
-          fixed md:relative inset-y-0 left-0 z-50 h-full
-          bg-[#2b2b2b] text-white flex flex-col justify-between p-3.5 rounded-none md:rounded-2xl transition-all duration-300 ease-in-out shadow-xl shrink-0 overflow-hidden
-          ${isSidebarCollapsed ? 'md:w-16' : 'md:w-56'}
-          ${isMobileMenuOpen ? 'translate-x-0 w-56' : '-translate-x-full md:translate-x-0'}
-        `}
+function Panel({ title, hint, action, children }) {
+  return (
+    <section className="flex min-h-[240px] flex-col rounded-xl bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+          <p className="text-[11px] text-gray-500">{hint}</p>
+        </div>
+        {action}
+      </div>
+      <div className="min-h-0 flex-1">{children}</div>
+    </section>
+  );
+}
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const displayName = localStorage.getItem("username") || "Admin";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [rangeDays, setRangeDays] = useState(7);
+  const [query, setQuery] = useState("");
+  const [overview, setOverview] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChartLoading(true);
+    fetchOverview(rangeDays)
+      .then((data) => {
+        if (!cancelled) setOverview(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "โหลด Dashboard ไม่สำเร็จ");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+          setChartLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rangeDays]);
+
+  const rangeLabel = RANGES.find((item) => item.days === rangeDays)?.label ?? "7 days";
+  const searches = useMemo(
+    () => recentSearches(overview?.searches_by_day, rangeDays),
+    [overview, rangeDays]
+  );
+  const searchToday = searches.at(-1)?.count ?? 0;
+  const years = useMemo(() => {
+    const rows = [...(overview?.documents_by_year || [])];
+    rows.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+    return rows;
+  }, [overview]);
+  const yearMax = Math.max(1, ...years.map((row) => row.count));
+  const needle = query.trim().toLowerCase();
+  const keywords = (overview?.top_keywords || []).filter((item) =>
+    item.keyword.toLowerCase().includes(needle)
+  );
+  const keywordMax = Math.max(1, ...keywords.map((item) => item.count));
+  const viewed = (overview?.most_viewed || []).filter((item) => {
+    const label = `${item.title || ""} ${item.filename || ""}`.toLowerCase();
+    return label.includes(needle);
+  });
+
+  const cards = [
+    { title: "Total Document", count: overview?.total_documents ?? 0, note: overview ? `${overview.total_projects} projects` : "", icon: FileText },
+    { title: "Search Today", count: searchToday, note: "today", icon: Search },
+    { title: "Visits", count: overview?.total_visits ?? 0, note: "all visits", icon: Eye },
+    { title: "Feedback", count: overview?.total_feedbacks ?? 0, note: "all notes", icon: MessageSquare },
+  ];
+
+  const logout = () => {
+    clearAuth();
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-xs text-gray-800 sm:text-sm">
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col justify-between bg-[#2d2d2d] p-3 text-white transition-transform duration-300 lg:static ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}
       >
-        <div className="flex flex-col gap-5">
-          {/* Sidebar Header */}
-          <div className="flex items-center justify-between px-0.5 pt-0.5">
-            <RAGcoonLogo size={isSidebarCollapsed ? "small" : "normal"} />
-            <button 
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="hidden md:flex text-gray-400 hover:text-white p-1 rounded-md transition-colors hover:bg-neutral-800"
-              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold sm:text-base">
+              <span className="text-lg">🦝</span>
+              <span>RAGcoon</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="text-gray-400 hover:text-white lg:hidden"
             >
-              {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              ✕
             </button>
           </div>
-
-          {/* Nav Links */}
-          <nav className="space-y-1.5">
-            <button
-              onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'dashboard' 
-                  ? 'bg-white text-black font-semibold shadow-sm' 
-                  : 'text-gray-300 hover:bg-neutral-800 hover:text-white'
-              }`}
-            >
-              <LayoutDashboard size={16} className={activeTab === 'dashboard' ? 'text-black' : 'text-gray-300'} />
-              {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="truncate">Dashboard</span>}
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('documents'); setIsMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'documents' 
-                  ? 'bg-white text-black font-semibold shadow-sm' 
-                  : 'text-gray-300 hover:bg-neutral-800 hover:text-white'
-              }`}
-            >
-              <FolderKanban size={16} className={activeTab === 'documents' ? 'text-black' : 'text-gray-300'} />
-              {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="truncate">Documents Management</span>}
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('feedback'); setIsMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                activeTab === 'feedback' 
-                  ? 'bg-white text-black font-semibold shadow-sm' 
-                  : 'text-gray-300 hover:bg-neutral-800 hover:text-white'
-              }`}
-            >
-              <MessageSquareQuote size={16} className={activeTab === 'feedback' ? 'text-black' : 'text-gray-300'} />
-              {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="truncate">Feedback</span>}
-            </button>
+          <nav className="space-y-1">
+            {NAV.map((item) => {
+              const active = location.pathname === item.to;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${
+                    active ? "bg-white font-bold text-gray-900" : "text-gray-300 hover:bg-white/10"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
         </div>
-
-        {/* Sidebar Footer */}
-        <div className="pt-2 border-t border-neutral-700/50">
-          <button 
-            onClick={() => alert("Logged out successfully")}
-            className={`w-full flex items-center ${isSidebarCollapsed && !isMobileMenuOpen ? 'justify-center px-0' : 'justify-between px-3'} py-2 bg-neutral-100 text-black font-mono font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-sm`}
-          >
-            {(!isSidebarCollapsed || isMobileMenuOpen) && <span className="text-xs">Log Out</span>}
-            <LogOut size={15} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="flex w-full items-center justify-between rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900 hover:bg-gray-200"
+        >
+          <span>Log Out</span>
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
       </aside>
 
-      <main className="flex-1 bg-[#bec1c4] p-3 md:p-4 rounded-none md:rounded-2xl flex flex-col justify-between gap-3 h-full overflow-hidden">
-        
-        {/* Header Bar */}
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
-          <h1 className="text-xl font-mono font-bold tracking-tight text-neutral-900">Overview</h1>
-
-          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-            {/* Search Input */}
-            <div className="relative flex-1 sm:w-48">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-              <input 
-                type="text" 
-                placeholder="Search" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white text-gray-800 pl-8 pr-3 py-1 rounded-lg text-xs font-mono border-none focus:ring-2 focus:ring-neutral-400 focus:outline-none shadow-sm"
+      <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5">
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-lg bg-white p-1.5 shadow-sm hover:bg-gray-50 lg:hidden"
+          >
+            ☰
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold text-gray-900 sm:text-lg">Overview</h1>
+            <p className="text-[11px] text-gray-500 sm:text-xs">ตัวเลขจากคลังเอกสาร การค้นหา และการเข้าชม</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2.5">
+            <div className="relative hidden sm:block">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search"
+                className="h-8 w-44 rounded-lg border border-gray-200 bg-white pl-8 pr-3 text-xs text-gray-800 shadow-sm outline-none focus:ring-2 focus:ring-[#800000]/30"
               />
             </div>
-
-            {/* Notification */}
-            <button className="p-1.5 bg-transparent text-neutral-800 hover:text-black rounded-full transition-colors relative">
-              <Bell size={16} />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-            </button>
-
-            {/* Profile */}
-            <div className="flex items-center gap-1.5 px-1">
-              <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-white font-bold text-[10px] shadow-sm">
-                M
+            <Bell className="h-4 w-4 text-gray-600" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
+                {displayName.slice(0, 2).toUpperCase()}
               </div>
-              <span className="text-[11px] font-mono font-medium text-neutral-800 whitespace-nowrap hidden lg:inline">Marry Jann</span>
+              <span className="hidden text-sm font-bold text-gray-800 sm:inline">{displayName}</span>
             </div>
-
-            {/* Select Dates */}
-            <button className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg text-[11px] font-mono text-neutral-700 hover:bg-neutral-50 shadow-sm border border-neutral-200/80 transition-all">
-              <Calendar size={13} className="text-neutral-500" />
-              <span className="whitespace-nowrap">Select Dates</span>
-            </button>
           </div>
         </header>
 
-        {/* Top 4 Summary Cards Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 shrink-0">
-          {[
-            { title: 'Total Document', count: '1256' },
-            { title: 'Search Today', count: '456' },
-            { title: 'Visits', count: '476' },
-            { title: 'Feedback', count: '1256' },
-          ].map((card, idx) => (
-            <div key={idx} className="bg-white p-2.5 rounded-xl shadow-sm border border-neutral-100 flex flex-col justify-between">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-[11px] font-mono font-medium text-neutral-500 truncate">{card.title}</span>
-                <div className="p-1 rounded-md bg-purple-100 text-purple-600 shrink-0">
-                  <PieChart size={13} />
+        {error && (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700" role="alert">
+            {error}
+          </p>
+        )}
+
+        <section className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article key={card.title} className="rounded-xl bg-white p-3.5 shadow-sm">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-gray-500 sm:text-xs">{card.title}</span>
+                  <span className="rounded-md bg-[#800000]/10 p-1 text-[#800000]">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
                 </div>
-              </div>
-              <div>
-                <div className="text-xl font-mono font-bold text-neutral-900 leading-tight mb-0.5">{card.count}</div>
-                <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-600 font-medium">
-                  <span>10%</span>
-                  <TrendingUp size={10} />
-                  <span className="text-neutral-400 ml-0.5">150 today</span>
-                </div>
-              </div>
-            </div>
-          ))}
+                <p className="text-2xl font-bold leading-none text-gray-900">{loading ? "…" : card.count}</p>
+                {card.note && <p className="mt-1.5 text-[11px] text-gray-400">{card.note}</p>}
+              </article>
+            );
+          })}
         </section>
 
-        <section className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-2.5 min-h-0">
-          
-          {/* Search Activity Chart */}
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-neutral-100 flex flex-col justify-between overflow-hidden">
-            <h3 className="text-[11px] font-mono font-bold text-neutral-800 tracking-wide mb-1 shrink-0">Search Activity</h3>
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={searchActivityData} margin={{ top: 5, right: 10, left: -28, bottom: -5 }}>
-                  <defs>
-                    <linearGradient id="colorCurrent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4b5563" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#4b5563" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#9ca3af', fontFamily: 'monospace' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#9ca3af', fontFamily: 'monospace' }} domain={[0, 200]} ticks={[0, 100, 150, 200]} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderRadius: '6px', fontSize: '10px', padding: '4px 8px' }} />
-                  <Area type="monotone" dataKey="current" stroke="#374151" strokeWidth={1.5} fillOpacity={1} fill="url(#colorCurrent)" />
-                  <Area type="monotone" dataKey="previous" stroke="#93c5fd" strokeWidth={1.5} strokeDasharray="2 2" fill="none" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <Panel
+            title="Search Activity"
+            hint={`จำนวนคำถามรายวัน ใน ${rangeLabel}`}
+            action={
+              <div className="flex shrink-0 rounded-lg bg-gray-100 p-0.5">
+                {RANGES.map((item) => (
+                  <button
+                    key={item.days}
+                    type="button"
+                    onClick={() => setRangeDays(item.days)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                      rangeDays === item.days ? "bg-[#5f8a6e] text-white" : "text-gray-600 hover:bg-white"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            {loading || chartLoading ? (
+              <p className="text-xs text-gray-500">Loading...</p>
+            ) : (
+              <div className="h-44">
+                <SearchChart points={searches} />
+              </div>
+            )}
+          </Panel>
 
-          {/* Documents by Years Chart */}
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-neutral-100 flex flex-col justify-between overflow-hidden">
-            <h3 className="text-[11px] font-mono font-bold text-neutral-800 tracking-wide mb-1 shrink-0">Documents by years</h3>
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={documentsByYearData} margin={{ top: 5, right: 10, left: -20, bottom: -5 }}>
-                  <XAxis dataKey="year" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#374151', fontFamily: 'monospace', fontWeight: 'bold' }} />
-                  <YAxis hide={true} domain={[0, 250]} />
-                  <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderRadius: '6px', fontSize: '10px', padding: '4px 8px' }} />
-                  <Bar dataKey="count" fill="#c4c4c4" radius={[6, 6, 6, 6]} barSize={22} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Top Keywords Progress Bars */}
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-neutral-100 flex flex-col justify-between overflow-hidden">
-            <h3 className="text-[11px] font-mono font-bold text-neutral-800 tracking-wide mb-1 shrink-0">Top Keywords</h3>
-            <div className="flex-1 flex flex-col justify-around py-0.5">
-              {topKeywords.map((item, idx) => {
-                const percentage = (item.count / item.max) * 100;
-                return (
-                  <div key={idx} className="flex items-center justify-between gap-3 font-mono text-[11px]">
-                    <span className="w-20 font-bold text-neutral-800 truncate">{item.name}</span>
-                    <div className="flex-1 bg-neutral-100 h-4 rounded-sm overflow-hidden flex items-center p-0.5">
-                      <div 
-                        className="bg-black h-full rounded-sm transition-all duration-500 ease-out" 
-                        style={{ width: `${percentage}%` }}
-                      ></div>
+          <Panel title="Documents by years" hint="จำนวนเอกสารทั้งหมด ตามปีการศึกษา">
+            {years.length === 0 ? (
+              <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสาร"}</p>
+            ) : (
+              <div className="flex h-44 items-end gap-3 px-2">
+                {years.map((row) => (
+                  <div key={row.year ?? "unknown"} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+                    <span className="mb-1 text-[11px] font-bold text-gray-600">{row.count}</span>
+                    <div className="flex w-full flex-1 items-end justify-center">
+                      <div
+                        className="w-8 rounded-t-lg bg-gradient-to-t from-[#5f8a6e] to-[#d7e6da]"
+                        style={{ height: `${Math.max(10, (row.count / yearMax) * 100)}%` }}
+                      />
                     </div>
-                    <span className="w-6 text-right font-bold text-neutral-800">{item.count}</span>
+                    <span className="mt-2 text-[11px] font-semibold text-gray-700">{row.year ?? "—"}</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                ))}
+              </div>
+            )}
+          </Panel>
 
-          {/* Most Viewed Documents */}
-          <div className="bg-white p-3 rounded-xl shadow-sm border border-neutral-100 flex flex-col justify-between overflow-hidden">
-            <h3 className="text-[11px] font-mono font-bold text-neutral-800 tracking-wide mb-1 shrink-0">Most Viewed Documents</h3>
-            <div className="flex-1 flex flex-col justify-around py-0.5">
-              {mostViewedDocs.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between text-[11px] font-mono hover:bg-neutral-50 px-1 py-0.5 rounded transition-colors">
-                  <span className="font-bold text-neutral-800 truncate max-w-[85%]">
-                    {doc.title}
-                  </span>
-                  <span className="font-bold text-neutral-800">{doc.views}</span>
+          <Panel title="Top Keywords" hint="คำที่พบบ่อยในเอกสารทั้งหมด">
+            <div className="flex max-h-52 flex-col gap-2.5 overflow-y-auto pr-1">
+              {keywords.length === 0 && (
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มี keyword"}</p>
+              )}
+              {keywords.map((item, index) => (
+                <div key={item.keyword} className="grid grid-cols-[minmax(0,9rem)_1fr_1.5rem] items-center gap-3">
+                  <span className="truncate text-xs font-semibold text-gray-800">{item.keyword}</span>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-[#6d9478]"
+                      style={{ width: `${Math.max(8, (item.count / keywordMax) * 100)}%`, opacity: index === 0 ? 1 : 0.72 }}
+                    />
+                  </div>
+                  <span className="text-right text-xs font-bold text-gray-800">{item.count}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
 
+          <Panel title="Most Viewed Documents" hint="เอกสารที่ถูกเปิดดูมากสุดทั้งหมด">
+            <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
+              {viewed.length === 0 && (
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสารที่ถูกเปิด"}</p>
+              )}
+              {viewed.map((doc, index) => (
+                <div key={doc.document_id} className="flex items-center gap-3 rounded-lg px-1 py-1.5 hover:bg-gray-50">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5f8a6e]/15 text-[11px] font-bold text-[#4f735c]">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-800">
+                    {doc.title || doc.filename}
+                  </span>
+                  <span className="text-xs font-bold text-gray-700">{doc.view_count}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
         </section>
-
       </main>
-
     </div>
   );
 }

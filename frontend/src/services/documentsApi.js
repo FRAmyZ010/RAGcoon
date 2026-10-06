@@ -155,9 +155,10 @@ export async function deleteDocument(documentId) {
 export function openDocumentPreview(documentId, page) {
   if (!documentId) return;
   const pageNum = page && Number(page) > 0 ? Number(page) : null;
+  const stamp = Date.now();
   const url = pageNum
-    ? `${DOCUMENTS_BASE}/${documentId}/file#page=${pageNum}`
-    : `${DOCUMENTS_BASE}/${documentId}/file`;
+    ? `${DOCUMENTS_BASE}/${documentId}/file?t=${stamp}#page=${pageNum}`
+    : `${DOCUMENTS_BASE}/${documentId}/file?t=${stamp}`;
   window.open(url, "_blank", "noopener,noreferrer");
 }
 

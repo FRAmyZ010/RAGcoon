@@ -431,7 +431,7 @@ export default function DocumentsManagement() {
   const handleDownload = (id, filename) => {
     closeActionMenu();
     const link = document.createElement("a");
-    link.href = `/api/v1/documents/${id}/file?download=true`;
+    link.href = `/api/v1/documents/${id}/file?download=true&t=${Date.now()}`;
     link.download = filename || `document-${id}.pdf`;
     link.rel = "noopener";
     document.body.appendChild(link);
