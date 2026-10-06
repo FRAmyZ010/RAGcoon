@@ -708,7 +708,12 @@ def _prepare_rag_context(
             ]
             committee = ", ".join(clean_committee_items) if clean_committee_items else committee
         year = payload.get("year")
-        keywords = payload.get("keywords")
+        school = payload.get("school")
+        program = payload.get("program")
+        summary = payload.get("summary")
+        project_type = payload.get("project_type")
+        key_technologies = payload.get("key_technologies")
+        target_problem = payload.get("target_problem")
         source = payload.get("source", "Unknown source")
         pages_list = sorted(list(proj_info["pages"]))
         pages_str = ", ".join(pages_list) if pages_list else "?"
@@ -722,8 +727,12 @@ def _prepare_rag_context(
             "advisor": advisor,
             "committee": committee,
             "year": year,
-            "school": payload.get("school"),
-            "program": payload.get("program"),
+            "school": school,
+            "program": program,
+            "summary": summary,
+            "project_type": project_type,
+            "key_technologies": key_technologies,
+            "target_problem": target_problem,
         })
 
         context_parts = []
@@ -733,12 +742,18 @@ def _prepare_rag_context(
             context_parts.append(f"Author: {author}")
         if advisor:
             context_parts.append(f"Advisor: {advisor}")
-        if committee:
-            context_parts.append(f"Committee: {committee}")
         if year:
             context_parts.append(f"Year: {year}")
-        if keywords:
-            context_parts.append(f"Keywords: {keywords}")
+        if program:
+            context_parts.append(f"Program: {program}")
+        if summary:
+            context_parts.append(f"Summary: {summary}")
+        if project_type:
+            cat_str = ", ".join(project_type) if isinstance(project_type, list) else str(project_type)
+            context_parts.append(f"Category: {cat_str}")
+        if key_technologies:
+            tech_str = ", ".join(key_technologies) if isinstance(key_technologies, list) else str(key_technologies)
+            context_parts.append(f"Technologies: {tech_str}")
         if source:
             context_parts.append(f"Source: {source}")
 

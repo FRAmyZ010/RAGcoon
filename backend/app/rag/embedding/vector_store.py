@@ -20,10 +20,11 @@ FILTERABLE_FIELDS = (
     "author",
     "advisor",
     "committee",
-    "keywords",
     "year",
     "school",
     "program",
+    "project_type",
+    "key_technologies",
     "source",
 )
 

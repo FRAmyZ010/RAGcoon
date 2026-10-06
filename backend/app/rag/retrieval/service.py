@@ -220,8 +220,9 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                     "list", "show all", "รายชื่อ", "ขอรายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์",
                     "มีอะไรบ้าง", "อะไรบ้าง", "how many", "count", "number of", "total", "กี่โครงงาน", "กี่โปรเจกต์", "กี่เรื่อง"
                 ]) or bool(re.search(r"^(?:senior\s+)?projects\s+in\s+\d{4}\??$", q_low.strip()))
-                is_content = any(k in q_low for k in [
-                    "what", "which", "how", "why", "who", "gpu", "cpu", "model", "train", "sensor", "hardware", "technology", "อะไร", "รุ่นไหน"
+                q_content_check = q_low.replace("มีอะไรบ้าง", "").replace("อะไรบ้าง", "").replace("มีอะไร", "")
+                is_content = any(k in q_content_check for k in [
+                    "what", "which", "how", "why", "who", "gpu", "cpu", "model", "train", "sensor", "hardware", "technology", "คืออะไร", "ใช้อะไร", "รุ่นไหน"
                 ])
                 if is_year_list_or_count and not is_content:
                     is_pure_metadata = True

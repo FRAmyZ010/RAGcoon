@@ -1,0 +1,239 @@
+# ==============================================================================
+# MASTER PROMPT & SOURCE FOR NOTEBOOKLM: COMPLETE RAGCOON SYSTEM PRESENTATION
+# TOPIC: RAGcoon — High-Precision Dual-Track RAG Architecture for Computer Engineering Projects
+# STYLE: Modern Minimalist, High Signal-to-Noise Ratio (Apple / Stripe Keynote Style)
+# ==============================================================================
+
+[INSTRUCTION FOR NOTEBOOKLM]
+คุณคือ Principal Technical Presentation Designer และ Systems Architect
+โปรดนำข้อมูลสถาปัตยกรรมระบบ RAGcoon ด้านล่างนี้ ซึ่งครอบคลุมครบวงจรตั้งแต่การนำเข้าเอกสาร (Ingestion Pipeline) ไปจนถึงการสืบค้นขั้นสูง (Retrieval Architecture) ไปสร้างโครงสร้างสไลด์นำเสนอทางเทคนิคแบบละเอียด สมบูรณ์ ไม่ขาดตอน จำนวน 14 สไลด์
+
+โดยในแต่ละสไลด์ ให้ระบุโครงสร้าง 5 ส่วนอย่างชัดเจน:
+1. Slide Title: สั้น กระชับ ตรงประเด็น
+2. Core Takeaway: ประโยคสรุปหัวใจสำคัญ 1 ประโยคเด่น
+3. Key Technical Points: รายละเอียดทางเทคนิคแบบเจาะลึก กระชับ ชัดเจน
+4. Minimalist Visual Suggestion: แนะนำภาพประกอบที่เรียบหรู สบายตา (เช่น ตัวเลขสถิติตัวใหญ่ Big Stat, แถบการ์ดแนวนอน 2-Lane, กล่องเปรียบเทียบ Before/After, หรือกรวยคัดกรอง Funnel — หลีกเลี่ยงแผนภาพใยแมงมุมที่รกสายตา)
+5. Speaker Note: บทพูดบรรยายอย่างมืออาชีพสำหรับนำเสนอต่ออาจารย์และคณะกรรมการ
+
+--------------------------------------------------------------------------------
+[DESIGN GUIDELINES / หลักการจัดวางสไลด์แบบ MINIMALIST]
+--------------------------------------------------------------------------------
+- Zero Clutter: 1 สไลด์ = 1 แก่นเรื่อง พื้นที่ว่าง (Whitespace) มากกว่า 50%
+- No Spaghetti Diagrams: ไม่ใช้ลูกศรโยงไปมาซับซ้อน ให้ใช้ Flow การ์ดแนวนอน หรือโครงสร้าง 2 รางขนาน (Dual-Track)
+- Big Stat Highlights: ดึงตัวเลขประสิทธิภาพเด่นออกมาแสดงชัดเจน เช่น "< 0.5s", "100%", "0% Compute"
+- High Contrast Cards: ใช้การ์ดสี่เหลี่ยมขอบมนเรียบๆ แสดงชุดข้อมูล เพื่อความเป็นระเบียบและอ่านง่าย
+
+================================================================================
+[SOURCE CONTENT / สถาปัตยกรรมระบบ RAGCOON ฉบับสมบูรณ์ครบวงจร]
+================================================================================
+
+## สไลด์ที่ 1: หน้าปกและบทสรุปภาพรวม (Title & Executive Summary)
+- Slide Title: RAGcoon: High-Precision Dual-Track RAG Architecture
+- Core Takeaway: สถาปัตยกรรม RAG ยุคใหม่สำหรับเอกสารโครงงานวิศวกรรมคอมพิวเตอร์ ที่ผสานความเร็วระดับเสี้ยววินาทีเข้ากับความแม่นยำ 100%
+- Key Technical Points:
+  * ความเป็นมา: โครงงานวิศวกรรมคอมพิวเตอร์เป็นเอกสารเชิงเทคนิคขนาดยาว (100-200+ หน้า) มีทั้งข้อมูลทะเบียนทางการและเนื้อหาฮาร์ดแวร์/ซอฟต์แวร์เชิงลึก
+  * ความท้าทาย: ระบบ RAG ทั่วไปตอบช้า ตอบหลอน และไม่สามารถตอบคำถามกลุ่มทะเบียนได้อย่างมีประสิทธิภาพ
+  * ทางออกของ RAGcoon: ออกแบบระบบ 2 รางขนาน (Dual-Track Architecture) แยกทางด่วนข้อมูลทะเบียน (Fast-Path <0.5s) ออกจากการค้นหาเนื้อหาเชิงลึก (Deep Retrieval) อย่างเด็ดขาด
+- Minimalist Visual Suggestion:
+  * Minimalist Hero Card กลางหน้าจอ พร้อม 2 Badge สถิติ: "Fast-Path < 0.5s" และ "100% Grounded Citations"
+- Speaker Note:
+  * "สวัสดีครับ วันนี้ขอแนะนำ RAGcoon สถาปัตยกรรม RAG ที่ออกแบบมาเพื่อแก้ปัญหาคอขวดของระบบถามตอบเอกสารโครงงานวิศวกรรมคอมพิวเตอร์ โดยเราปฏิวัติโครงสร้างใหม่ด้วยระบบ Dual-Track ที่แยกเส้นทางประมวลผลตามเจตนาของคำถามครับ"
+
+---
+
+## สไลด์ที่ 2: ปัญหาเดิมของระบบ RAG ทั่วไป (Traditional RAG Bottlenecks)
+- Slide Title: คอขวดของระบบ RAG แบบดั้งเดิม (The 3 Classical Bottlenecks)
+- Core Takeaway: สถาปัตยกรรม RAG ทั่วไปไม่เหมาะกับเอกสารโครงงานวิจัยที่มีความเฉพาะเจาะจงสูง
+- Key Technical Points:
+  * 1. High Latency (ช้าเกินไป): คำถามง่ายๆ เช่น "ปี 2020 มีโปรเจกต์อะไรบ้าง" ต้องวิ่งผ่าน Embedding Search, Reranker และ LLM Generation ทุกครั้ง ใช้เวลา 20-30 วินาทีโดยไม่จำเป็น
+  * 2. Hallucination & Cross-Project Noise (หลอนและปนกัน): คำถามเกี่ยวกับสเปกบอร์ดหรือเซนเซอร์ มักดึงท่อนข้อความจากต่างโปรเจกต์มาปนกัน ทำให้ LLM กุข้อมูลและอ้างอิงเลขหน้าผิดพลาด
+  * 3. Dry Metadata Responses (คำตอบแห้งแล้ง): ระบบที่ค้นหาเฉพาะชื่อไฟล์คืนค่าเพียงรายชื่อทื่อๆ ไม่มีบริบทว่าระบบทำอะไร ใช้เทคโนโลยีใด
+- Minimalist Visual Suggestion:
+  * 3 Column Comparison Cards แสดง 3 ปัญหาหลัก: [Latency 20-30s] | [Cross-Project Noise] | [Dry Plain Text]
+- Speaker Note:
+  * "ปัญหาสำคัญของ RAG ทั่วไปคือการใช้วิธีเดียวกับทุกคำถาม ทำให้คำถามเชิงทะเบียนตอบช้ามาก ขณะที่คำถามเชิงเทคนิคก็มักมีข้อมูลข้ามโปรเจกต์เข้ามาปนจนโมเดลเกิดภาพหลอน RAGcoon จึงถูกออกแบบมาเพื่อแก้ปัญหาทั้ง 3 จุดนี้โดยเฉพาะครับ"
+
+---
+
+## สไลด์ที่ 3: สถาปัตยกรรมภาพรวมทั้งระบบ (End-to-End System Architecture)
+- Slide Title: สถาปัตยกรรมภาพรวมแบบครบวงจร (End-to-End Architecture)
+- Core Takeaway: การเชื่อมต่อไร้รอยต่อระหว่าง Ingestion Pipeline 4 เฟส กับ Retrieval Pipeline 2 ราง
+- Key Technical Points:
+  * ฝั่ง Ingestion (เตรียมข้อมูล): สแกนเอกสารครบ 100% ➔ สกัด Metadata 2 ทาง (Regex + Local LLM) ➔ Chunking & Inheritance ➔ จัดเก็บบน Qdrant Cloud
+  * ฝั่ง Retrieval (การสืบค้น): User Query ➔ Context Router ตรวจจับประเภทคำถาม ➔ แยกส่ง Fast-Path (Metadata Scroll) หรือ Deep Retrieval (Hybrid Search + Cross-Encoder Reranker + Grounded LLM)
+  * Seamless Integration: Metadata ที่ถูก Enrich ตั้งแต่ Ingestion เป็นเชื้อเพลิงสำคัญที่ทำให้ Fast-Path ตอบได้ทันทีโดยไม่ต้องรัน LLM ซ้ำ
+- Minimalist Visual Suggestion:
+  * Horizontal Flowcard 2 ท่อนเรียบหรู: [Ingestion Pipeline: 4 Phases] ➔ [Vector Store & Metadata] ➔ [Dual-Track Retrieval: Fast vs Deep]
+- Speaker Note:
+  * "นี่คือภาพรวมของ RAGcoon ครับ ฝั่งซ้ายคือ Ingestion Pipeline ที่สกัดข้อมูลทั้งโครงสร้างและความหมายเตรียมไว้ล่วงหน้า ทำให้เมื่อผู้ใช้ถามเข้ามาในฝั่งขวา Context Router สามารถส่งคำถามเข้าสู่เส้นทางที่เร็วและแม่นยำที่สุดได้ทันทีครับ"
+
+---
+
+## สไลด์ที่ 4: เฟสที่ 1 — การสแกนเอกสาร PDF เต็มรูปแบบ (Full-Text Scanning Coverage)
+- Slide Title: เฟสที่ 1: การสแกนเอกสาร PDF แบบ 100% (Full-Text Scanning)
+- Core Takeaway: สแกนเนื้อหาครบทุกหน้าตั้งแต่หน้าแรกถึงหน้าสุดท้าย ไม่มีการตัดทอนเนื้อหาทางเทคนิค
+- Key Technical Points:
+  * Engine & Coverage: ขับเคลื่อนด้วย `pdfplumber` ทำการวนลูปสแกนเอกสารทุกหน้า (All Pages) ตั้งแต่หน้า 1 ถึง 193 ครบถ้วน 100%
+  * Technical Integrity: รักษาเนื้อหาเชิงลึกทุกบท (บทนำ, ทฤษฎี, ผังวงจร, สเปกฮาร์ดแวร์, โค้ด, ผลการทดลอง และสรุปผล)
+  * Actual Page Number Tracking: บันทึกเลขหน้าจริงของไฟล์ควบคู่กับข้อความในทุกท่อนเสมอ เพื่อสร้างระบบ Citation ที่ตรวจสอบย้อนกลับได้จริง
+- Minimalist Visual Suggestion:
+  * Hero Stat: ตัวเลขขนาดใหญ่ "100% Page Coverage" (หน้า 1 ถึง 193 ไม่มีตัดทิ้ง) พร้อมไอคอนเอกสารเรียบง่าย
+- Speaker Note:
+  * "ในเฟสแรก เราปฏิเสธการสแกนแบบสุ่มหรืออ่านแค่บางบท แต่เราใช้ pdfplumber สแกนครบทุกหน้าแบบ 100% พร้อมบันทึกเลขหน้าจริงกำกับไว้ ทำให้ฐานข้อมูลของเราไม่ตกหล่นเนื้อหาทางเทคนิคแม้แต่หน้าเดียวครับ"
+
+---
+
+## สไลด์ที่ 5: เฟสที่ 2 — การสกัด Metadata แบบ 2 ทาง (Dual-Track Extraction)
+- Slide Title: เฟสที่ 2: การสกัด Metadata 2 ทาง (Regex + Local LLM)
+- Core Takeaway: ผสานความเร็วของ Rule-Based เข้ากับความเข้าใจภาษาของ LLM เพื่อสร้างฐานข้อมูลที่สมบูรณ์แบบ
+- Key Technical Points:
+  * Track A (Rule-Based Regex จาก 5 หน้าแรก): สกัดข้อมูลระเบียบการทางการ ได้แก่ ชื่อโครงงาน (project_title), ผู้จัดทำ (author), อาจารย์ที่ปรึกษา (advisor), กรรมการสอบ (committee), ปีการศึกษา (year), สาขาวิชา (program: Computer Engineering), สำนักวิชา (school: Applied Digital Technology)
+  * Track B (Local LLM Enrichment จากหน้า Abstract): ดึงเฉพาะหน้าบทคัดย่อใน 6 หน้าแรก ส่งเข้า Local LLM (`gemma3:4b`) รัน 1 ครั้งต่อเล่ม เพื่อสกัด 4 ฟิลด์เชิงความหมายระดับสูง
+  * Compute Optimization: การรัน LLM สกัดข้อมูลทำเพียงครั้งเดียวตอน Ingestion (~2 วินาทีต่อเล่ม) แต่สามารถนำมาใช้ตอบคำถามผู้ใช้ได้นับหมื่นครั้งโดยไม่ต้องรัน LLM ซ้ำ
+- Minimalist Visual Suggestion:
+  * 2-Lane Split Card: คอลัมน์ซ้าย "Track A: Regex (5 หน้าแรก)" เทียบกับ คอลัมน์ขวา "Track B: Local LLM (หน้า Abstract)"
+- Speaker Note:
+  * "จุดเด่นในเฟสที่ 2 คือ Dual-Track Extraction ครับ เราใช้ Regex สกัดข้อมูลทางการเช่นอาจารย์และกรรมการ และใช้ Local LLM อ่านบทคัดย่อเพียงครั้งเดียว เพื่อสกัดข้อมูลเชิงลึกเก็บไว้ในฐานข้อมูลครับ"
+
+---
+
+## สไลด์ที่ 6: 4 ฟิลด์ข้อมูลคุณภาพสูงจาก LLM Enrichment (Rich Metadata Schema)
+- Slide Title: 4 ฟิลด์ข้อมูลเชิงลึกจากการ Enrich (Rich Metadata Schema)
+- Core Takeaway: ยกระดับ Metadata จากข้อมูลทะเบียนธรรมดา สู่ความเข้าใจบริบททางเทคนิคที่ครบถ้วน
+- Key Technical Points:
+  * 1. `summary`: สรุปภาพรวมโครงงาน 1-2 ประโยค ว่าระบบคืออะไร ทำงานอย่างไร และมีจุดเด่นอะไร
+  * 2. `project_type`: ป้ายหมวดหมู่โครงงานเชิงเทคนิค เช่น `["IoT", "Hardware", "Web Application"]`
+  * 3. `key_technologies`: รายการเทคโนโลยี อุปกรณ์ เซนเซอร์ ชิป เช่น `["NodeMCU ESP8266", "RFID", "MySQL", "Flutter"]`
+  * 4. `target_problem`: ปัญหาหลักที่โครงงานนี้พัฒนาขึ้นมาเพื่อแก้ไข
+  * Metadata Cleansing: ลบฟิลด์ขยะ (`keywords` เดิม) ออกเพื่อลด Noise แต่คงรักษา `committee` และ `total_pages` ไว้อย่างครบถ้วน
+- Minimalist Visual Suggestion:
+  * 4 Modern Tags Grid: การ์ด 4 ช่องเรียบหรู แสดงชื่อฟิลด์พร้อมตัวอย่าง JSON สั้นๆ สะอาดตา
+- Speaker Note:
+  * "นี่คือ 4 ฟิลด์ใหม่ที่ LLM สร้างขึ้นมาครับ ทั้ง summary, project_type, key_technologies และ target_problem ข้อมูลเหล่านี้ทำให้ระบบของเรารู้จักเทคโนโลยีและฮาร์ดแวร์ของทุกโปรเจกต์ตั้งแต่ตอน Ingestion ครับ"
+
+---
+
+## สไลด์ที่ 7: เฟสที่ 3 & 4 — Chunking, Inheritance & Qdrant Indexing
+- Slide Title: เฟสที่ 3 & 4: การแบ่งท่อนและการทำดัชนี (Chunking & Indexing)
+- Core Takeaway: ส่งต่อ Metadata ให้ทุก Chunk และจัดเก็บลง Qdrant เพื่อการค้นหาความเร็วระดับมิลลิวินาที
+- Key Technical Points:
+  * Chunking Strategy: ใช้ `RecursiveCharacterTextSplitter` ขนาด 1,000 ตัวอักษร (Overlap 150 ตัวอักษร)
+  * Metadata Inheritance: ทุก Chunk ที่ถูกหั่น จะได้รับ Metadata ครบชุดของเล่มนั้น (Title, Author, Advisor, Committee, Year, Program, Summary, Key Tech, Page Number)
+  * Embedding Model: ฝังเวกเตอร์ด้วย `intfloat/multilingual-e5-base` (768 มิติ) รองรับภาษาไทย-อังกฤษได้อย่างแม่นยำ
+  * Payload Keyword Indexing: ทำดัชนี KEYWORD บนฟิลด์ `program`, `year`, `project_type`, `advisor`, `key_technologies` ใน Qdrant Cloud เพื่อรองรับการกรองข้อมูลด้วยความเร็วสูง
+- Minimalist Visual Suggestion:
+  * Split Architecture Card: ฝั่งซ้ายแสดงเอกสารแตกเป็น Chunks พร้อมป้าย Metadata สืบทอด / ฝั่งขวาแสดง Qdrant Indexing (Vector + Payload)
+- Speaker Note:
+  * "ในขั้นตอน Chunking ทุกท่อนข้อความจะสืบทอด Metadata ของเล่มไปทั้งหมด จากนั้นเวกเตอร์จะถูกฝังด้วย multilingual-e5-base และทำดัชนี Payload บน Qdrant ทำให้ระบบสามารถกรองข้อมูลได้ทั้งระดับเล่มและระดับหน้าครับ"
+
+---
+
+## สไลด์ที่ 8: ตัวคัดแยกเส้นทางอัจฉริยะ (Intelligent Context Router)
+- Slide Title: ตัวคัดแยกเส้นทางอัจฉริยะ (Context Router & Intent Engine)
+- Core Takeaway: ระบบจัดหมวดหมู่เจตนาคำถามตั้งแต่ต้นทาง เพื่อส่งเข้าประมวลผลให้ถูกช่องทาง
+- Key Technical Points:
+  * Query Normalization & Filter Extraction: สกัดตัวกรองอัตโนมัติ (เช่น ปี 2020, ชื่ออาจารย์, ชื่อโครงงาน, สาขา Computer Engineering)
+  * Intent Classification: จำแนกเจตนาคำถามออกเป็น 4 รูปแบบหลัก:
+    - `FACTOID`: คำถามข้อมูลเฉพาะเจาะจง
+    - `COMPARISON`: คำถามเปรียบเทียบระหว่าง 2 โครงงาน
+    - `RECOMMENDATION`: คำถามแนะนำโครงงานตามโจทย์หรือเทคโนโลยี
+    - `EXPLORATORY`: คำถามสำรวจภาพรวม
+  * The Binary Dispatch Decision:
+    - ถ้าเป็น Pure Metadata Query (ขอรายชื่อ, อาจารย์, ปี, ภาพรวม) ➔ ส่งเข้า **Fast-Path**
+    - ถ้าเป็น Technical Deep-Dive Query (สเปกฮาร์ดแวร์, อัลกอริทึม, วิธีทำงาน) ➔ ส่งเข้า **Deep Retrieval**
+- Minimalist Visual Suggestion:
+  * Clean Switch Router: กล่อง Router ตรงกลาง แยก 2 ทางซ้าย-ขวาอย่างชัดเจน (ซ้าย: Pure Metadata ➔ Fast-Path / ขวา: Technical Content ➔ Deep RAG)
+- Speaker Note:
+  * "หัวใจสำคัญของฝั่งค้นหาคือ Context Router ครับ ทำหน้าที่วิเคราะห์ว่าคำถามนี้ต้องการข้อมูลทะเบียนหรือเนื้อหาเชิงลึก หากเป็นข้อมูลทะเบียนจะถูกส่งเข้า Fast-Path ทันที ทำให้ไม่เสียเวลาและทรัพยากร GPU โดยเปล่าประโยชน์ครับ"
+
+---
+
+## สไลด์ที่ 9: ทางด่วนข้อมูลทะเบียน (Fast-Path Shortcut & Template Responder)
+- Slide Title: ทางด่วนข้อมูลทะเบียน (Fast-Path Shortcut Engine)
+- Core Takeaway: ตอบคำถามทะเบียนและภาพรวมโปรเจกต์ได้ในเวลา < 0.5 วินาที โดยไม่ผ่าน LLM และไม่แห้งแล้ง
+- Key Technical Points:
+  * Zero-Inference Architecture: ข้าม Vector Search, Cross-Encoder และ LLM Generation ทั้งหมด (LLM Time = 0.0s, GPU Compute = 0%)
+  * Direct Payload Scroll: ค้นหาด้วย Payload Filter ตรงบน Qdrant ได้ข้อมูลในระดับมิลลิวินาที
+  * Template Responder: นำฟิลด์ `summary`, `key_technologies`, `author`, `advisor` ที่เตรียมไว้ มาจัดรูปแบบคำตอบที่สวยงาม เป็นระเบียบ อ่านง่าย
+  * ผลลัพธ์: ตอบคำถามขอรายชื่อ เช่น "ปี 2020 มีโปรเจกต์อะไรบ้าง" ได้สมบูรณ์แบบในเวลาไม่ถึงครึ่งวินาที
+- Minimalist Visual Suggestion:
+  * Hero Stat: ตัวเลขขนาดใหญ่ "< 0.5s" วางคู่กับการ์ดแสดงผลตัวอย่างคำตอบจริงที่มี Summary และ Badge เทคโนโลยี
+- Speaker Note:
+  * "นี่คือผลลัพธ์ของ Fast-Path ครับ คำถามขอรายชื่อโปรเจกต์หรืออาจารย์ที่ปรึกษา จะถูกตอบได้ในเวลาไม่ถึง 0.5 วินาที โดยระบบนำ Summary และ Tech Stack มาแสดงผลทันที ได้ข้อมูลครบถ้วน สวยงาม และไม่แห้งแล้งครับ"
+
+---
+
+## สไลด์ที่ 10: ทางลึกค้นหาเนื้อหา (Deep Retrieval & Project Isolation)
+- Slide Title: การค้นหาเชิงลึกแบบแยกขอบเขต (Deep Retrieval & Isolation)
+- Core Takeaway: ค้นหาเนื้อหาด้วย Hybrid Search และล็อกขอบเขตโครงงานเพื่อป้องกันข้อมูลปนกัน
+- Key Technical Points:
+  * Hybrid Search:
+    - Dense Vector Search: ค้นหาความหมายและความใกล้เคียงของบริบทด้วย `multilingual-e5-base`
+    - Sparse BM25 Search: ค้นหาคีย์เวิร์ดเฉพาะทาง เช่น รหัสชิป ESP8266, เซนเซอร์ DHT11, โปรโตคอล MQTT
+  * Project Isolation Filtering: เมื่อผู้ใช้ถามเจาะจงโครงงาน ระบบจะใส่ Filter ล็อกเฉพาะโครงงานนั้น ขจัดปัญหาข้อมูลข้ามเล่มปนกัน 100%
+  * Boilerplate Suppression: กรองท่อนข้อความที่ไม่ใช่เชิงเทคนิคออกก่อน (หน้าสารบัญ, แผนงาน Gantt Chart, รายการเอกสารอ้างอิง, หน้าลายเซ็นกรรมการ)
+- Minimalist Visual Suggestion:
+  * 2-Layer Badge Block: การ์ดแสดงการรวมพลังของ "ความหมาย (Vector)" + "คำเฉพาะ (BM25)" พร้อมป้ายกำกับ "Project Isolation Shield"
+- Speaker Note:
+  * "สำหรับคำถามเนื้อหาเชิงลึก เราใช้ Hybrid Search ผสานเวกเตอร์เข้ากับ BM25 และมีระบบ Project Isolation ช่วยล็อกขอบเขตเล่มโครงงาน พร้อมฟิลเตอร์ตัดท่อนสารบัญและเอกสารอ้างอิงออก เพื่อให้ได้เฉพาะเนื้อหาทางเทคนิคที่แท้จริงครับ"
+
+---
+
+## สไลด์ที่ 11: การคัดกรองความแม่นยำสูง (Cross-Encoder Reranking)
+- Slide Title: การคัดกรองความแม่นยำสูง (Cross-Encoder Reranker)
+- Core Takeaway: คัดกรองจาก 25 ผู้สมัคร เหลือเพียง Top 6 Chunks ที่สำคัญที่สุดเพื่อป้อนให้ LLM
+- Key Technical Points:
+  * Cross-Attention Mechanism: ใช้โมเดล `cross-encoder/ms-marco-MiniLM-L-6-v2` คำนวณความสัมพันธ์ระหว่างคำถามกับเนื้อหาแต่ละท่อนแบบ Full Cross-Attention
+  * Precision Top-K Selection: คัดเลือกจาก Candidate Pool 25 Chunks เหลือเพียง Top 6 Chunks ที่ตรงเป้าหมายที่สุด
+  * Context Window & Token Efficiency: ป้องกันไม่ให้ Context อัดแน่นไปด้วยข้อความขยะ ทำให้ LLM ทำงานได้เร็ว ประหยัด Token และไม่สับสน
+- Minimalist Visual Suggestion:
+  * Clean Funnel Metric: แผนภาพกรวยคัดกรองแนวนอน "25 Raw Candidates" ➔ ลูกศรเรียบๆ ➔ "Top 6 High-Relevance Chunks" พร้อมป้ายคะแนน Rerank Score
+- Speaker Note:
+  * "ก่อนส่งให้ LLM เราใช้ Cross-Encoder Reranker คัดกรองอย่างละเอียด จาก 25 ท่อน เหลือเพียง 6 ท่อนที่มีคะแนนความเกี่ยวข้องสูงสุด ช่วยให้ Context สะอาด และป้องกันโมเดลสับสนจากข้อมูลส่วนเกินครับ"
+
+---
+
+## สไลด์ที่ 12: การขจัดภาพหลอนด้วยหลักฐานอ้างอิง (Evidence-First Grounding)
+- Slide Title: คำตอบที่อ้างอิงหลักฐานจริง (Evidence-First Grounding)
+- Core Takeaway: ทุกคำตอบต้องมีที่มาที่ไป ตรวจสอบย้อนกลับไปยังหน้า PDF ต้นฉบับได้เสมอ
+- Key Technical Points:
+  * Strict System Grounding: บังคับให้ LLM สรุปคำตอบจากบริบทที่ดึงมาเท่านั้น หากไม่มีระบุในเอกสาร ระบบจะตอบตรงไปตรงมาว่า "Not specified in the retrieved document"
+  * Explicit Page Boundaries: ครอบเนื้อหาแต่ละท่อนด้วยแท็ก `--- [EXCERPT START | Source: ... | Page: X] ---` เพื่อให้ LLM ระบุเลขหน้าได้ถูกต้อง แม่นยำ
+  * Inline Verifiable Citations: ทุกประเด็นสำคัญมี Citation กำกับ `[Source: filename.pdf, Page: X]` สามารถคลิกเปิดหน้าเอกสารจริงได้ทันที
+  * Extended Context (`num_ctx: 8192`): รองรับการสรุปผลและป้องกันปัญหาคำตอบถูกตัดจบกลางคัน
+- Minimalist Visual Suggestion:
+  * Citation Mockup Card: ตัวอย่างประโยคคำตอบจริง 1 ประโยค พร้อมแท็กไฮไลต์สีสดใส `[Source: 23_QUALITY...pdf | Page: 175]`
+- Speaker Note:
+  * "จุดแข็งที่สุดของ RAGcoon คือความน่าเชื่อถือครับ เราผูกบริบทด้วยเลขหน้าจริง และมีกฎเคร่งครัดว่าถ้าไม่มีในเอกสารต้องตอบว่า Not specified ทุกคำตอบจึงมี Citation ระบุหน้าชัดเจน ตรวจสอบย้อนกลับได้ 100% ครับ"
+
+---
+
+## สไลด์ที่ 13: ตารางเปรียบเทียบเชิงวิศวกรรม (Engineering Comparison)
+- Slide Title: สรุปเปรียบเทียบ 2 รางการทำงาน (Dual-Track Comparison)
+- Core Takeaway: ความชัดเจนในการแบ่งหน้าที่ระหว่างความเร็วระดับเสี้ยววินาทีและความลึกเชิงวิเคราะห์
+- Key Technical Points:
+  * เปรียบเทียบ 5 มิติสำคัญ:
+    1. ลักษณะคำถาม: Metadata/Listing (รางด่วน) vs Deep Technical/Code (รางลึก)
+    2. เอนจินที่ใช้: Qdrant Scroll + Template vs Hybrid Search + Reranker + LLM
+    3. เวลาประมวลผล (Latency): **< 0.5 วินาที** vs **3 - 6 วินาที**
+    4. การใช้พลังประมวลผล GPU: **0% (ไม่ต้องรัน LLM)** vs **รัน Local LLM สำหรับตอบ**
+    5. ความถูกต้อง: **100% ตรงตามฐานข้อมูล** vs **100% Grounded พร้อม Citation**
+- Minimalist Visual Suggestion:
+  * Clean 2-Column Table: ตารางเปรียบเทียบ 2 ฝั่ง เรียบหรู คอนทราสต์ชัดเจน สบายตา
+- Speaker Note:
+  * "สไลด์นี้แสดงการเปรียบเทียบให้เห็นชัดเจนครับ รางด่วนตอบได้ในเสี้ยววินาทีโดยไม่กิน GPU ขณะที่รางลึกใช้เวลาเพียง 3-6 วินาทีในการวิเคราะห์และสังเคราะห์คำตอบพร้อม Citation ที่แม่นยำครับ"
+
+---
+
+## สไลด์ที่ 14: บทสรุปและผลลัพธ์ของระบบ (Conclusion & Production Readiness)
+- Slide Title: บทสรุปคุณค่าของระบบ (Engineering Value & Next Steps)
+- Core Takeaway: ระบบ RAG สำหรับเอกสารโครงงานที่พร้อมใช้งานจริง มีประสิทธิภาพสูง และขยายผลได้ทันที
+- Key Technical Points:
+  * Performance Benchmark: ลดเวลาการตอบคำถามกลุ่ม Metadata ลงกว่า 90% (จาก 20-30 วินาที เหลือ < 0.5 วินาที)
+  * Data Integrity: รองรับโครงงานวิศวกรรมคอมพิวเตอร์ครบทั้ง 28 เล่ม พร้อมฟิลด์ Enrich เชิงลึกครบถ้วน
+  * Frontend Ready: Metadata ที่จัดเตรียมไว้ (Program, Year, Project Type, Tech Stack) พร้อมเชื่อมต่อระบบ Dynamic Filter บนหน้าเว็บได้ทันที
+  * Production Stability: สถาปัตยกรรมมีความเสถียร ใช้ Local LLM ควบคุมต้นทุน และป้องกันปัญหา Hallucination อย่างสมบูรณ์
+- Minimalist Visual Suggestion:
+  * 3 Pillars Minimalist Grid: 3 เสาหลักความสำเร็จ [Speed: <0.5s] | [Precision: 100% Grounded] | [Architecture: Dual-Track Ready]
+- Speaker Note:
+  * "โดยสรุป RAGcoon ได้พิสูจน์แล้วว่าการออกแบบสถาปัตยกรรมแบบ Dual-Track สามารถทลายข้อจำกัดของ RAG ดั้งเดิมได้อย่างสิ้นเชิง ทั้งความเร็ว ความถูกต้อง และความพร้อมในการนำไปใช้งานจริงบนหน้าเว็บครับ ขอขอบคุณครับ"

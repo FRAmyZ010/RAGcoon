@@ -309,35 +309,6 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
         ]
         metadata["committee"] = ", ".join(dict.fromkeys(cleaned_committee_list))
 
-    # --- ส่วน Keywords (Logic ใหม่: สแกนทีละบรรทัด) ---
-    lines = [line.strip() for line in first_page_text.split('\n') if line.strip()]
-    found_keywords: list[str] = []
-
-    for line in lines:
-        # 1. หาบรรทัดที่มีคำว่า Keyword (รองรับตัวหนา/พิมพ์เล็ก-ใหญ่/มีหรือไม่มี s)
-        if re.search(r"\bKeywords?\b", line, re.IGNORECASE):
-            # ลองดึงข้อมูลที่อาจจะอยู่ในบรรทัดเดียวกันมาด้วย (หลังเครื่องหมาย :)
-            content_after_header = re.sub(
-                r"Keywords?\s*[:\-]?\s*", "", line, flags=re.IGNORECASE
-            ).strip()
-            if content_after_header:
-                found_keywords.append(content_after_header)
-            continue
-        
-        # # 2. ถ้าเจอหัวข้อแล้ว ให้เก็บบรรทัดถัดๆ มา
-        # if start_collecting:
-        #     # จุดหยุด: ถ้าเจอปี ค.ศ. หรือ บรรทัดที่เป็นหัวข้ออื่น (เช่น Advisor หรือ Year)
-        #     if re.search(r"Advisor|Year|\b20[12]\d\b", line, re.IGNORECASE):
-        #         break
-            
-        #     # ถ้าบรรทัดนี้ไม่ใช่หัวข้ออื่น ให้ถือว่าเป็นเนื้อหาของ Keywords
-        #     found_keywords.append(line)
-
-    if found_keywords:
-        # รวมบรรทัดเข้าด้วยกันและทำความสะอาด
-        full_keywords = " ".join(found_keywords)
-        # ลบช่องว่างส่วนเกินและจุดปิดท้าย
-        metadata["keywords"] = re.sub(r'\s+', ' ', full_keywords).strip(' .')
     # Year
     year_match = re.search(r"\b(20[12]\d)\b", first_page_text)
     if year_match:

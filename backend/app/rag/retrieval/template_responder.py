@@ -337,9 +337,43 @@ def try_generate_template_response(
 
         # General Project Overview Info
         if any(k in q_lower for k in ["ข้อมูล", "รายละเอียดเบื้องต้น", "about", "overview", "คือใคร", "เรื่องอะไร"]):
+            p_summary = p.get("summary")
+            p_types = p.get("project_type")
+            p_techs = p.get("key_technologies")
+            p_problem = p.get("target_problem")
+
+            extra_lines_th = []
+            if p_summary:
+                extra_lines_th.append(f"- **ภาพรวมโครงงาน**: {p_summary}")
+            if p_problem:
+                extra_lines_th.append(f"- **ปัญหาที่แก้ไข**: {p_problem}")
+            if p_types:
+                t_str = ", ".join(p_types) if isinstance(p_types, list) else str(p_types)
+                extra_lines_th.append(f"- **ประเภทโครงงาน**: {t_str}")
+            if p_techs:
+                tech_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
+                extra_lines_th.append(f"- **เทคโนโลยีหลัก**: {tech_str}")
+
+            extra_block_th = ("\n".join(extra_lines_th) + "\n") if extra_lines_th else ""
+
+            extra_lines_en = []
+            if p_summary:
+                extra_lines_en.append(f"- **Summary**: {p_summary}")
+            if p_problem:
+                extra_lines_en.append(f"- **Target Problem**: {p_problem}")
+            if p_types:
+                t_str = ", ".join(p_types) if isinstance(p_types, list) else str(p_types)
+                extra_lines_en.append(f"- **Project Category**: {t_str}")
+            if p_techs:
+                tech_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
+                extra_lines_en.append(f"- **Key Technologies**: {tech_str}")
+
+            extra_block_en = ("\n".join(extra_lines_en) + "\n") if extra_lines_en else ""
+
             if is_thai:
                 return (
                     f"ข้อมูลเบื้องต้นของโครงงาน **{p_title}**:\n\n"
+                    f"{extra_block_th}"
                     f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
                     f"- **คณะกรรมการประเมิน (Committee)**: {committee}\n"
                     f"- **ผู้จัดทำ**: {authors}\n"
@@ -351,6 +385,7 @@ def try_generate_template_response(
             else:
                 return (
                     f"Overview of project **{p_title}**:\n\n"
+                    f"{extra_block_en}"
                     f"- **Advisor**: {advisor}\n"
                     f"- **Committee**: {committee}\n"
                     f"- **Author(s)**: {authors}\n"
@@ -394,12 +429,19 @@ def try_generate_template_response(
                 p_authors = p.get("author", "-")
                 p_adv = p.get("advisor", "-")
                 p_source = p.get("source", "")
-                items.append(
-                    f"{idx}. **{p_title}**\n"
-                    f"   - **ผู้จัดทำ**: {p_authors}\n"
-                    f"   - **อาจารย์ที่ปรึกษา**: {p_adv}\n"
-                    f"   - **เอกสาร**: 📄 `{p_source}`"
-                )
+                p_summary = p.get("summary")
+                p_techs = p.get("key_technologies")
+
+                item_lines = [f"{idx}. **{p_title}**"]
+                if p_summary:
+                    item_lines.append(f"   - **ภาพรวม**: {p_summary}")
+                if p_techs:
+                    t_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
+                    item_lines.append(f"   - **เทคโนโลยีหลัก**: {t_str}")
+                item_lines.append(f"   - **ผู้จัดทำ**: {p_authors}")
+                item_lines.append(f"   - **อาจารย์ที่ปรึกษา**: {p_adv}")
+                item_lines.append(f"   - **เอกสาร**: 📄 `{p_source}`")
+                items.append("\n".join(item_lines))
 
             list_body = "\n\n".join(items)
             return (

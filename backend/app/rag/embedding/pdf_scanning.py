@@ -3,6 +3,7 @@ import re
 
 import pdfplumber
 
+from .enricher import extract_project_enrichment
 from .metadata_extractor import extract_project_metadata
 
 
@@ -12,16 +13,19 @@ def scan_pdf_document(file_path):
     with pdfplumber.open(file_path) as pdf:
         total_pages = len(pdf.pages)
 
-        # 1. เตรียมตัวแปรเก็บ Metadata พิเศษ (ค่าเริ่มต้นเป็น None)
-        special_meta: dict[str, str | None] = {
+        # 1. เตรียมตัวแปรเก็บ Metadata พิเศษ
+        special_meta: dict[str, Any] = {
             "project_title": None,
             "author": None,
             "advisor": None,
             "committee": None,
-            "keywords": None,
             "year": None,
             "school": None,
             "program": None,
+            "summary": None,
+            "project_type": [],
+            "key_technologies": [],
+            "target_problem": None,
         }
 
         # 2. Collect metadata first so every page receives the final payload.
@@ -40,7 +44,7 @@ def scan_pdf_document(file_path):
             for key, value in page_meta.items():
                 if value is None:
                     continue
-                current = special_meta[key]
+                current = special_meta.get(key)
                 if current is None:
                     special_meta[key] = value
                 else:
@@ -69,14 +73,24 @@ def scan_pdf_document(file_path):
                         new_count = len([c for c in value.split(",") if c.strip()])
                         if new_count > current_count:
                             special_meta[key] = value
-                    elif key == "keywords":
-                        if len(value) > len(current):
-                            special_meta[key] = value
                     elif key == "year":
                         if not re.search(r"\b(20[12]\d)\b", current) and re.search(r"\b(20[12]\d)\b", value):
                             special_meta[key] = value
 
-        # 3. Keep every scanned page in order. Blank pages should still carry their
+        # 3. LLM Metadata Enrichment (summary, project_type, key_technologies, target_problem)
+        abstract_candidates = []
+        for text in page_texts[:6]:
+            if text and ("ABSTRACT" in text.upper() or "บทคัดย่อ" in text):
+                abstract_candidates.append(text)
+        enrichment_text = "\n\n".join(abstract_candidates) if abstract_candidates else "\n\n".join(page_texts[:4])
+
+        enrichment = extract_project_enrichment(
+            enrichment_text,
+            project_title=special_meta.get("project_title"),
+        )
+        special_meta.update(enrichment)
+
+        # 4. Keep every scanned page in order. Blank pages should still carry their
         #    original page number so the numbering stays aligned with the PDF scan.
         for i, text in enumerate(page_texts):
             metadata = {

@@ -1,0 +1,116 @@
+# ==============================================================================
+# PROMPT FOR NOTEBOOKLM: MINIMALIST TECHNICAL SLIDE DECK
+# TOPIC: RAGcoon Architecture — Intelligent Routing & High-Precision Retrieval
+# STYLE: Apple / Stripe Keynote Style (Ultra-Clean, High Whitespace, Zero Clutter)
+# ==============================================================================
+
+[INSTRUCTION FOR NOTEBOOKLM]
+คุณคือ Principal Presentation Designer เชี่ยวชาญการออกแบบสไลด์สไตล์ Modern Minimalist (เน้นความเรียบหรู สบายตา ไร้ความรก ไม่ใช้ไดอะแกรมที่ซับซ้อนเกินไป 1 สไลด์ = 1 ประเด็นหลัก พื้นที่ว่างมากกว่า 50%)
+
+โปรดนำข้อมูลสถาปัตยกรรม RAGcoon ด้านล่างนี้ ไปสร้างโครงสร้างสไลด์นำเสนอจำนวน 8 สไลด์ โดยแต่ละสไลด์ให้ระบุ:
+1. Slide Title: สั้น กระชับ ตรงประเด็น
+2. Core Takeaway: ประโยคสรุปหัวใจสำคัญ 1 ประโยคเด่น
+3. Key Points: หัวข้อย่อยสั้นๆ ไม่เกิน 3 ข้อ (ข้อละ 1-2 บรรทัด)
+4. Minimalist Visual Suggestion: แนะนำกราฟิกที่เรียบง่ายที่สุด (เช่น Hero Stat ตัวเลขใหญ่, ตารางเทียบ 2 ฝั่ง, หรือ Flowcard รางคู่ หลีกเลี่ยงแผนภาพใยแมงมุมหรือกล่องซ้อนที่ดูรก)
+5. Speaker Note: บทพูดสั้นๆ สไตล์ผู้นำเสนอระดับผู้บริหาร
+
+--------------------------------------------------------------------------------
+[DESIGN GUIDELINES / หลักการจัดวางภาพแบบมินิมอล]
+--------------------------------------------------------------------------------
+- ห้ามใช้ไดอะแกรมที่มีลูกศรโยงไปมาซับซ้อน (No Spaghetti Flowcharts)
+- ใช้รูปแบบ "2-Lane Pipeline" (รางคู่ขนาน) หรือ "3 Clean Cards" เรียงกันเท่านั้น
+- เน้นตัวเลขสถิติเด่น (Big Stat Callouts) และการเปรียบเทียบ Before/After แบบสะอาดตา
+- ใช้สัญลักษณ์หรือ Icon เรียบง่าย ไม่ใส่สีฉูดฉาด
+
+--------------------------------------------------------------------------------
+[SOURCE CONTENT / ข้อมูลสถาปัตยกรรม RAGcoon]
+--------------------------------------------------------------------------------
+
+## สไลด์ที่ 1: วิสัยทัศน์สถาปัตยกรรม (The Dual-Track Vision)
+- Core Takeaway: ยุติปัญหา RAG ตอบช้าและหลอน ด้วยสถาปัตยกรรมแยก 2 รางอัจฉริยะ
+- Key Points:
+  * ปัญหา RAG เดิม: วิ่งผ่าน Embedding และ LLM ทุกคำถาม ทำให้ช้า (20-30s) และเสี่ยงตอบหลอน
+  * นวัตกรรม RAGcoon: Context Router คัดแยกระหว่าง "คำถามทะเบียน" กับ "คำถามเนื้อหา" ตั้งแต่จุดเริ่มต้น
+  * ประสิทธิภาพ: คำถามกลุ่มทะเบียนตอบได้ทันทีในเวลา < 0.5 วินาที พร้อมความแม่นยำ 100%
+- Minimalist Visual: 
+  * Hero Stat: ตัวเลขขนาดใหญ่ "0.5s" (Fast-Path Latency) วางคู่กับ "25s" (Standard RAG) ในกรอบการ์ดเรียบหรู 2 ช่อง
+
+---
+
+## สไลด์ที่ 2: สถาปัตยกรรมภาพรวมแบบ 2 ราง (Dual-Track Architecture Flow)
+- Core Takeaway: Flow ข้อมูลแบบรางคู่ขนาน คลีน เข้าใจง่ายใน 3 วินาที
+- Key Points:
+  * User Query เข้าสู่ Context Router เพื่อวิเคราะห์เจตนา (Intent)
+  * รางที่ 1 (Fast-Path): คำถามเชิงทะเบียน ➔ ดึง Rich Metadata ตรงจาก Qdrant ➔ ตอบทันที (ข้าม LLM)
+  * รางที่ 2 (Deep Retrieval): คำถามเนื้อหา ➔ Hybrid Search + Reranker ➔ ส่งต่อให้ LLM สรุปพร้อมอ้างอิง
+- Minimalist Visual: 
+  * Clean 2-Lane Flowcard: กล่องต้นทาง (Query & Router) แยกเป็น 2 แถบแนวนอนขนานกัน (Fast-Path บนสีเขียวอ่อน / Deep RAG ล่างสีม่วงอ่อน) จบที่กล่องปลายทาง (Final Response)
+
+---
+
+## สไลด์ที่ 3: ระบบคัดกรองเส้นทางอัจฉริยะ (Context Router & Intent Engine)
+- Core Takeaway: การจัดหมวดหมู่คำถามตั้งแต่ต้นทาง เพื่อส่งเข้าประมวลผลให้ถูกช่องทาง
+- Key Points:
+  * Pure Metadata Intent: คำถามขอรายชื่อ, ผู้จัดทำ, อาจารย์ที่ปรึกษา, ปีการศึกษา ➔ ส่งตรงเข้า Fast-Path
+  * Content & Reasoning Intent: คำถามเจาะลึกสเปกฮาร์ดแวร์, โค้ด, การทำงาน, การเปรียบเทียบ ➔ ส่งเข้า Deep RAG
+  * Zero-Waste Resource: ไม่สูญเสีย GPU Compute ให้กับคำถามที่ค้นหาจาก Metadata ได้อยู่แล้ว
+- Minimalist Visual: 
+  * 2-Column Intent Card: ซ้าย "Metadata Query (รางลัด)" เทียบกับ ขวา "Technical Deep-Dive (รางลึก)" พร้อมตัวอย่างประโยคคำถาม 2-3 บรรทัด
+
+---
+
+## สไลด์ที่ 4: กลไกทางด่วน Fast-Path & Rich Metadata
+- Core Takeaway: ดึงข้อมูลโครงงานได้ทันทีระดับเสี้ยววินาที โดยไม่แห้งแล้งและครอบคลุม
+- Key Points:
+  * Zero Inference Latency: ข้าม Vector Search, Cross-Encoder และ LLM Generation ทั้งหมด (0.0s LLM Time)
+  * Rich Payload: ดึงฟิลด์ที่ Enrich ไว้ล่วงหน้า (Title, Summary, Key Tech, Program, Advisor)
+  * ขจัดปัญหาแห้ง: แสดงภาพรวมและ Tech Stack ครบถ้วน ไม่ได้มีแค่รายชื่อทื่อๆ
+- Minimalist Visual: 
+  * Before vs After Card: ฝั่ง Before แสดงลิสต์ชื่อสั้นๆ ทื่อๆ vs ฝั่ง After แสดงการ์ดโครงงานพร้อม Summary และ Badge เทคโนโลยีสวยงาม
+
+---
+
+## สไลด์ที่ 5: การค้นหาเชิงลึก Deep Retrieval (Hybrid Search & Isolation)
+- Core Takeaway: การค้นหาแบบสองประสาน ผสานความเข้าใจภาษาเข้ากับความแม่นยำของคีย์เวิร์ด
+- Key Points:
+  * Dense Vector Search: ค้นหาความหมายด้วย multilingual-e5-base
+  * Sparse BM25 Search: ค้นหาคีย์เวิร์ดเฉพาะ เช่น ชื่อรุ่นเซนเซอร์, ชิป, โปรโตคอล
+  * Project Isolation Filter: ล็อกขอบเขตโครงงานด้วย Payload Filter ป้องกันข้อมูลปนกันข้ามเล่ม
+- Minimalist Visual: 
+  * 2-Layer Badge Block: การ์ดเรียบง่าย 2 ชั้น "Semantic Meaning (Vector)" + "Exact Keyword (BM25)" รวมเข้าด้วยกันเป็น High-Precision Candidates
+
+---
+
+## สไลด์ที่ 6: การคัดกรองความแม่นยำสูง (Cross-Encoder Reranker)
+- Core Takeaway: กรองเฉพาะท่อนข้อมูลที่มีคุณค่าสูงสุด 6 Chunks เพื่อป้อนให้ LLM
+- Key Points:
+  * Deep Cross-Attention: โมเดล ms-marco-MiniLM-L-6-v2 ตรวจสอบความสอดคล้องระหว่างคำถามกับเนื้อหา
+  * Boilerplate Suppression: คัดท่อนเอกสารที่ไม่ใช่เชิงเทคนิคออก (สารบัญ, แผนงาน Gantt Chart, ลายเซ็นกรรมการ)
+  * Token Efficiency: ลดทอนจาก 25 Chunks เหลือเพียง Top 6 Chunks คุณภาพสูง ป้องกัน LLM สับสน
+- Minimalist Visual: 
+  * Clean Funnel Metric: กล่องแสดงตัวเลข "25 Raw Chunks" ➔ ลูกศรเรียบๆ ➔ "Top 6 High-Relevance Chunks" พร้อมป้ายคะแนน Rerank Score
+
+---
+
+## สไลด์ที่ 7: ความแม่นยำของหลักฐานและการอ้างอิง (Evidence-First Grounding)
+- Core Takeaway: ทุกคำตอบต้องมีที่มาที่ไป ตรวจสอบย้อนกลับไปยังหน้า PDF จริงได้เสมอ
+- Key Points:
+  * Strict Grounding Rule: LLM ถูกบังคับให้ตอบจากบริบทที่ได้รับเท่านั้น หากไม่มีในเอกสารจะตอบว่า "Not specified"
+  * Explicit Page Boundary: กำหนดขอบเขต Excerpt ระบุเลขหน้าจริง ป้องกันการเดาหน้าสับสน
+  * Inline Citation: ทุกประเด็นสำคัญมีป้ายกำกับ [Source: file.pdf, Page: X] ที่คลิกเปิดอ่านได้จริง
+- Minimalist Visual: 
+  * Single Mockup Card: ตัวอย่างคำตอบจริง 1 ประโยค พร้อมแถบไฮไลต์ป้าย Citation สีสดใส แสดงเลขหน้าและชื่อไฟล์
+
+---
+
+## สไลด์ที่ 8: บทสรุปและผลลัพธ์เชิงวิศวกรรม (Engineering Impact)
+- Core Takeaway: ความสมบูรณ์แบบระหว่าง "ความเร็วระดับเสี้ยววินาที" และ "ความน่าเชื่อถือ 100%"
+- Key Points:
+  * Ultra-Fast Performance: คำถามทะเบียนจบใน < 0.5s ลดภาระเซิร์ฟเวอร์
+  * Zero-Hallucination: การันตีคำตอบตรงตามเล่มโครงงานจริง ขจัดปัญหาข้อมูลเท็จ
+  * Scalability: พร้อมต่อยอดเป็นระบบ Filter บนเว็บ (ค้นหาตามสาขา Computer Engineering, ปีการศึกษา, Tech Stack)
+- Minimalist Visual: 
+  * 3 Pillar Minimalist Grid: 3 คอลัมน์เรียบหรู
+    1. Speed (< 0.5s)
+    2. Precision (100% Grounded)
+    3. Production-Ready (Qdrant Indexed & Isolated)
