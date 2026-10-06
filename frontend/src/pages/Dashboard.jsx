@@ -2,26 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  FolderKanban,
+  Eye,
+  FileText,
+  FolderClosed,
   LayoutDashboard,
   LogOut,
-  Menu,
   MessageSquare,
   Search,
-  MessageSquareQuote,
-  PieChart,
-  X,
 } from "lucide-react";
 import { clearAuth } from "../services/authApi";
 import { fetchOverview } from "../services/dashboardApi";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/documents", label: "Documents", icon: FolderKanban },
-  { to: "/feedback-admin", label: "Feedback", icon: MessageSquareQuote },
+  { to: "/documents", label: "Documents", icon: FolderClosed },
+  { to: "/feedback-admin", label: "Feedback", icon: MessageSquare },
   { to: "/chat", label: "Chat Workspace", icon: MessageSquare },
 ];
 
@@ -49,31 +44,93 @@ function recentSearches(rows) {
   return points;
 }
 
+function smoothLine(coords) {
+  if (coords.length === 0) return "";
+  let path = `M ${coords[0][0]} ${coords[0][1]}`;
+  for (let index = 0; index < coords.length - 1; index += 1) {
+    const [x0, y0] = coords[index];
+    const [x1, y1] = coords[index + 1];
+    const mid = (x0 + x1) / 2;
+    path += ` C ${mid} ${y0}, ${mid} ${y1}, ${x1} ${y1}`;
+  }
+  return path;
+}
+
 function SearchChart({ points }) {
-  const width = 320;
-  const height = 110;
+  const width = 420;
+  const height = 180;
+  const padL = 32;
+  const padR = 12;
+  const padT = 16;
+  const padB = 24;
   const max = Math.max(1, ...points.map((point) => point.count));
-  const step = points.length > 1 ? width / (points.length - 1) : width;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+  const baseline = padT + innerH;
   const coords = points.map((point, index) => {
-    const x = index * step;
-    const y = height - 8 - (point.count / max) * (height - 16);
-    return `${x},${y}`;
+    const x = padL + (points.length === 1 ? innerW / 2 : (index / (points.length - 1)) * innerW);
+    const y = padT + innerH - (point.count / max) * innerH;
+    return [x, y];
   });
-  const line = coords.join(" ");
-  const area = `0,${height} ${line} ${width},${height}`;
+  const line = smoothLine(coords);
+  const area = `${line} L ${coords.at(-1)[0]} ${baseline} L ${coords[0][0]} ${baseline} Z`;
+  const peak = coords.reduce((best, coord, index) => (points[index].count > points[best].count ? index : best), 0);
+  const ticks = [...new Set([0, Math.ceil(max / 2), max])];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="Search activity">
-        <polygon points={area} fill="#4b5563" opacity="0.15" />
-        <polyline points={line} fill="none" stroke="#374151" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="mt-1 flex justify-between font-mono text-[9px] text-neutral-400">
-        {points.map((point) => (
-          <span key={point.day}>{point.label}</span>
-        ))}
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Search activity">
+      <defs>
+        <linearGradient id="searchFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#7d9a84" stopOpacity="0.32" />
+          <stop offset="100%" stopColor="#7d9a84" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {ticks.map((tick) => {
+        const y = padT + innerH - (tick / max) * innerH;
+        return (
+          <g key={tick}>
+            <line x1={padL} x2={width - padR} y1={y} y2={y} stroke="#f3f4f6" />
+            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="10" fill="#9ca3af">
+              {tick}
+            </text>
+          </g>
+        );
+      })}
+      <path d={area} fill="url(#searchFill)" />
+      <path d={line} fill="none" stroke="#5f8a6e" strokeWidth="2.25" strokeLinejoin="round" />
+      {coords.map(([x, y], index) =>
+        points[index].count > 0 ? (
+          <circle
+            key={points[index].day}
+            cx={x}
+            cy={y}
+            r={index === peak ? 4.5 : 3}
+            fill={index === peak ? "#e4c56a" : "#5f8a6e"}
+            stroke="#fff"
+            strokeWidth="1.5"
+          />
+        ) : null
+      )}
+      {coords.map(([x], index) =>
+        index % 2 === 0 ? (
+          <text key={points[index].day} x={x} y={height - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+            {points[index].label}
+          </text>
+        ) : null
+      )}
+    </svg>
+  );
+}
+
+function Panel({ title, hint, children }) {
+  return (
+    <section className="flex min-h-[240px] flex-col rounded-xl bg-white p-4 shadow-sm">
+      <div className="mb-3">
+        <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+        <p className="text-[11px] text-gray-500">{hint}</p>
       </div>
-    </div>
+      <div className="min-h-0 flex-1">{children}</div>
+    </section>
   );
 }
 
@@ -81,8 +138,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const displayName = localStorage.getItem("username") || "Admin";
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState("");
@@ -107,6 +163,7 @@ export default function Dashboard() {
 
   const searches = useMemo(() => recentSearches(overview?.searches_by_day), [overview]);
   const searchToday = searches.at(-1)?.count ?? 0;
+  const searchWindow = searches.reduce((sum, point) => sum + point.count, 0);
   const years = useMemo(() => {
     const rows = [...(overview?.documents_by_year || [])];
     rows.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
@@ -124,10 +181,10 @@ export default function Dashboard() {
   });
 
   const cards = [
-    { title: "Total Document", count: overview?.total_documents ?? 0 },
-    { title: "Search Today", count: searchToday },
-    { title: "Visits", count: overview?.total_visits ?? 0 },
-    { title: "Feedback", count: overview?.total_feedbacks ?? 0 },
+    { title: "Total Document", count: overview?.total_documents ?? 0, note: overview ? `${overview.total_projects} projects` : "", icon: FileText },
+    { title: "Search Today", count: searchToday, note: overview ? `${searchWindow} in 14 days` : "", icon: Search },
+    { title: "Visits", count: overview?.total_visits ?? 0, note: "all visits", icon: Eye },
+    { title: "Feedback", count: overview?.total_feedbacks ?? 0, note: "all notes", icon: MessageSquare },
   ];
 
   const logout = () => {
@@ -136,40 +193,36 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col overflow-hidden bg-[#b2b5b8] font-sans text-slate-800 antialiased md:flex-row md:gap-3 md:p-3">
-      {mobileOpen && (
+    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-xs text-gray-800 sm:text-sm">
+      {sidebarOpen && (
         <button
           type="button"
           aria-label="Close menu"
-          className="fixed inset-0 z-40 bg-black/40 md:hidden"
-          onClick={() => setMobileOpen(false)}
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
         />
       )}
 
-      <div className="z-40 flex shrink-0 items-center justify-between bg-[#2d2e30] p-3 text-white shadow-md md:hidden">
-        <span className="font-mono text-lg font-bold">RAGcoon</span>
-        <button type="button" onClick={() => setMobileOpen((open) => !open)} className="p-1.5 text-gray-300">
-          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
-
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-full shrink-0 flex-col justify-between overflow-hidden bg-[#2b2b2b] p-3.5 text-white shadow-xl transition-all duration-300 md:relative md:rounded-2xl ${
-          collapsed ? "md:w-16" : "md:w-56"
-        } ${mobileOpen ? "w-56 translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col justify-between bg-[#2d2d2d] p-3 text-white transition-transform duration-300 lg:static ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}
       >
-        <div className="flex flex-col gap-5">
-          <div className="flex items-center justify-between px-0.5 pt-0.5">
-            <span className={`font-mono text-lg font-bold ${collapsed && !mobileOpen ? "md:hidden" : ""}`}>RAGcoon</span>
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold sm:text-base">
+              <span className="text-lg">🦝</span>
+              <span>RAGcoon</span>
+            </div>
             <button
               type="button"
-              onClick={() => setCollapsed((value) => !value)}
-              className="hidden rounded-md p-1 text-gray-400 hover:bg-neutral-800 hover:text-white md:flex"
+              onClick={() => setSidebarOpen(false)}
+              className="text-gray-400 hover:text-white lg:hidden"
             >
-              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              ✕
             </button>
           </div>
-          <nav className="space-y-1.5">
+          <nav className="space-y-1">
             {NAV.map((item) => {
               const active = location.pathname === item.to;
               const Icon = item.icon;
@@ -177,142 +230,156 @@ export default function Dashboard() {
                 <Link
                   key={item.to}
                   to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium transition-all ${
-                    active ? "bg-white font-semibold text-black shadow-sm" : "text-gray-300 hover:bg-neutral-800 hover:text-white"
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${
+                    active ? "bg-white font-bold text-gray-900" : "text-gray-300 hover:bg-white/10"
                   }`}
                 >
-                  <Icon size={16} className={active ? "text-black" : "text-gray-300"} />
-                  {(!collapsed || mobileOpen) && <span className="truncate">{item.label}</span>}
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
         </div>
-        <div className="border-t border-neutral-700/50 pt-2">
-          <button
-            type="button"
-            onClick={logout}
-            className={`flex w-full items-center rounded-xl bg-neutral-100 py-2 font-mono font-medium text-black shadow-sm hover:bg-neutral-200 ${
-              collapsed && !mobileOpen ? "justify-center px-0" : "justify-between px-3"
-            }`}
-          >
-            {(!collapsed || mobileOpen) && <span className="text-xs">Log Out</span>}
-            <LogOut size={15} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="flex w-full items-center justify-between rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900 hover:bg-gray-200"
+        >
+          <span>Log Out</span>
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
       </aside>
 
-      <main className="flex h-full min-h-0 flex-1 flex-col justify-between gap-3 overflow-hidden bg-[#bec1c4] p-3 md:rounded-2xl md:p-4">
-        <header className="flex shrink-0 flex-col items-center justify-between gap-2 sm:flex-row">
-          <h1 className="font-mono text-xl font-bold tracking-tight text-neutral-900">Overview</h1>
-          <div className="flex w-full items-center justify-end gap-2.5 sm:w-auto">
-            <div className="relative flex-1 sm:w-48">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+      <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5">
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-lg bg-white p-1.5 shadow-sm hover:bg-gray-50 lg:hidden"
+          >
+            ☰
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold text-gray-900 sm:text-lg">Overview</h1>
+            <p className="text-[11px] text-gray-500 sm:text-xs">ตัวเลขจากคลังเอกสาร การค้นหา และการเข้าชม</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2.5">
+            <div className="relative hidden sm:block">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search"
-                className="w-full rounded-lg border-none bg-white py-1 pl-8 pr-3 font-mono text-xs text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                className="h-8 w-44 rounded-lg border border-gray-200 bg-white pl-8 pr-3 text-xs text-gray-800 shadow-sm outline-none focus:ring-2 focus:ring-[#800000]/30"
               />
             </div>
-            <Bell size={16} className="text-neutral-800" />
-            <div className="flex items-center gap-1.5 px-1">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-sm">
-                {displayName.slice(0, 1).toUpperCase()}
+            <Bell className="h-4 w-4 text-gray-600" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
+                {displayName.slice(0, 2).toUpperCase()}
               </div>
-              <span className="hidden whitespace-nowrap font-mono text-[11px] font-medium text-neutral-800 lg:inline">
-                {displayName}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-1 font-mono text-[11px] text-neutral-700 shadow-sm">
-              <Calendar size={13} className="text-neutral-500" />
-              <span className="whitespace-nowrap">14 days</span>
+              <span className="hidden text-sm font-bold text-gray-800 sm:inline">{displayName}</span>
             </div>
           </div>
         </header>
 
         {error && (
-          <p className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700" role="alert">
             {error}
           </p>
         )}
 
-        <section className="grid shrink-0 grid-cols-2 gap-2.5 lg:grid-cols-4">
-          {cards.map((card) => (
-            <div key={card.title} className="flex flex-col justify-between rounded-xl border border-neutral-100 bg-white p-2.5 shadow-sm">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="truncate font-mono text-[11px] font-medium text-neutral-500">{card.title}</span>
-                <div className="shrink-0 rounded-md bg-purple-100 p-1 text-purple-600">
-                  <PieChart size={13} />
+        <section className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article key={card.title} className="rounded-xl bg-white p-3.5 shadow-sm">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-gray-500 sm:text-xs">{card.title}</span>
+                  <span className="rounded-md bg-[#800000]/10 p-1 text-[#800000]">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
                 </div>
-              </div>
-              <div className="font-mono text-xl font-bold leading-tight text-neutral-900">
-                {loading ? "…" : card.count}
-              </div>
-            </div>
-          ))}
+                <p className="text-2xl font-bold leading-none text-gray-900">{loading ? "…" : card.count}</p>
+                {card.note && <p className="mt-1.5 text-[11px] text-gray-400">{card.note}</p>}
+              </article>
+            );
+          })}
         </section>
 
-        <section className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 lg:grid-cols-2">
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-100 bg-white p-3 shadow-sm">
-            <h3 className="mb-1 shrink-0 font-mono text-[11px] font-bold tracking-wide text-neutral-800">Search Activity</h3>
-            {loading ? <p className="text-xs text-neutral-500">Loading...</p> : <SearchChart points={searches} />}
-          </div>
-
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-100 bg-white p-3 shadow-sm">
-            <h3 className="mb-2 shrink-0 font-mono text-[11px] font-bold tracking-wide text-neutral-800">Documents by years</h3>
-            {years.length === 0 ? (
-              <p className="text-xs text-neutral-500">{loading ? "Loading..." : "ยังไม่มีเอกสาร"}</p>
+        <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <Panel title="Search Activity" hint="จำนวนคำถามใน 14 วันล่าสุด">
+            {loading ? (
+              <p className="text-xs text-gray-500">Loading...</p>
             ) : (
-              <div className="flex min-h-0 flex-1 items-end gap-2">
+              <div className="h-44">
+                <SearchChart points={searches} />
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Documents by years" hint="จำนวนเอกสารตามปีการศึกษา">
+            {years.length === 0 ? (
+              <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสาร"}</p>
+            ) : (
+              <div className="flex h-44 items-end gap-3 px-2">
                 {years.map((row) => (
                   <div key={row.year ?? "unknown"} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
-                    <span className="mb-1 font-mono text-[10px] font-bold text-neutral-700">{row.count}</span>
-                    <div
-                      className="w-full max-w-6 rounded-md bg-[#c4c4c4]"
-                      style={{ height: `${Math.max(8, (row.count / yearMax) * 100)}%` }}
-                    />
-                    <span className="mt-1 font-mono text-[10px] font-bold text-neutral-800">{row.year ?? "—"}</span>
+                    <span className="mb-1 text-[11px] font-bold text-gray-600">{row.count}</span>
+                    <div className="flex w-full flex-1 items-end justify-center">
+                      <div
+                        className="w-8 rounded-t-lg bg-gradient-to-t from-[#5f8a6e] to-[#d7e6da]"
+                        style={{ height: `${Math.max(10, (row.count / yearMax) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="mt-2 text-[11px] font-semibold text-gray-700">{row.year ?? "—"}</span>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </Panel>
 
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-100 bg-white p-3 shadow-sm">
-            <h3 className="mb-2 shrink-0 font-mono text-[11px] font-bold tracking-wide text-neutral-800">Top Keywords</h3>
-            <div className="flex min-h-0 flex-1 flex-col justify-around overflow-auto">
+          <Panel title="Top Keywords" hint="คำที่พบบ่อยในเอกสาร">
+            <div className="flex max-h-52 flex-col gap-2.5 overflow-y-auto pr-1">
               {keywords.length === 0 && (
-                <p className="text-xs text-neutral-500">{loading ? "Loading..." : "ยังไม่มี keyword"}</p>
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มี keyword"}</p>
               )}
-              {keywords.map((item) => (
-                <div key={item.keyword} className="flex items-center gap-3 font-mono text-[11px]">
-                  <span className="w-20 truncate font-bold text-neutral-800">{item.keyword}</span>
-                  <div className="flex h-4 flex-1 items-center overflow-hidden rounded-sm bg-neutral-100 p-0.5">
-                    <div className="h-full rounded-sm bg-black" style={{ width: `${(item.count / keywordMax) * 100}%` }} />
+              {keywords.map((item, index) => (
+                <div key={item.keyword} className="grid grid-cols-[minmax(0,9rem)_1fr_1.5rem] items-center gap-3">
+                  <span className="truncate text-xs font-semibold text-gray-800">{item.keyword}</span>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-[#6d9478]"
+                      style={{ width: `${Math.max(8, (item.count / keywordMax) * 100)}%`, opacity: index === 0 ? 1 : 0.72 }}
+                    />
                   </div>
-                  <span className="w-6 text-right font-bold text-neutral-800">{item.count}</span>
+                  <span className="text-right text-xs font-bold text-gray-800">{item.count}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
 
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-neutral-100 bg-white p-3 shadow-sm">
-            <h3 className="mb-2 shrink-0 font-mono text-[11px] font-bold tracking-wide text-neutral-800">Most Viewed Documents</h3>
-            <div className="flex min-h-0 flex-1 flex-col justify-around overflow-auto">
+          <Panel title="Most Viewed Documents" hint="เอกสารที่ถูกเปิดดูมากสุด">
+            <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
               {viewed.length === 0 && (
-                <p className="text-xs text-neutral-500">{loading ? "Loading..." : "ยังไม่มีเอกสารที่ถูกเปิด"}</p>
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสารที่ถูกเปิด"}</p>
               )}
-              {viewed.map((doc) => (
-                <div key={doc.document_id} className="flex items-center justify-between rounded px-1 py-0.5 font-mono text-[11px]">
-                  <span className="max-w-[85%] truncate font-bold text-neutral-800">{doc.title || doc.filename}</span>
-                  <span className="font-bold text-neutral-800">{doc.view_count}</span>
+              {viewed.map((doc, index) => (
+                <div key={doc.document_id} className="flex items-center gap-3 rounded-lg px-1 py-1.5 hover:bg-gray-50">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5f8a6e]/15 text-[11px] font-bold text-[#4f735c]">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-800">
+                    {doc.title || doc.filename}
+                  </span>
+                  <span className="text-xs font-bold text-gray-700">{doc.view_count}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
         </section>
       </main>
     </div>
