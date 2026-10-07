@@ -41,7 +41,10 @@ class DocumentCitation(BaseModel):
     pages_formatted: str | None = None
     author: str | None = None
     advisor: str | None = None
+    committee: str | None = None
     year: str | int | None = None
+    school: str | None = None
+    program: str | None = None
 
     model_config = ConfigDict(extra="ignore")
 

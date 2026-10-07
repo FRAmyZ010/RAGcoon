@@ -99,6 +99,7 @@ class MetadataCache:
         self.advisors: set[str] = set()
         self.keywords: set[str] = set()
         self.years: set[str] = set()
+        self.programs: set[str] = set()
 
         self.author_to_full: dict[str, set[str]] = {}
         self.advisor_to_full: dict[str, set[str]] = {}
@@ -215,6 +216,8 @@ class MetadataCache:
                         "advisor",
                         "keywords",
                         "year",
+                        "program",
+                        "school",
                     ],
                     with_vectors=False,
                     offset=next_offset,
@@ -292,6 +295,12 @@ class MetadataCache:
                         if year_val:
                             self.years.add(year_val)
 
+                    # Program
+                    if payload.get("program"):
+                        prog_val = str(payload["program"]).strip()
+                        if prog_val:
+                            self.programs.add(prog_val)
+
                 if next_offset is None:
                     break
 
@@ -300,7 +309,8 @@ class MetadataCache:
                 f"Dynamic metadata loaded: {len(self.titles)} titles, "
                 f"{len(self.authors)} authors, "
                 f"{len(self.advisors)} advisors, "
-                f"{len(self.years)} years."
+                f"{len(self.years)} years, "
+                f"{len(self.programs)} programs."
             )
 
         except Exception as error:
