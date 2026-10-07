@@ -134,51 +134,73 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let currentText = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n\n");
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        // Keep the last potentially incomplete chunk in the buffer
+        buffer = parts.pop() || "";
 
-        for (const line of lines) {
-          if (!line.trim()) continue;
+        for (const part of parts) {
+          if (!part.trim()) continue;
 
-          const dataLine = line.split("\n").find((l) => l.startsWith("data: "));
+          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (!dataLine) continue;
 
           const jsonString = dataLine.replace(/^data:\s*/, "");
           try {
             const data = JSON.parse(jsonString);
 
-            if (data.type === "answer_chunk") {
+            if (data.type === "init") {
+              if (data.workspace_id && !workspaceId) {
+                setActiveWorkspaceId(data.workspace_id);
+              }
+            } else if (data.type === "retrieval_status") {
+              const count = data.retrieved_count || (data.citations ? data.citations.length : 0);
+              const rSec = data.timing?.retrieval_seconds ? Number(data.timing.retrieval_seconds).toFixed(2) : "0.5";
+              setMessages((prev) => {
+                if (prev.length === 0) return prev;
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  citations: data.citations || [],
+                  meta: `Found ${count} documents (${rSec}s) · Generating answer...`,
+                };
+                return updated;
+              });
+            } else if (data.type === "answer_chunk") {
               currentText += data.content;
               if (data.workspace_id && !workspaceId) {
                 setActiveWorkspaceId(data.workspace_id);
-                fetchWorkspaces();
               }
 
               setMessages((prev) => {
+                if (prev.length === 0) return prev;
                 const updated = [...prev];
-                updated[botMsgIndex] = {
-                  ...updated[botMsgIndex],
+                const lastIdx = updated.length - 1;
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
                   text: currentText,
                   meta: "Generating...",
                 };
                 return updated;
               });
-            }
-
-            if (data.type === "metadata") {
+            } else if (data.type === "metadata") {
               setMessages((prev) => {
+                if (prev.length === 0) return prev;
                 const updated = [...prev];
-                updated[botMsgIndex] = {
-                  ...updated[botMsgIndex],
-                  citations: data.citations || [],
-                  meta: data.timing
-                    ? `Total ${data.timing.total_seconds || 0}s · Retrieval ${data.timing.retrieval_seconds || 0}s`
-                    : "Completed",
+                const lastIdx = updated.length - 1;
+                const tTotal = data.timing?.total_seconds ? Number(data.timing.total_seconds).toFixed(2) : "0";
+                const tRetr = data.timing?.retrieval_seconds ? Number(data.timing.retrieval_seconds).toFixed(2) : "0";
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  citations: data.citations || updated[lastIdx]?.citations || [],
+                  meta: `Total ${tTotal}s · Retrieval ${tRetr}s`,
                 };
                 return updated;
               });

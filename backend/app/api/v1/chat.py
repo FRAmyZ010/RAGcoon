@@ -57,7 +57,12 @@ def query_rag_stream(
             workspace_id=request.workspace_id,
             parent_query_id=request.parent_query_id
         ),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
     )
 
 @router.get("/workspaces", response_model=list[WorkspaceSummaryResponse])

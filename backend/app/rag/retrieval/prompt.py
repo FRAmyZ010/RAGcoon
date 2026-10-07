@@ -158,6 +158,25 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
         flags=re.IGNORECASE,
     )[0].strip()
 
+    # Strip any trailing '## Sources' or '## แหล่งที่มา' block since UI renders citations
+    cleaned = re.split(r"\n\s*##\s*(?:Sources|Source|แหล่งที่มา|เอกสารอ้างอิง)\b", cleaned, flags=re.IGNORECASE)[0].strip()
+
+    # Strip empty sections like '### 🔔 บริการภายนอก / การแจ้งเตือนภายนอก...' or '### ⚠️ ข้อมูลที่ไม่ได้ระบุ...'
+    cleaned = re.sub(
+        r"\n*###\s*(?:🔔|⚠️|📌|🏗️|🔄|🛠️|👤)?\s*.*?(?:บริการภายนอก|แจ้งเตือนภายนอก|External Services|ข้อมูลที่ไม่ได้ระบุ|Not Specified).*?[\s\S]*?(?=(?:\n###|\Z))",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Strip unprompted trailing disclaimers about missing database / SQL if not asked
+    cleaned = re.sub(
+        r"\n*(?:ไม่พบข้อมูลเกี่ยวกับ\s*(?:Database|ฐานข้อมูล|SQL)|The retrieved document does not specify the requested code or SQL)[\s\S]*?$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
     return cleaned or fallback_text
 
 
@@ -177,54 +196,41 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    - **Why It Fits**: [Concise 1-sentence explanation of relevance to the requested topic]
    - **Possible Extension**: [AI-generated suggestion clearly labeled as an extension, NOT a documented feature of the original project]
 
-   ## Sources
-   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
+   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
     elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
    - Group the retrieved projects into clear, logical domain categories.
    - Under each group, list the matching projects concisely:
      * **[Project Title]** ([Year]) - [Core objective in 1 sentence] [Source: <file>, Page <X>].
-   ## Sources
-   - List each project source filename and pages."""
+   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
         else:
             return """4. Enumerated Project Overview: Enumerate distinct projects found in the retrieved context concisely without filler:
    1. **[Project Title]** ([Year]) - [Core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page <X>].
-   ## Sources
-   - List each project source filename and pages."""
+   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:
-   Use this exact structure (describe ONLY documented components and relationships; if information is absent, state 'Not specified in the retrieved document.'):
+   Describe documented components and relationships strictly from the retrieved context.
+   CRITICAL FORMATTING & OMISSION RULES:
+   - Include ONLY sections that actually contain documented evidence in the retrieved context.
+   - Do NOT output empty sections, placeholder bullets, or sections stating 'ไม่มีข้อมูล' or 'Not specified'.
+   - NEVER output sections for External Services, Not Specified, or Sources.
 
+   Sections to include IF documented:
    ### 📌 Project Overview
    Explain the documented purpose.
 
    ### 🏗️ System Architecture
-   Describe ONLY documented components and relationships. (Never assume Frontend, Backend, REST API, Database, Docker, Cloud unless explicitly documented).
+   Describe documented components and relationships. (Include only if documented).
 
    ### 🔄 Data Flow
-   Describe the documented flow. Use a text diagram when evidence supports it:
-   Component A
-       ↓
-   Component B
-       ↓
-   Component C
-   Every arrow must be supported by the document.
+   Describe the documented flow. Use a text diagram when evidence supports it. (Include only if documented).
 
    ### 🛠️ Technologies & Hardware
-   List ONLY explicitly documented technologies/hardware.
+   List explicitly documented technologies and hardware components with inline citations. (Include only if documented).
 
    ### 👤 User Interaction
-   Explain documented user actions.
-
-   ### 🔔 External Services / Notifications
-   Explain documented external services.
-
-   ### ⚠️ Not Specified
-   Clearly identify architecture or technology information that is missing in the document.
-
-   ## Sources
-   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
+   Explain documented user actions. (Include only if documented)."""
     elif intent == "COMPARISON":
         return """4. Evidence-Based Structured Comparison:
    ONLY compare documented attributes (Project purpose, Main features, Users, Workflow, Technologies, Hardware, Software, Database, External services, Limitations, Documented results).
@@ -242,9 +248,7 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    ## Key Differences
    - Concise bullet points comparing the core systems strictly from document evidence.
 
-   ## Sources
-   - [Project A Title]: <Filename.pdf>, Pages: <Pages>
-   - [Project B Title]: <Filename.pdf>, Pages: <Pages>"""
+   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
     elif intent == "CODE":
         return """4. Code & Technical Implementation Extraction:
    - Only provide code if actual code or SQL exists in the retrieved context.
@@ -252,14 +256,14 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
      'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
    - If nothing relevant exists, state:
      'The retrieved document does not specify the requested code or SQL.'
-   ## Sources
-   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
+   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
     else:  # FACTOID / FACTUAL_LOOKUP
         return """4. Direct & Evidence-Grounded Answer with Citations:
    - Answer the question directly, flexibly, and accurately based ONLY on explicitly documented evidence in the retrieved context.
    - If asked for hardware, components, technologies, or tools: list all distinct items explicitly mentioned across the retrieved text as bullet points with their respective citations. Do NOT force predetermined template categories (such as microcontroller or sensor placeholders), and do NOT create placeholder bullets for unmentioned items.
    - If a requested item is not found in the document, state clearly that it is not specified (never attach a source citation to unmentioned information).
-   - Every factual claim derived from a document must have an exact inline citation [Source: <filename>, Page: <X>]."""
+   - Every factual claim derived from a document must have an exact inline citation [Source: <filename>, Page: <X>].
+   - Do NOT generate a '## Sources' section at the end (sources are already displayed by the user interface)."""
 
 
 def _calculate_token_breakdown(
@@ -334,7 +338,7 @@ CORE PRODUCTION RULES:
 2. CURRENT QUERY & FILTER ISOLATION: Never inherit project, advisor, author, or year filters from previous turns unless explicitly referenced. No explicit constraint in current query = NO FILTER.
 3. PROJECT ISOLATION: Every project is an independent evidence scope. Never transfer technologies, hardware, features, authors, or advisors between projects. For comparisons, evaluate each project on its own evidence.
 4. INLINE CITATION GROUNDING & EXACT PAGE NUMBERS: Every factual claim must have an inline citation: [Source: <source_file>, Page: <page_number>]. You MUST cite the EXACT page number from the excerpt header where the fact is written. For example, if "NodeMCU ESP8266" is inside an excerpt marked "PAGE: 36", you MUST cite "Page: 36". NEVER cite a title/abstract page (e.g. Page 5) for a technical component that appears on another page. Never fabricate page numbers.
-5. CODE, FIGURE & DATABASE RULES: A schema is NOT SQL. Figure title ≠ complete figure content. If actual code/SQL is not present in retrieved context, state: 'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
+5. CODE, FIGURE & DATABASE RULES: When asked for code or database, a schema is NOT SQL. If the user did NOT specifically ask for code, SQL, or database, do NOT mention missing code or database.
 6. RECOMMENDATION VS AI EXTENSION: Recommendations search across projects by default. Any model-generated extension must be explicitly labeled: 'AI Suggestion:' and never presented as a documented feature.
 7. AGGREGATION & COUNT INTEGRITY: Top-K retrieval results do not prove repository-wide totals. If not exhaustive, state: 'I found X matching projects in the retrieved results, but this does not establish the total number of projects in the repository.'
 8. NO INTERNAL REASONING: Zero preamble, zero filler, zero chain-of-thought monologue (never output 'Let me check...', 'I need to...', 'First, I will...'). Start directly with the answer.
@@ -372,14 +376,18 @@ Question:
     elif intent == "EXPLORATORY":
         prefill = "1. **"
 
+    extra_stops = [
+        "\n## Sources", "\n## Source", "\n## แหล่งที่มา",
+        "\n### ⚠️", "\n### 🔔", "\n### บริการภายนอก", "\n### 🔔 บริการภายนอก",
+    ]
     model_name = OLLAMA_MODEL.lower()
     if "gemma" in model_name:
         full_user = f"{system_content}\n\n{user_content}"
         prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
-        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
+        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"] + extra_stops
     else:
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
-        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"]
+        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"] + extra_stops
 
     prompt_meta = {
         "system_text": system_content,

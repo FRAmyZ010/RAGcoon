@@ -14,7 +14,63 @@ import threading
 import time
 from typing import Any, Optional
 
-from rank_bm25 import BM25Okapi
+import math
+
+class PurePythonBM25Okapi:
+    """Pure-Python implementation of BM25Okapi to guarantee zero external dependency failure."""
+    def __init__(self, corpus: list[list[str]], k1: float = 1.5, b: float = 0.75, epsilon: float = 0.25):
+        self.k1 = k1
+        self.b = b
+        self.epsilon = epsilon
+        self.corpus_size = len(corpus)
+        self.avgdl = (sum(len(x) for x in corpus) / self.corpus_size) if self.corpus_size > 0 else 1.0
+        self.doc_freqs = []
+        self.idf = {}
+        self.doc_len = [len(x) for x in corpus]
+        nd = {}
+        for document in corpus:
+            frequencies = {}
+            for word in document:
+                frequencies[word] = frequencies.get(word, 0) + 1
+            self.doc_freqs.append(frequencies)
+            for word in frequencies:
+                nd[word] = nd.get(word, 0) + 1
+
+        idf_sum = 0.0
+        negative_idfs = []
+        for word, freq in nd.items():
+            idf = math.log(self.corpus_size - freq + 0.5) - math.log(freq + 0.5)
+            self.idf[word] = idf
+            idf_sum += idf
+            if idf < 0:
+                negative_idfs.append(word)
+        self.average_idf = (idf_sum / len(self.idf)) if self.idf else 0.0
+        eps = self.epsilon * self.average_idf
+        for word in negative_idfs:
+            self.idf[word] = eps
+
+    def get_scores(self, query: list[str]) -> list[float]:
+        score = [0.0] * self.corpus_size
+        doc_len = self.doc_len
+        avgdl = self.avgdl
+        k1 = self.k1
+        b = self.b
+        for q in query:
+            idf = self.idf.get(q, 0.0)
+            if idf <= 0.0:
+                continue
+            for i, doc in enumerate(self.doc_freqs):
+                freq = doc.get(q, 0)
+                if freq > 0:
+                    numerator = idf * freq * (k1 + 1)
+                    denominator = freq + k1 * (1 - b + b * doc_len[i] / avgdl)
+                    score[i] += numerator / denominator
+        return score
+
+try:
+    from rank_bm25 import BM25Okapi
+except ImportError:
+    BM25Okapi = PurePythonBM25Okapi
 
 from .config import COLLECTION_NAME, client
 

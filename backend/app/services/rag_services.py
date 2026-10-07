@@ -97,33 +97,62 @@ def process_rag_stream(
     db.commit()
     db.refresh(db_entry)
 
+    # 1. Send immediate connection acknowledgment so client proxy knows stream is live
+    init_payload = {
+        "type": "init",
+        "workspace_id": active_workspace_id,
+        "query_id": db_entry.id,
+    }
+    yield f"data: {json.dumps(init_payload, ensure_ascii=False)}\n\n"
+
     full_answer = ""
     citations_data = []
     execution_time_data = {}
 
-    for item in stream_answer_question(question=query_text):
-        event_type = item.get("event", "message")
-        event_data = item.get("data", {})
+    try:
+        for item in stream_answer_question(question=query_text):
+            event_type = item.get("event", "message")
+            event_data = item.get("data", {})
 
-        if event_type == "metadata":
-            citations_data = enrich_citations_with_document_ids(
-                db, event_data.get("citations", [])
-            )
-        elif event_type == "token":
-            token_text = event_data.get("token", "")
-            full_answer += token_text
-            chunk_payload = {
-                "type": "answer_chunk",
-                "content": token_text,
-                "workspace_id": active_workspace_id
-            }
-            yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
-        elif event_type == "done":
-            full_answer = event_data.get("answer", full_answer)
-            citations_data = enrich_citations_with_document_ids(
-                db, event_data.get("citations", citations_data)
-            )
-            execution_time_data = event_data.get("timing", {})
+            if event_type == "metadata":
+                citations_data = enrich_citations_with_document_ids(
+                    db, event_data.get("citations", [])
+                )
+                # Yield early retrieval status to frontend so user sees documents found instantly
+                early_payload = {
+                    "type": "retrieval_status",
+                    "workspace_id": active_workspace_id,
+                    "retrieved_count": event_data.get("retrieved_count", len(citations_data)),
+                    "citations": citations_data,
+                    "timing": event_data.get("timing", {}),
+                }
+                yield f"data: {json.dumps(early_payload, ensure_ascii=False)}\n\n"
+            elif event_type == "token":
+                token_text = event_data.get("token", "")
+                full_answer += token_text
+                chunk_payload = {
+                    "type": "answer_chunk",
+                    "content": token_text,
+                    "workspace_id": active_workspace_id
+                }
+                yield f"data: {json.dumps(chunk_payload, ensure_ascii=False)}\n\n"
+            elif event_type == "done":
+                full_answer = event_data.get("answer", full_answer)
+                citations_data = enrich_citations_with_document_ids(
+                    db, event_data.get("citations", citations_data)
+                )
+                execution_time_data = event_data.get("timing", {})
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        fallback_err = f"เกิดข้อผิดพลาดในการประมวลผลชั่วคราว: {exc}"
+        full_answer = full_answer or fallback_err
+        err_payload = {
+            "type": "answer_chunk",
+            "content": f"\n\n⚠️ {fallback_err}",
+            "workspace_id": active_workspace_id
+        }
+        yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
 
     metadata_payload = {
         "type": "metadata",
