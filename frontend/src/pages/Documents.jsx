@@ -326,9 +326,9 @@ export default function DocumentsManagement() {
 
   const STATUS_SORT_RANK = {
     Failed: 0,
-    Ready: 1,
-    Processing: 2,
-    Pending: 3,
+    Processing: 1,
+    Pending: 2,
+    Ready: 3,
   };
 
   const filteredFiles = filesData
