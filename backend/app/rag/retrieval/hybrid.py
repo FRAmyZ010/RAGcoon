@@ -98,7 +98,7 @@ def hybrid_search(
     metadata_filters: Optional[dict[str, Any]] = None,
     dense_weight: float = 0.5,
     bm25_weight: float = 0.5,
-    candidate_pool_size: int = 40,
+    candidate_pool_size: int = 20,
 ) -> list[dict[str, Any]]:
     """
     Execute True Hybrid Search (Dense Vector + BM25 Sparse + RRF).

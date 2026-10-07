@@ -15,15 +15,18 @@ def normalize_scores(scores: list[float]) -> list[float]:
     return [(score - min_s) / (max_s - min_s) for score in scores]
 
 
-def rerank(query: str, docs_with_payload: list[dict], top_n: int) -> list[dict]:
+def rerank(query: str, docs_with_payload: list[dict], top_n: int, max_candidates: int = 15) -> list[dict]:
     if not docs_with_payload:
         return []
 
-    docs = [doc["text"] for doc in docs_with_payload]
+    # Optimize Candidate Pool: Evaluating top 15 candidates is optimal for Cross-Encoder recall
+    # while preventing excessive CPU matrix multiplication latency.
+    candidates = docs_with_payload[:max_candidates]
+    docs = [doc["text"] for doc in candidates]
     pairs = [[query, doc] for doc in docs]
-    scores = get_reranker().predict(pairs, show_progress_bar=False, batch_size=32)
+    scores = get_reranker().predict(pairs, show_progress_bar=False, batch_size=16)
 
-    scored = list(zip(docs_with_payload, scores))
+    scored = list(zip(candidates, scores))
     ranked = sorted(scored, key=lambda item: item[1], reverse=True)
     top_ranked = ranked[:top_n]
 

@@ -27,65 +27,65 @@ if not QDRANT_API_KEY:
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
 COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
-DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "25"))
-DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "7"))
-DEFAULT_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "15"))
+DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "5"))
+DEFAULT_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
 
 INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "FACTUAL_LOOKUP": {
-        "top_k": 25,
-        "rerank_top_n": 6,
-        "num_predict": 512,
-        "max_context_chunks": 6,
+        "top_k": 15,
+        "rerank_top_n": 5,
+        "num_predict": 450,
+        "max_context_chunks": 5,
         "thinking": False,
     },
     "FACTOID": {
-        "top_k": 25,
-        "rerank_top_n": 6,
-        "num_predict": 512,
-        "max_context_chunks": 6,
+        "top_k": 15,
+        "rerank_top_n": 5,
+        "num_predict": 450,
+        "max_context_chunks": 5,
         "thinking": False,
     },
     "EXPLANATION": {
-        "top_k": 20,
-        "rerank_top_n": 6,
-        "num_predict": 512,
-        "max_context_chunks": 6,
+        "top_k": 15,
+        "rerank_top_n": 5,
+        "num_predict": 450,
+        "max_context_chunks": 5,
         "thinking": False,
     },
     "DEEP_DIVE": {
-        "top_k": 20,
-        "rerank_top_n": 6,
-        "num_predict": 640,
-        "max_context_chunks": 6,
+        "top_k": 15,
+        "rerank_top_n": 5,
+        "num_predict": 500,
+        "max_context_chunks": 5,
         "thinking": False,
     },
     "COMPARISON": {
-        "top_k": 40,
-        "rerank_top_n": 8,
-        "num_predict": 640,
-        "max_context_chunks": 8,
+        "top_k": 24,
+        "rerank_top_n": 6,
+        "num_predict": 550,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "RECOMMENDATION": {
-        "top_k": 60,
-        "rerank_top_n": 15,
-        "num_predict": 640,
-        "max_context_chunks": 8,
+        "top_k": 24,
+        "rerank_top_n": 8,
+        "num_predict": 550,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "EXPLORATORY": {
-        "top_k": 60,
-        "rerank_top_n": 20,
-        "num_predict": 512,
-        "max_context_chunks": 15,
+        "top_k": 25,
+        "rerank_top_n": 12,
+        "num_predict": 500,
+        "max_context_chunks": 10,
         "thinking": False,
     },
     "CODE": {
-        "top_k": 20,
-        "rerank_top_n": 6,
-        "num_predict": 512,
-        "max_context_chunks": 6,
+        "top_k": 15,
+        "rerank_top_n": 5,
+        "num_predict": 450,
+        "max_context_chunks": 5,
         "thinking": False,
     },
 }
