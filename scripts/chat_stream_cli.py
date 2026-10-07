@@ -40,14 +40,21 @@ def run_interactive_streaming_chat():
     print("💡 Type 'exit' to quit | 'clear' to reset chat memory")
     print_divider("=")
 
+    single_query = " ".join(sys.argv[1:]).strip() if len(sys.argv) > 1 else None
+
     while True:
-        try:
-            question = input("\n👤 Question: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\n👋 Exiting...")
-            break
+        if single_query:
+            question = single_query
+        else:
+            try:
+                question = input("\n👤 Question: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\n👋 Exiting...")
+                break
 
         if not question:
+            if single_query:
+                break
             continue
 
         if question.lower() in {"exit", "quit"}:
@@ -120,11 +127,17 @@ def run_interactive_streaming_chat():
                         title = c.get("project_title", "Unknown")
                         pages = c.get("pages_formatted") or ", ".join(c.get("pages", []))
                         source = c.get("source", "")
-                        print(f"   • {title} (Source: {source} | Pages: {pages})")
+                        if pages and pages != "?":
+                            print(f"   • {title} (Source: {source} | Pages: {pages})")
+                        else:
+                            print(f"   • {title} (Source: {source})")
                 print("-" * 60)
 
             elif event_type == "error":
                 print(f"\n❌ Error: {event_data.get('error')}")
+
+        if single_query:
+            break
 
 
 if __name__ == "__main__":

@@ -20,6 +20,8 @@ import {
   Check,
   CircleAlert,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   deleteDocument,
@@ -33,6 +35,7 @@ import {
 import { clearAuth } from "../services/authApi";
 
 const STATUS_POLL_MS = 5000;
+const DOCUMENTS_PAGE_SIZE = 10;
 const IN_FLIGHT_STATUSES = new Set(["Pending", "Processing"]);
 
 function splitCommaList(value) {
@@ -60,6 +63,7 @@ export default function DocumentsManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -322,9 +326,9 @@ export default function DocumentsManagement() {
 
   const STATUS_SORT_RANK = {
     Failed: 0,
-    Ready: 1,
-    Processing: 2,
-    Pending: 3,
+    Processing: 1,
+    Pending: 2,
+    Ready: 3,
   };
 
   const filteredFiles = filesData
@@ -350,9 +354,15 @@ export default function DocumentsManagement() {
       return titleA.localeCompare(titleB);
     });
 
+  const pageCount = Math.max(1, Math.ceil(filteredFiles.length / DOCUMENTS_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * DOCUMENTS_PAGE_SIZE;
+  const visibleFiles = filteredFiles.slice(pageStart, pageStart + DOCUMENTS_PAGE_SIZE);
+  const pageEnd = pageStart + visibleFiles.length;
+
   const selectedCount = selectedIds.size;
   const allVisibleSelected =
-    filteredFiles.length > 0 && filteredFiles.every((row) => selectedIds.has(row.id));
+    visibleFiles.length > 0 && visibleFiles.every((row) => selectedIds.has(row.id));
 
   const toggleRowSelected = (id) => {
     setSelectedIds((prev) => {
@@ -367,9 +377,9 @@ export default function DocumentsManagement() {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allVisibleSelected) {
-        filteredFiles.forEach((row) => next.delete(row.id));
+        visibleFiles.forEach((row) => next.delete(row.id));
       } else {
-        filteredFiles.forEach((row) => next.add(row.id));
+        visibleFiles.forEach((row) => next.add(row.id));
       }
       return next;
     });
@@ -571,7 +581,10 @@ export default function DocumentsManagement() {
             <input
               type="search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
               placeholder="Search title, author, advisor, year..."
               className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-2.5 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-gray-500 sm:text-sm"
             />
@@ -609,7 +622,7 @@ export default function DocumentsManagement() {
                     <input
                       type="checkbox"
                       checked={allVisibleSelected}
-                      disabled={loading || filteredFiles.length === 0}
+                      disabled={loading || visibleFiles.length === 0}
                       onChange={toggleSelectAllVisible}
                       className="h-3 w-3 cursor-pointer rounded border-gray-300 accent-blue-600 disabled:cursor-not-allowed"
                       aria-label="Select all visible documents"
@@ -653,7 +666,7 @@ export default function DocumentsManagement() {
                 )}
 
                 {!loading &&
-                  filteredFiles.map((row) => (
+                  visibleFiles.map((row) => (
                     <tr
                       key={row.id}
                       className={`transition hover:bg-gray-50 ${
@@ -745,6 +758,42 @@ export default function DocumentsManagement() {
               </tbody>
             </table>
           </div>
+          {!loading && filteredFiles.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-gray-200 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing {pageStart + 1}–{pageEnd} of {filteredFiles.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeActionMenu();
+                    setPage(currentPage - 1);
+                  }}
+                  disabled={currentPage <= 1}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Previous
+                </button>
+                <span className="px-2 font-semibold text-gray-800">
+                  {currentPage} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeActionMenu();
+                    setPage(currentPage + 1);
+                  }}
+                  disabled={currentPage >= pageCount}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </main>
 

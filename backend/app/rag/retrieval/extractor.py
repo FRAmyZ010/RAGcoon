@@ -162,7 +162,11 @@ class QueryFilterProcessor:
                 filters["author"] = auth_matches if len(auth_matches) > 1 else auth_matches[0]
 
         # 5. สกัดชื่อโครงงาน (Project Title) - เฉพาะเมื่อไม่ได้เป็นคำถามภาพรวม
-        is_broad = any(w in self.user_query.lower() for w in ["ไหนดี", "แนะนำ", "อะไรบ้าง", "which project", "recommend"])
+        is_broad = any(w in self.user_query.lower() for w in [
+            "ไหนดี", "แนะนำ", "อะไรบ้าง", "which project", "recommend", "recommendation",
+            "suggest", "worth", "develop further", "developing further", "further develop",
+            "further development", "ต่อยอด", "น่าสนใจ", "future work", "idea", "ideas",
+        ])
         if "project_title" not in filters and not is_broad:
             title_val, clean_q = _find_matching_project_title(clean_q, metadata_cache.titles)
             if title_val:

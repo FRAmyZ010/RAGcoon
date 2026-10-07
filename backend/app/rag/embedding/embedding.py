@@ -2,9 +2,14 @@ import os
 from pathlib import Path
 from time import perf_counter
 
-from backend.app.rag.embedding.pdf_scanning import scan_pdf_document
-from backend.app.rag.embedding.text_processor import chunk_extracted_data
-from backend.app.rag.embedding.vector_store import upload_to_qdrant
+try:
+    from backend.app.rag.embedding.pdf_scanning import scan_pdf_document
+    from backend.app.rag.embedding.text_processor import chunk_extracted_data
+    from backend.app.rag.embedding.vector_store import upload_to_qdrant
+except ModuleNotFoundError:
+    from app.rag.embedding.pdf_scanning import scan_pdf_document
+    from app.rag.embedding.text_processor import chunk_extracted_data
+    from app.rag.embedding.vector_store import upload_to_qdrant
 
 
 def summarize(times):
@@ -99,7 +104,20 @@ def process_file(file_path, preview=False,ENABLE_UPLOAD = True):
 
 
 def test_pipeline():
-    target_dir = Path(__file__).resolve().parents[3] / "data" / "files_for_evaluation"
+    import sys
+    folder_arg = "filtered_data"
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        folder_arg = sys.argv[1]
+
+    candidate = Path(folder_arg)
+    if candidate.is_dir():
+        target_dir = candidate
+    else:
+        target_dir = Path(__file__).resolve().parents[3] / "data" / folder_arg
+        if not target_dir.exists():
+            target_dir = Path(__file__).resolve().parents[3] / "data" / "filtered_data"
+        if not target_dir.exists():
+            target_dir = Path(__file__).resolve().parents[3] / "data" / "files_for_evaluation"
 
     # ===== CONFIG =====
     MODE = "all"        # "all" | "specific" | "limit"

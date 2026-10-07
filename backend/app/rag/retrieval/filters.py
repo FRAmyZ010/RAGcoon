@@ -10,12 +10,21 @@ def build_qdrant_filter(filters: dict | None) -> Filter | None:
     metadata_cache.load_metadata()
     conditions = []
 
-    VALID_FILTER_KEYS = {"author", "advisor", "year", "project_title"}
+    VALID_FILTER_KEYS = {
+        "author",
+        "advisor",
+        "year",
+        "project_title",
+        "program",
+        "school",
+        "project_type",
+        "key_technologies",
+    }
 
     for key, value in filters.items():
         if key not in VALID_FILTER_KEYS:
             continue
-        if value is None or value == "" or value == []:
+        if value is None or value == "" or value == [] or str(value).strip().lower() in ("null", "none", "n/a", "undefined"):
             continue
 
         if key == "author":

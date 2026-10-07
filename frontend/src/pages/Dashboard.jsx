@@ -51,51 +51,74 @@ function recentSearches(rows, dayCount) {
   return points;
 }
 
+function smoothLine(coords) {
+  if (coords.length === 0) return "";
+  if (coords.length === 1) return `M ${coords[0].x} ${coords[0].y}`;
+  let path = `M ${coords[0].x} ${coords[0].y}`;
+  for (let index = 0; index < coords.length - 1; index += 1) {
+    const previous = coords[index === 0 ? index : index - 1];
+    const current = coords[index];
+    const next = coords[index + 1];
+    const after = coords[index + 2] || next;
+    const control1x = current.x + (next.x - previous.x) / 6;
+    const control1y = current.y + (next.y - previous.y) / 6;
+    const control2x = next.x - (after.x - current.x) / 6;
+    const control2y = next.y - (after.y - current.y) / 6;
+    path += ` C ${control1x} ${control1y}, ${control2x} ${control2y}, ${next.x} ${next.y}`;
+  }
+  return path;
+}
+
 function SearchChart({ points }) {
-  const width = 420;
-  const height = 180;
-  const padL = 28;
-  const padR = 8;
-  const padT = 14;
-  const padB = 22;
+  const width = 640;
+  const height = 220;
+  const padL = 36;
+  const padR = 12;
+  const padT = 12;
+  const padB = 28;
   const max = Math.max(1, ...points.map((point) => point.count));
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
-  const slot = points.length > 0 ? innerW / points.length : innerW;
-  const barWidth = Math.max(3, Math.min(16, slot * 0.55));
+  const baseline = padT + innerH;
   const ticks = [...new Set([0, Math.ceil(max / 2), max])];
-  const labelEvery = points.length > 20 ? 5 : points.length > 8 ? 2 : 1;
+  const labelEvery = points.length > 20 ? 5 : points.length > 10 ? 2 : 1;
+  const coords = points.map((point, index) => {
+    const x = points.length <= 1 ? padL + innerW / 2 : padL + (index / (points.length - 1)) * innerW;
+    const y = baseline - (point.count / max) * innerH;
+    return { ...point, x, y };
+  });
+  const line = smoothLine(coords);
+  const area = coords.length
+    ? `${line} L ${coords[coords.length - 1].x} ${baseline} L ${coords[0].x} ${baseline} Z`
+    : "";
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Search activity">
+      <defs>
+        <linearGradient id="searchActivityFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6d9478" stopOpacity="0.38" />
+          <stop offset="100%" stopColor="#6d9478" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       {ticks.map((tick) => {
-        const y = padT + innerH - (tick / max) * innerH;
+        const y = baseline - (tick / max) * innerH;
         return (
-          <g key={tick}>
-            <line x1={padL} x2={width - padR} y1={y} y2={y} stroke="#f3f4f6" />
-            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="10" fill="#9ca3af">
-              {tick}
-            </text>
-          </g>
+          <text key={tick} x={padL - 8} y={y + 3} textAnchor="end" fontSize="11" fill="#9ca3af">
+            {tick}
+          </text>
         );
       })}
-      {points.map((point, index) => {
-        const barHeight = (point.count / max) * innerH;
-        const x = padL + index * slot + (slot - barWidth) / 2;
-        const y = padT + innerH - barHeight;
-        return (
-          <g key={point.day}>
-            {point.count > 0 && (
-              <rect x={x} y={y} width={barWidth} height={Math.max(barHeight, 3)} rx="2" fill="#6d9478" />
-            )}
-            {index % labelEvery === 0 && (
-              <text x={padL + index * slot + slot / 2} y={height - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
-                {point.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
+      {area && <path d={area} fill="url(#searchActivityFill)" />}
+      {line && (
+        <path d={line} fill="none" stroke="#5f8a6e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {coords.map((point, index) =>
+        index % labelEvery === 0 ? (
+          <text key={point.day} x={point.x} y={height - 8} textAnchor="middle" fontSize="11" fill="#9ca3af">
+            {point.label}
+          </text>
+        ) : null
+      )}
     </svg>
   );
 }
@@ -324,7 +347,7 @@ export default function Dashboard() {
             {loading || chartLoading ? (
               <p className="text-xs text-gray-500">Loading...</p>
             ) : (
-              <div className="h-44">
+              <div className="h-52">
                 <SearchChart points={searches} />
               </div>
             )}

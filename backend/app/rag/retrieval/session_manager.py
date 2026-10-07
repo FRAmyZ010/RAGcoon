@@ -100,7 +100,10 @@ class SessionChatManager:
         formatted_lines = []
         for msg in history:
             speaker = "User" if msg["role"] == "user" else "Assistant"
-            formatted_lines.append(f"{speaker}: {msg['content']}")
+            content = msg["content"].strip()
+            if msg["role"] == "assistant" and len(content) > 300:
+                content = content[:300].rstrip() + "..."
+            formatted_lines.append(f"{speaker}: {content}")
 
         return "\n".join(formatted_lines)
 
