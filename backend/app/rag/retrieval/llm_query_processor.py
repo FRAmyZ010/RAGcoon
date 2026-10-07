@@ -340,9 +340,10 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
         "มีอะไรบ้าง", "อะไรบ้าง", "มีกี่", "กี่โครงงาน", "กี่โปรเจกต์",
         "how many", "count", "number of", "total",
     ]) or bool(re.search(r"^(?:senior\s+)?projects\s+in\s+\d{4}\??$", q_lower.strip()))
-    is_content_query = any(k in q_lower for k in [
+    q_content_check = q_lower.replace("มีอะไรบ้าง", "").replace("อะไรบ้าง", "").replace("มีอะไร", "")
+    is_content_query = any(k in q_content_check for k in [
         "what", "which", "how", "why", "who", "gpu", "cpu", "model", "train", "sensor",
-        "hardware", "technology", "algorithm", "dataset", "accuracy", "อะไร", "รุ่นไหน",
+        "hardware", "technology", "algorithm", "dataset", "accuracy", "คืออะไร", "ใช้อะไร", "รุ่นไหน",
     ])
     if matched_year and is_explicit_year_list_or_count and not is_content_query:
         if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
@@ -353,8 +354,9 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
                 return norm_q, filters, "EXPLORATORY"
 
     # Fast-path case 5: ค้นหาโครงงานตามอาจารย์ที่ปรึกษา
-    is_advisor_content_query = any(k in q_lower for k in [
-        "what", "which", "how", "why", "gpu", "cpu", "sensor", "hardware", "technology", "algorithm", "อะไร", "อย่างไร",
+    q_adv_content_check = q_lower.replace("มีอะไรบ้าง", "").replace("อะไรบ้าง", "").replace("มีอะไร", "")
+    is_advisor_content_query = any(k in q_adv_content_check for k in [
+        "what", "which", "how", "why", "gpu", "cpu", "sensor", "hardware", "technology", "algorithm", "คืออะไร", "ใช้อะไร", "อย่างไร",
     ])
     if matched_advisor and any(k in q_lower for k in ["โปรเจกต์", "project", "โครงงาน", "ที่ปรึกษา", "ดูแล", "มีอะไรบ้าง", "ใคร", "รายชื่อ", "ทั้งหมด"]) and not is_advisor_content_query:
         if intent not in {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}:
@@ -364,7 +366,76 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
                 norm_q = f"senior projects advised by {matched_advisor}"
                 return norm_q, filters, "EXPLORATORY"
 
+    # Fast-path case 6: นิยามคำศัพท์เทคนิคสั้นๆ หรือตัวย่อ ("X คืออะไร", "what is X", "X หมายถึงอะไร")
+    def_match = re.search(r"^([a-zA-Z0-9\-\.\s]{2,25})\s*(?:คืออะไร|หมายถึงอะไร|คืออะไรครับ|คืออะไรคะ)\??$", q_clean, re.IGNORECASE)
+    if not def_match:
+        def_match = re.search(r"^(?:what is|what's|what are)\s+([a-zA-Z0-9\-\.\s]{2,25})\??$", q_clean, re.IGNORECASE)
+    if def_match and not matched_titles and not matched_advisor:
+        term = def_match.group(1).strip()
+        if len(term.split()) <= 3:
+            return term, {}, "FACTOID"
+
+    # Fast-path case 7: ค้นหาโครงงานตามประเภทของระบบ / Domain (IoT, Web, Network, AI, Mobile, Cybersecurity)
+    domain_map = {
+        "machine learning": "AI & Machine Learning",
+        "deep learning": "AI & Machine Learning",
+        "ปัญญาประดิษฐ์": "AI & Machine Learning",
+        "cybersecurity": "Cybersecurity",
+        "ความปลอดภัย": "Cybersecurity",
+        "mobile application": "Mobile Application",
+        "mobile app": "Mobile Application",
+        "แอปพลิเคชันมือถือ": "Mobile Application",
+        "แอปมือถือ": "Mobile Application",
+        "network & wireless": "Network & Wireless",
+        "wireless communication": "Network & Wireless",
+        "wireless lan": "Network & Wireless",
+        "wireless": "Network & Wireless",
+        "เน็ตเวิร์ก": "Network & Wireless",
+        "เครือข่าย": "Network & Wireless",
+        "network": "Network & Wireless",
+        "hardware": "IoT & Hardware",
+        "ฮาร์ดแวร์": "IoT & Hardware",
+        "embedded": "IoT & Hardware",
+        "robotics": "IoT & Hardware",
+        "หุ่นยนต์": "IoT & Hardware",
+        "iot": "IoT & Hardware",
+        "ไอโอที": "IoT & Hardware",
+        "web application": "Web Application",
+        "web app": "Web Application",
+        "website": "Web Application",
+        "เว็บ": "Web Application",
+        "web": "Web Application",
+        "mobile": "Mobile Application",
+        "โมบาย": "Mobile Application",
+        "ai": "AI & Machine Learning",
+        "security": "Cybersecurity",
+    }
+    if not matched_titles:
+        is_domain_query = any(k in q_lower for k in [
+            "โครงงาน", "โปรเจกต์", "project", "projects", "ระบบ", "มีอะไรบ้าง", "อะไรบ้าง",
+            "มีเรื่องไหนบ้าง", "บ้างไหม", "list", "show", "มีกี่", "กี่โครงงาน", "กี่เรื่อง",
+            "สาย", "ด้าน", "แนว", "ประเภท", "หมวด"
+        ])
+        if is_domain_query:
+            matched_domain = None
+            for d_kw, d_canon in domain_map.items():
+                pattern = rf"(?:\b|(?<=[\s\u0E00-\u0E7F])){re.escape(d_kw)}(?:\b|(?=[\s\u0E00-\u0E7F]))"
+                if re.search(pattern, q_lower):
+                    matched_domain = d_canon
+                    break
+            if matched_domain:
+                from .template_responder import _has_technical_keywords
+                if not _has_technical_keywords(raw_query):
+                    domain_filters: dict[str, Any] = {"project_type": matched_domain}
+                    if matched_year:
+                        domain_filters["year"] = matched_year
+                    if matched_advisor:
+                        domain_filters["advisor"] = matched_advisor
+                    norm_q = f"senior projects in {matched_domain}"
+                    return norm_q, domain_filters, "EXPLORATORY"
+
     return None
+
 
 
 def _clean_filter_value(val: Any) -> Optional[str]:
@@ -607,6 +678,12 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
         elif intent in {"RECOMMENDATION", "EXPLORATORY"}:
             filters.pop("project_title", None)
             filters.pop("author", None)
+            if intent == "EXPLORATORY" and "project_type" not in filters:
+                for d_kw, d_canon in domain_map.items():
+                    pattern = rf"(?:\b|(?<=[\s\u0E00-\u0E7F])){re.escape(d_kw)}(?:\b|(?=[\s\u0E00-\u0E7F]))"
+                    if re.search(pattern, raw_query.lower()):
+                        filters["project_type"] = d_canon
+                        break
             if intent == "RECOMMENDATION":
                 # Only keep year if explicitly requested in raw query
                 if "year" in filters and not _is_year_explicitly_in_query(raw_query, str(filters["year"])):
@@ -641,6 +718,12 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     elif fallback_intent in {"RECOMMENDATION", "EXPLORATORY"}:
         fallback_filters.pop("project_title", None)
         fallback_filters.pop("author", None)
+        if fallback_intent == "EXPLORATORY" and "project_type" not in fallback_filters:
+            for d_kw, d_canon in domain_map.items():
+                pattern = rf"(?:\b|(?<=[\s\u0E00-\u0E7F])){re.escape(d_kw)}(?:\b|(?=[\s\u0E00-\u0E7F]))"
+                if re.search(pattern, raw_query.lower()):
+                    fallback_filters["project_type"] = d_canon
+                    break
         if fallback_intent == "RECOMMENDATION":
             if "year" in fallback_filters and not _is_year_explicitly_in_query(raw_query, str(fallback_filters["year"])):
                 fallback_filters.pop("year", None)

@@ -63,11 +63,31 @@ def build_qdrant_filter(filters: dict | None) -> Filter | None:
             elif len(all_matching_advisors) > 1:
                 conditions.append(FieldCondition(key="advisor", match=MatchAny(any=list(all_matching_advisors))))
 
+        elif key == "project_type":
+            val_str = str(value).strip().lower()
+            if any(k in val_str for k in ["iot", "hardware", "ไอโอที", "ฮาร์ดแวร์"]):
+                target_types = ["IoT", "IoT & Hardware", "Hardware", "Embedded Systems", "Robotics"]
+            elif any(k in val_str for k in ["web", "เว็บ"]):
+                target_types = ["Web Application", "Web", "Website"]
+            elif any(k in val_str for k in ["network", "เน็ตเวิร์ก", "เครือข่าย", "wireless", "wlan"]):
+                target_types = ["Network", "Network & Wireless", "Wireless Communication", "Wireless LAN"]
+            elif any(k in val_str for k in ["ai", "machine learning", "ปัญญาประดิษฐ์"]):
+                target_types = ["AI & Machine Learning", "Computer Vision"]
+            elif any(k in val_str for k in ["security", "cyber", "ความปลอดภัย"]):
+                target_types = ["Cybersecurity"]
+            elif any(k in val_str for k in ["mobile", "โมบาย", "แอปมือถือ"]):
+                target_types = ["Mobile App", "Mobile Application"]
+            else:
+                target_types = [value] if isinstance(value, str) else list(value)
+
+            conditions.append(FieldCondition(key="project_type", match=MatchAny(any=target_types)))
+
         elif isinstance(value, list):
             conditions.append(FieldCondition(key=key, match=MatchAny(any=value)))
         else:
             conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
 
     return Filter(must=conditions) if conditions else None
+
 
 

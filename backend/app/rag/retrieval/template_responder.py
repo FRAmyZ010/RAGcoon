@@ -37,6 +37,28 @@ def _has_technical_keywords(query: str, project_title: Optional[str] = None) -> 
     q_clean = query.lower()
     if project_title:
         q_clean = q_clean.replace(project_title.lower(), "")
+        for word in re.split(r"[\s\-_]+", project_title.lower()):
+            if len(word) >= 3 and word not in {"the", "and", "for", "with"}:
+                q_clean = q_clean.replace(word, "")
+
+    # 1. System type / Category inquiries are high-level metadata inquiries, NOT technical deep dives
+    is_type_inquiry = any(k in q_clean for k in [
+        "เป็นระบบแบบไหน", "ระบบแบบไหน", "ระบบประเภทไหน", "ประเภทอะไร", "ประเภทไหน",
+        "หมวดหมู่ไหน", "หมวดหมู่", "system type", "category", "what kind of system"
+    ])
+    if is_type_inquiry:
+        return False
+
+    # 2. Category / Domain listing queries (e.g. โครงงานสาย IoT มีอะไรบ้าง) are exploratory listings, NOT technical deep dives
+    is_listing_query = any(k in q_clean for k in [
+        "มีอะไรบ้าง", "อะไรบ้าง", "มีเรื่องไหนบ้าง", "มีโปรเจกต์อะไรบ้าง", "มีโครงงานอะไรบ้าง",
+        "รายชื่อ", "ขอรายชื่อ", "ทั้งหมด", "list", "show all", "list all", "มีกี่", "กี่โครงงาน", "กี่โปรเจกต์"
+    ])
+    is_domain_inquiry = any(k in q_clean for k in [
+        "สาย", "ด้าน", "แนว", "ประเภท", "หมวด", "category", "domain"
+    ]) or any(d in q_clean for d in ["iot", "ไอโอที", "web", "เว็บ", "network", "เน็ตเวิร์ก", "เครือข่าย", "ai", "cybersecurity", "hardware", "ฮาร์ดแวร์", "mobile", "โมบาย"])
+    if is_listing_query and is_domain_inquiry:
+        return False
 
     # Count/listing queries (how many, count, number of, กี่โครงงาน) are pure metadata lookups
     is_count_query = any(k in q_clean for k in [
@@ -241,6 +263,7 @@ def try_generate_template_response(
     matched_title = filters.get("project_title")
     if matched_title or (len(citations) == 1 and not filters.get("year")):
         target_citation = citations[0]
+        p = target_citation
         p_title = target_citation.get("project_title") or matched_title or target_citation.get("source")
         advisor = target_citation.get("advisor")
         committee = target_citation.get("committee")
@@ -335,12 +358,49 @@ def try_generate_template_response(
                     f"- **Reference Document**: 📄 `{source}`"
                 )
 
-        # General Project Overview Info
-        if any(k in q_lower for k in ["ข้อมูล", "รายละเอียดเบื้องต้น", "about", "overview", "คือใคร", "เรื่องอะไร"]):
+        # General Project Overview Info & System Type Query
+        if any(k in q_lower for k in [
+            "ข้อมูล", "รายละเอียดเบื้องต้น", "about", "overview", "คือใคร", "เรื่องอะไร",
+            "เป็นระบบแบบไหน", "ระบบแบบไหน", "ระบบประเภทไหน", "ประเภทอะไร", "ประเภทไหน",
+            "หมวดหมู่ไหน", "หมวดหมู่", "system type", "category", "what kind of system",
+        ]):
             p_summary = p.get("summary")
             p_types = p.get("project_type")
             p_techs = p.get("key_technologies")
             p_problem = p.get("target_problem")
+
+            is_type_query = any(k in q_lower for k in [
+                "เป็นระบบแบบไหน", "ระบบแบบไหน", "ระบบประเภทไหน", "ประเภทอะไร", "ประเภทไหน",
+                "หมวดหมู่ไหน", "หมวดหมู่", "system type", "category", "what kind of system",
+            ])
+
+            t_str = ", ".join(p_types) if isinstance(p_types, list) else (str(p_types) if p_types else "ไม่ระบุ")
+            tech_str = ", ".join(p_techs) if isinstance(p_techs, list) else (str(p_techs) if p_techs else "ไม่ระบุ")
+
+            if is_type_query:
+                if is_thai:
+                    return (
+                        f"โครงงาน **{p_title}** จัดเป็นระบบประเภท:\n\n"
+                        f"🏷️ **ประเภทของระบบ (System Type)**: **{t_str}**\n\n"
+                        f"- **ภาพรวมโครงงาน (Overview)**: {p_summary or 'ไม่ระบุ'}\n"
+                        f"- **เทคโนโลยีหลักที่ใช้**: {tech_str}\n"
+                        f"- **ปัญหาที่แก้ไข (Problem Solved)**: {p_problem or 'ไม่ระบุ'}\n"
+                        f"- **อาจารย์ที่ปรึกษา**: {advisor}\n"
+                        f"- **ผู้จัดทำ**: {authors}\n"
+                        f"- **ปีการศึกษา**: {year} (พ.ศ. {thai_year})\n"
+                        f"- **เอกสารอ้างอิง**: 📄 `{source}`\n\n"
+                        f"> 💡 *หากต้องการดูรายละเอียดเชิงลึกเกี่ยวกับขั้นตอนการทำงานหรือโค้ด สามารถสอบถามเพิ่มเติมได้ครับ*"
+                    )
+                else:
+                    return (
+                        f"Project **{p_title}** system type & architecture:\n\n"
+                        f"🏷️ **System Type**: **{t_str}**\n\n"
+                        f"- **Overview**: {p_summary or 'N/A'}\n"
+                        f"- **Key Technologies**: {tech_str}\n"
+                        f"- **Target Problem**: {p_problem or 'N/A'}\n"
+                        f"- **Advisor**: {advisor}\n"
+                        f"- **Source**: 📄 `{source}`"
+                    )
 
             extra_lines_th = []
             if p_summary:
@@ -348,10 +408,8 @@ def try_generate_template_response(
             if p_problem:
                 extra_lines_th.append(f"- **ปัญหาที่แก้ไข**: {p_problem}")
             if p_types:
-                t_str = ", ".join(p_types) if isinstance(p_types, list) else str(p_types)
                 extra_lines_th.append(f"- **ประเภทโครงงาน**: {t_str}")
             if p_techs:
-                tech_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
                 extra_lines_th.append(f"- **เทคโนโลยีหลัก**: {tech_str}")
 
             extra_block_th = ("\n".join(extra_lines_th) + "\n") if extra_lines_th else ""
@@ -362,10 +420,8 @@ def try_generate_template_response(
             if p_problem:
                 extra_lines_en.append(f"- **Target Problem**: {p_problem}")
             if p_types:
-                t_str = ", ".join(p_types) if isinstance(p_types, list) else str(p_types)
                 extra_lines_en.append(f"- **Project Category**: {t_str}")
             if p_techs:
-                tech_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
                 extra_lines_en.append(f"- **Key Technologies**: {tech_str}")
 
             extra_block_en = ("\n".join(extra_lines_en) + "\n") if extra_lines_en else ""
@@ -449,6 +505,63 @@ def try_generate_template_response(
                 f"{list_body}\n\n"
                 f"> 💡 *พิมพ์ชื่อโครงงานเพื่อดูรายละเอียดเชิงลึก เช่น เซนเซอร์ ฮาร์ดแวร์ หรือสถาปัตยกรรมระบบได้ครับ*"
             )
+
+    # =========================================================================
+    # Case 3.5: System Category / Domain Grouping (e.g. IoT, Web, Network, AI)
+    # =========================================================================
+    matched_type = filters.get("project_type")
+    if matched_type and not filters.get("project_title"):
+        is_type_listing = any(k in q_lower for k in [
+            "โครงงาน", "โปรเจกต์", "project", "projects", "อะไรบ้าง",
+            "มีอะไรบ้าง", "รายชื่อ", "ทั้งหมด", "list", "มีกี่", "กี่โครงงาน", "มีเรื่องไหนบ้าง", "บ้างไหม",
+            "สาย", "ด้าน", "แนว", "ประเภท", "ระบบ", "เรื่องไหน"
+        ])
+        if is_type_listing:
+            seen_titles = set()
+            distinct_projects = []
+            for c in citations:
+                t = c.get("project_title") or c.get("source")
+                if t and t not in seen_titles:
+                    seen_titles.add(t)
+                    distinct_projects.append(c)
+
+            count = len(distinct_projects)
+            if is_count_query:
+                if is_thai:
+                    return f"ในระบบมีโครงงานประเภท **{matched_type}** ทั้งหมด **{count} โครงงาน** ครับ"
+                else:
+                    return f"There are **{count} project(s)** in category **{matched_type}**."
+
+            items = []
+            for idx, p in enumerate(distinct_projects, 1):
+                p_title = p.get("project_title", "-")
+                p_authors = p.get("author", "-")
+                p_adv = p.get("advisor", "-")
+                p_source = p.get("source", "")
+                p_summary = p.get("summary")
+                p_techs = p.get("key_technologies")
+                p_types = p.get("project_type")
+
+                item_lines = [f"{idx}. **{p_title}**"]
+                if p_types:
+                    t_str = ", ".join(p_types) if isinstance(p_types, list) else str(p_types)
+                    item_lines.append(f"   - **ประเภทของระบบ**: {t_str}")
+                if p_summary:
+                    item_lines.append(f"   - **ภาพรวม**: {p_summary}")
+                if p_techs:
+                    t_str = ", ".join(p_techs) if isinstance(p_techs, list) else str(p_techs)
+                    item_lines.append(f"   - **เทคโนโลยีหลัก**: {t_str}")
+                item_lines.append(f"   - **อาจารย์ที่ปรึกษา**: {p_adv}")
+                item_lines.append(f"   - **เอกสาร**: 📄 `{p_source}`")
+                items.append("\n".join(item_lines))
+
+            list_body = "\n\n".join(items)
+            return (
+                f"### 🏷️ รายชื่อโครงงานประเภท **{matched_type}** ทั้งหมด {count} โครงงาน\n\n"
+                f"{list_body}\n\n"
+                f"> 💡 *พิมพ์ชื่อโครงงานเพื่อดูรายละเอียดเชิงลึก เช่น เซนเซอร์ ฮาร์ดแวร์ หรือสถาปัตยกรรมระบบได้ครับ*"
+            )
+
 
     # =========================================================================
     # Case 4: Course Grouping (e.g. Pre-Project CPE491 vs Senior Project CPE492)

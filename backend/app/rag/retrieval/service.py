@@ -203,10 +203,13 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         matched_title = filters.get("project_title")
         matched_advisor = filters.get("advisor")
         matched_year = filters.get("year")
+        matched_type = filters.get("project_type")
         q_low = query.lower()
 
         if intent in {"FACTOID", "EXPLORATORY"} and filters and not _has_technical_keywords(query, project_title=matched_title):
             if matched_title:
+                is_pure_metadata = True
+            elif matched_type:
                 is_pure_metadata = True
             elif matched_advisor and any(k in q_low for k in [
                 "project", "projects", "โครงงาน", "โปรเจกต์", "เรื่องไหน",

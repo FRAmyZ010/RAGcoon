@@ -606,8 +606,12 @@ def _prepare_rag_context(
 
     for item in scored_contexts:
         score = float(item.get("score", 0.0))
+        raw_score = item.get("raw_score")
+        if raw_score is not None and float(raw_score) < -3.5 and not has_filter:
+            continue
         if score < min_score and projects_data:
             continue
+
 
         payload = item.get("payload", {}) or {}
         source = payload.get("source", "Unknown source")
@@ -786,7 +790,39 @@ def _prepare_rag_context(
 
 def answer_question(question: str, session_id: Optional[str] = None) -> dict[str, object]:
     """Synchronous Question Answering with In-Memory Session Memory."""
-    prep = _prepare_rag_context(question, session_id=session_id)
+    # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
+    from .prescreen import prescreen_query
+    prescreen_res = prescreen_query(question, session_id=session_id)
+    if prescreen_res.handled:
+        session_manager.add_user_message(session_id, question)
+        session_manager.add_assistant_message(session_id, prescreen_res.response)
+        return {
+            "question": question,
+            "session_id": session_id,
+            "answer": prescreen_res.response,
+            "intent": prescreen_res.intent,
+            "contexts": [],
+            "sources": [],
+            "citations": [],
+            "scored_contexts": [],
+            "normalized_query": question,
+            "filters": {},
+            "query_variants": [],
+            "retrieved_count": 0,
+            "errors": [],
+            "timing": {
+                "query_proc_seconds": 0.001,
+                "retrieval_seconds": 0.0,
+                "rerank_seconds": 0.0,
+                "llm_seconds": 0.0,
+                "total_seconds": 0.001,
+            },
+            "performance": {},
+        }
+
+    # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
+    query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
+    prep = _prepare_rag_context(query_to_search, session_id=session_id)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -837,6 +873,42 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
     from .template_responder import try_generate_template_response
     template_answer = try_generate_template_response(question, prep)
 
+    # Fast Fallback when no relevant context was found (Zero LLM wait)
+    if not contexts and not template_answer:
+        fallback_msg = (
+            f"ขออภัยครับ ไม่พบข้อมูลเกี่ยวกับ '{question.strip()}' ในฐานข้อมูลเล่มโครงงานวิศวกรรมคอมพิวเตอร์ครับ 🦝\n\n"
+            f"*(ระบบมีข้อมูลเกี่ยวกับโครงงานฮาร์ดแวร์, IoT, Web/Mobile App, และ Machine Learning ของภาควิชา หากต้องการสืบค้นหัวข้ออื่น สามารถสอบถามได้เลยครับ)*"
+            if is_thai
+            else f"I'm sorry, but no relevant information about '{question.strip()}' was found in the senior project documents. 🦝"
+        )
+        if prescreen_res.greeting_prefix:
+            fallback_msg = prescreen_res.greeting_prefix + fallback_msg
+
+        session_manager.add_assistant_message(session_id, fallback_msg)
+        return {
+            "question": question,
+            "session_id": session_id,
+            "answer": fallback_msg,
+            "intent": intent,
+            "contexts": [],
+            "sources": [],
+            "citations": [],
+            "scored_contexts": [],
+            "normalized_query": retrieval_details.get("normalized_query", question),
+            "filters": prep["filters"],
+            "query_variants": retrieval_details.get("query_variants", []),
+            "retrieved_count": 0,
+            "errors": [],
+            "timing": {
+                "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+                "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+                "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+                "llm_seconds": 0.0,
+                "total_seconds": retrieval_timing.get("total_seconds", 0.0),
+            },
+            "performance": {},
+        }
+
     if template_answer:
         answer = template_answer
         # Fast-Path Shortcut does not need page numbers in citations
@@ -874,8 +946,12 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
             answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
+    if prescreen_res.greeting_prefix and not answer.startswith(prescreen_res.greeting_prefix.strip()):
+        answer = prescreen_res.greeting_prefix + answer
+
     # Add assistant response to session history
     session_manager.add_assistant_message(session_id, answer)
+
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
     tb = stats_out.get("token_breakdown", {})
@@ -947,7 +1023,54 @@ def stream_answer_question(
       - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
-    prep = _prepare_rag_context(question, session_id=session_id)
+    # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
+    from .prescreen import prescreen_query
+    prescreen_res = prescreen_query(question, session_id=session_id)
+    if prescreen_res.handled:
+        session_manager.add_user_message(session_id, question)
+        session_manager.add_assistant_message(session_id, prescreen_res.response)
+        yield {
+            "event": "metadata",
+            "data": {
+                "question": question,
+                "session_id": session_id,
+                "intent": prescreen_res.intent,
+                "normalized_query": question,
+                "filters": {},
+                "sources": [],
+                "citations": [],
+                "retrieved_count": 0,
+                "timing": {
+                    "query_proc_seconds": 0.001,
+                    "retrieval_seconds": 0.0,
+                    "rerank_seconds": 0.0,
+                },
+            },
+        }
+        yield {"event": "token", "data": {"token": prescreen_res.response}}
+        yield {
+            "event": "done",
+            "data": {
+                "answer": prescreen_res.response,
+                "session_id": session_id,
+                "intent": prescreen_res.intent,
+                "sources": [],
+                "citations": [],
+                "timing": {
+                    "query_proc_seconds": 0.001,
+                    "retrieval_seconds": 0.0,
+                    "rerank_seconds": 0.0,
+                    "llm_seconds": 0.0,
+                    "total_seconds": 0.001,
+                },
+                "performance": {},
+            },
+        }
+        return
+
+    # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
+    query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
+    prep = _prepare_rag_context(query_to_search, session_id=session_id)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -1022,6 +1145,43 @@ def stream_answer_question(
     }
     yield {"event": "metadata", "data": metadata_payload}
 
+    # Fast Fallback when no relevant context was found (Zero LLM wait)
+    if not contexts and not template_answer:
+        fallback_msg = (
+            f"ขออภัยครับ ไม่พบข้อมูลเกี่ยวกับ '{question.strip()}' ในฐานข้อมูลเล่มโครงงานวิศวกรรมคอมพิวเตอร์ครับ 🦝\n\n"
+            f"*(ระบบมีข้อมูลเกี่ยวกับโครงงานฮาร์ดแวร์, IoT, Web/Mobile App, และ Machine Learning ของภาควิชา หากต้องการสืบค้นหัวข้ออื่น สามารถสอบถามได้เลยครับ)*"
+            if is_thai
+            else f"I'm sorry, but no relevant information about '{question.strip()}' was found in the senior project documents. 🦝"
+        )
+        if prescreen_res.greeting_prefix:
+            fallback_msg = prescreen_res.greeting_prefix + fallback_msg
+
+        yield {"event": "token", "data": {"token": fallback_msg}}
+        session_manager.add_assistant_message(session_id, fallback_msg)
+        yield {
+            "event": "done",
+            "data": {
+                "answer": fallback_msg,
+                "session_id": session_id,
+                "intent": intent,
+                "sources": [],
+                "citations": [],
+                "timing": {
+                    "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+                    "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+                    "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+                    "llm_seconds": 0.0,
+                    "total_seconds": retrieval_timing.get("total_seconds", 0.0),
+                },
+                "performance": {},
+            },
+        }
+        return
+
+    # Yield greeting prefix first if mixed intent
+    if prescreen_res.greeting_prefix:
+        yield {"event": "token", "data": {"token": prescreen_res.greeting_prefix}}
+
     if template_answer:
         cleaned_answer = template_answer
         llm_seconds = 0.0
@@ -1060,8 +1220,12 @@ def stream_answer_question(
         if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
             cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
+    if prescreen_res.greeting_prefix and not cleaned_answer.startswith(prescreen_res.greeting_prefix.strip()):
+        cleaned_answer = prescreen_res.greeting_prefix + cleaned_answer
+
     # Add assistant response to session manager
     session_manager.add_assistant_message(session_id, cleaned_answer)
+
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
     tb = stats_out.get("token_breakdown", {})
