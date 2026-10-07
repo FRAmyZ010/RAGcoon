@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MAX_ATTACHMENT_BYTES, submitFeedback } from '../services/feedbackApi';
 import { 
   Home, 
@@ -246,7 +247,13 @@ export default function FeedbackPage() {
         onSubmit={handleSubmit}
         className="flex w-full max-w-3xl flex-col overflow-hidden rounded-md bg-[#303030] shadow-xl"
       >
-        <div className="flex h-12 shrink-0 items-center justify-center bg-[#252525]">
+        <div className="relative flex h-12 shrink-0 items-center justify-center bg-[#252525] px-3">
+          <Link
+            to="/chat"
+            className="absolute left-3 text-sm text-slate-300 hover:text-white"
+          >
+            Back to chat
+          </Link>
           <h1 className="text-lg font-medium tracking-wide text-white">Feedback</h1>
         </div>
 
