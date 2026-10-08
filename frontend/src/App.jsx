@@ -307,25 +307,24 @@ export default function App() {
     if (!input.trim() || loading) return;
 
     const userQuery = input.trim();
-    setInput("");
-
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
       workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
     }
 
+    setInput("");
     await streamQuery(userQuery, workspaceId, { priorMessages: messages });
   };
 
   const handleSuggestion = async (text) => {
     if (loading) return;
-    setInput("");
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
       workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
     }
+    setInput("");
     await streamQuery(text, workspaceId, { priorMessages: messages });
   };
 
