@@ -100,3 +100,23 @@ def read_chat_history(
     Endpoint สำหรับดึงรายการประวัติการค้นหาย้อนหลัง
     """
     return get_chat_history(db=db, skip=skip, limit=limit)
+
+
+@router.post("/compare")
+async def compare_rag_pipelines(
+    request: ChatRequest,
+):
+    """
+    Endpoint สำหรับเปรียบเทียบผลลัพธ์ระหว่าง Legacy Pipeline (Rule-based) กับ Modern Pipeline (True Hybrid RAG) แบบ Real-time
+    """
+    from app.rag.evaluation.compare_pipelines import compare_query
+    return await run_in_threadpool(compare_query, query=request.query_text)
+
+
+@router.get("/benchmark-suite")
+async def run_benchmark_endpoint():
+    """
+    Endpoint สำหรับรันชุดทดสอบ 6 Scenarios เปรียบเทียบ Legacy vs Modern และสรุปรายงานผล
+    """
+    from app.rag.evaluation.compare_pipelines import run_benchmark_suite
+    return await run_in_threadpool(run_benchmark_suite)
