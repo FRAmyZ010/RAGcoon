@@ -268,6 +268,7 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 print(f"\n⚡ [FAST-PATH] Direct Metadata Scroll: Found {len(fast_results)} project(s) in {fast_seconds:.3f}s (Vector Search & Cross-Encoder Bypassed)")
                 return {
                     "results": fast_results,
+                    "fast_path_used": True,
                     "errors": [],
                     "timing": {
                         "query_proc_seconds": query_proc_seconds,
@@ -384,6 +385,7 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         total_seconds = time.perf_counter() - total_start
         return {
             "results": reranked,
+            "fast_path_used": False,
             "filters": filters,
             "intent": intent,
             "errors": [],

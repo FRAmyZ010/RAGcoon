@@ -999,6 +999,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         "session_id": session_id,
         "answer": answer,
         "intent": intent,
+        "fast_path_used": bool(template_answer) or retrieval_details.get("fast_path_used", False),
         "contexts": contexts,
         "sources": sources,
         "citations": citations,

@@ -270,11 +270,14 @@ Answer:
     return {
         "pipeline": "legacy",
         "query": query,
+        "clean_query": retrieval_details.get("clean_query", query),
         "answer": answer_text,
         "filters": retrieval_details.get("filters", {}),
         "sources": sources,
+        "scored_contexts": scored_contexts,
         "retrieved_count": retrieval_details.get("retrieved_count", 0),
         "timing": {
+            "query_proc_seconds": retrieval_details["timing"].get("query_proc_seconds", 0.001),
             "retrieval_seconds": retrieval_details["timing"]["retrieval_seconds"],
             "rerank_seconds": retrieval_details["timing"]["rerank_seconds"],
             "llm_seconds": llm_seconds,

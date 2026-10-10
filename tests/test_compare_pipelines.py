@@ -36,7 +36,7 @@ def test_quality_scoring_rules():
 
 
 def test_benchmark_scenarios_structure():
-    assert len(BENCHMARK_SCENARIOS) == 6
+    assert len(BENCHMARK_SCENARIOS) == 7
     for sc in BENCHMARK_SCENARIOS:
         assert "scenario_id" in sc
         assert "name" in sc
