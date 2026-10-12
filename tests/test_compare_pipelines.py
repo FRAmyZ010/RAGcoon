@@ -36,8 +36,13 @@ def test_quality_scoring_rules():
 
 
 def test_benchmark_scenarios_structure():
-    assert len(BENCHMARK_SCENARIOS) == 7
+    from backend.app.rag.evaluation.compare_pipelines import DYNAMIC_INTENT_SCENARIOS
+    assert len(BENCHMARK_SCENARIOS) == 8
     for sc in BENCHMARK_SCENARIOS:
         assert "scenario_id" in sc
         assert "name" in sc
         assert "query" in sc
+    assert len(DYNAMIC_INTENT_SCENARIOS) == 6
+    for item in DYNAMIC_INTENT_SCENARIOS:
+        assert "intent_key" in item
+        assert "query" in item

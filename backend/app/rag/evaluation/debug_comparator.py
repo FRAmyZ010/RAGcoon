@@ -33,11 +33,13 @@ if BACKEND_DIR not in sys.path:
 try:
     from app.rag.evaluation.compare_pipelines import (
         BENCHMARK_SCENARIOS,
+        DYNAMIC_INTENT_SCENARIOS,
         compare_query,
     )
 except ImportError:
     from backend.app.rag.evaluation.compare_pipelines import (
         BENCHMARK_SCENARIOS,
+        DYNAMIC_INTENT_SCENARIOS,
         compare_query,
     )
 
@@ -135,13 +137,21 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     leg = res["legacy"]
     mod = res["modern"]
 
-    sc_id = scenario_meta.get("scenario_id", "?") if scenario_meta else "Custom"
+    sc_id = scenario_meta.get("scenario_id") if scenario_meta else "Custom"
+    intent_tag = scenario_meta.get("intent_key") if scenario_meta else None
     evo_stage = scenario_meta.get("evolution_stage", "Custom Query Evaluation") if scenario_meta else "Custom Query"
     module_name = scenario_meta.get("module", "-") if scenario_meta else "-"
     desc = scenario_meta.get("description", "-") if scenario_meta else "-"
     academic_analysis = scenario_meta.get("academic_analysis", res["reason"]) if scenario_meta else res["reason"]
 
-    _print_box_header(f"🔍 [DEEP-DIVE PIPELINE DEBUGGER] ข้อที่ {sc_id}: {evo_stage}", width=88)
+    if intent_tag:
+        title_box = f"🔍 [DEEP-DIVE PIPELINE DEBUGGER] {evo_stage} (Intent: {intent_tag})"
+    elif sc_id and str(sc_id).isdigit():
+        title_box = f"🔍 [DEEP-DIVE PIPELINE DEBUGGER] ข้อที่ {sc_id}: {evo_stage}"
+    else:
+        title_box = f"🔍 [DEEP-DIVE PIPELINE DEBUGGER] {evo_stage}"
+
+    _print_box_header(title_box, width=88)
     print(f"  • คำถามทดสอบ (Query): \"{query}\"")
     print(f"  • โมดูลที่รับผิดชอบ: `{module_name}`")
     print(f"  • วัตถุประสงค์การทดสอบ: {desc}\n")
@@ -255,6 +265,13 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     mod_intent_str = mod.get("intent", "FACTOID")
     gen_mech = "Deterministic Template Responder (Zero Hallucination)" if is_fast else f"Intent-Aware LLM ({mod_intent_str})"
     print(f"   ├─ กลไกการตอบ : {gen_mech}")
+    cfg = mod.get("routing_config", {})
+    if cfg and not is_fast:
+        max_c = cfg.get("max_context_chunks", 5)
+        num_p = cfg.get("num_predict", 512)
+        top_k = cfg.get("top_k", 15)
+        top_n = cfg.get("rerank_top_n", 5)
+        print(f"   ├─ Dynamic Context Policy: Intent='{mod_intent_str}' | Quota: Top-K={top_k}, Top-N={top_n} | Max Context Chunks={max_c} | Token Budget={num_p}")
     print(f"   ├─ ระยะเวลาที่ LLM ใช้ : {mod_timing.get('llm_seconds', 0.0):.4f}s")
     print("   ├─ คำตอบที่ได้รับจริง (Answer Output):")
     print("   │  " + "-" * 76)
@@ -298,15 +315,68 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     print("=" * 88 + "\n")
 
 
+def run_dynamic_intent_scenario(scenario_meta: dict[str, Any]) -> None:
+    """Run and display debug trace for a specific Dynamic Intent scenario."""
+    intent_key = scenario_meta.get("intent_key", "UNKNOWN")
+    query = scenario_meta["query"]
+    print(f"\n⏳ กำลังประมวลผล Dynamic Intent [{intent_key}]: \"{query}\" ... กรุณารอสักครู่\n")
+    res = compare_query(query)
+    display_debug_trace(scenario_meta, res)
+
+
+def dynamic_intent_menu() -> None:
+    """Sub-menu for testing Dynamic Context Routing across all 6 intents."""
+    total_intents = len(DYNAMIC_INTENT_SCENARIOS)
+    while True:
+        print("\n" + "=" * 88)
+        print("🔀 [DYNAMIC CONTEXT ROUTING SUITE] เลือก Intent ที่ต้องการทดสอบอย่างละเอียด:")
+        print("=" * 88)
+        for idx, item in enumerate(DYNAMIC_INTENT_SCENARIOS, 1):
+            intent_key = item["intent_key"]
+            name = item["name"]
+            desc = item["description"]
+            q = item["query"]
+            print(f"  [{idx}] Intent: {intent_key:<14} | {name}")
+            print(f"      • คำถาม: \"{q}\"")
+            print(f"      • นโยบายบริบท: {desc}")
+            print()
+        print(f"  [A] รันและเปรียบเทียบทุก Intent (1-{total_intents}) ต่อเนื่องกัน")
+        print("  [B] ย้อนกลับไปเมนูหลัก (Back to Main Menu)")
+        print("=" * 88)
+
+        choice = input(f"\n👉 กรุณาเลือก Intent (1-{total_intents}, A, B): ").strip().upper()
+        if choice == "B":
+            break
+        elif choice == "A":
+            for item in DYNAMIC_INTENT_SCENARIOS:
+                run_dynamic_intent_scenario(item)
+        elif choice.isdigit() and 1 <= int(choice) <= total_intents:
+            item = DYNAMIC_INTENT_SCENARIOS[int(choice) - 1]
+            run_dynamic_intent_scenario(item)
+        else:
+            print(f"⚠️ ตัวเลือกไม่ถูกต้อง กรุณาเลือกหมายเลข 1 ถึง {total_intents} หรือ A, B")
+
+
 def run_scenario_by_id(scenario_id: int) -> None:
-    """Run and display debug trace for a specific scenario (1-7)."""
+    """Run and display debug trace for a specific scenario (1-8)."""
+    if scenario_id == 8:
+        dynamic_intent_menu()
+        return
+
     match = next((s for s in BENCHMARK_SCENARIOS if s["scenario_id"] == scenario_id), None)
     if not match:
         print(f"❌ ไม่พบข้อการทดสอบหมายเลข {scenario_id} (กรุณาเลือก 1 ถึง {len(BENCHMARK_SCENARIOS)})")
         return
 
-    print(f"\n⏳ กำลังประมวลผลข้อที่ {scenario_id}: \"{match['query']}\" ... กรุณารอสักครู่\n")
-    res = compare_query(match["query"])
+    prior_q = match.get("prior_query")
+    if prior_q:
+        print(f"\n⏳ กำลังประมวลผลข้อที่ {scenario_id} (Multi-Turn Session):")
+        print(f"   [Turn 1 Setup] \"{prior_q}\"")
+        print(f"   [Turn 2 Target] \"{match['query']}\" ... กรุณารอสักครู่\n")
+    else:
+        print(f"\n⏳ กำลังประมวลผลข้อที่ {scenario_id}: \"{match['query']}\" ... กรุณารอสักครู่\n")
+
+    res = compare_query(match["query"], prior_query=prior_q)
     display_debug_trace(match, res)
 
 
@@ -321,9 +391,9 @@ def interactive_menu() -> None:
     """Interactive CLI menu loop for debugging pipelines."""
     total_scenarios = len(BENCHMARK_SCENARIOS)
     while True:
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 88)
         print("🛠️   RAGcoon Deep-Dive Pipeline Debugger (Legacy vs Modern)")
-        print("=" * 80)
+        print("=" * 88)
         print("เลือกข้อการทดสอบเพื่อดูการทำงานอย่างละเอียดทุกขั้นตอน:")
         for s in BENCHMARK_SCENARIOS:
             sc_id = s["scenario_id"]
@@ -331,11 +401,14 @@ def interactive_menu() -> None:
             evo = s.get("evolution_stage", name)
             q = s["query"]
             print(f"  [{sc_id}] ข้อที่ {sc_id}: {evo}")
-            print(f"      คำถาม: \"{q}\"")
+            if sc_id == 8:
+                print("      👉 [กด 8 เพื่อเข้าสู่เมนูทดสอบตาม Intent: FACTOID, DEEP_DIVE, COMPARISON, RECOMMENDATION, EXPLORATORY, CODE]")
+            else:
+                print(f"      คำถาม: \"{q}\"")
         print(f"  [A] รันและเปรียบเทียบทุกข้อ (1-{total_scenarios}) ต่อเนื่องกัน")
         print("  [C] พิมพ์คำถามทดสอบเอง (Custom Query)")
         print("  [Q] ออกจากโปรแกรม")
-        print("=" * 80)
+        print("=" * 88)
 
         choice = input(f"\n👉 กรุณาเลือกตัวเลือก (1-{total_scenarios}, A, C, Q): ").strip().upper()
 
@@ -344,11 +417,17 @@ def interactive_menu() -> None:
             break
         elif choice == "A":
             for s in BENCHMARK_SCENARIOS:
-                run_scenario_by_id(s["scenario_id"])
+                if s["scenario_id"] == 8:
+                    for item in DYNAMIC_INTENT_SCENARIOS:
+                        run_dynamic_intent_scenario(item)
+                else:
+                    run_scenario_by_id(s["scenario_id"])
         elif choice == "C":
             custom_q = input("\n📝 พิมพ์คำถามที่ต้องการทดสอบ: ").strip()
             if custom_q:
                 run_custom_query(custom_q)
+        elif choice == "8":
+            dynamic_intent_menu()
         elif choice.isdigit() and 1 <= int(choice) <= total_scenarios:
             run_scenario_by_id(int(choice))
         else:
@@ -357,22 +436,35 @@ def interactive_menu() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RAGcoon Pipeline Deep-Dive Debugger")
-    parser.add_argument("--scenario", "-s", type=int, help="Scenario ID to run (1-7)", default=None)
+    parser.add_argument("--scenario", "-s", type=int, help="Scenario ID to run (1-8)", default=None)
+    parser.add_argument("--intent", "-i", type=str, help="Specific Dynamic Intent to run (FACTOID, DEEP_DIVE, COMPARISON, RECOMMENDATION, EXPLORATORY, CODE)", default=None)
     parser.add_argument("--query", "-q", type=str, help="Custom query string to test", default=None)
     parser.add_argument("--all", "-a", action="store_true", help="Run all benchmark scenarios")
 
     args = parser.parse_args()
 
-    if args.scenario is not None:
+    if args.intent:
+        match_intent = next((item for item in DYNAMIC_INTENT_SCENARIOS if item["intent_key"].upper() == args.intent.upper()), None)
+        if match_intent:
+            run_dynamic_intent_scenario(match_intent)
+        else:
+            valid_keys = ", ".join(item["intent_key"] for item in DYNAMIC_INTENT_SCENARIOS)
+            print(f"⚠️ ไม่พบ Intent '{args.intent}' (กรุณาเลือก: {valid_keys})")
+    elif args.scenario is not None:
         run_scenario_by_id(args.scenario)
     elif args.query is not None:
         run_custom_query(args.query)
     elif args.all:
         for s in BENCHMARK_SCENARIOS:
-            run_scenario_by_id(s["scenario_id"])
+            if s["scenario_id"] == 8:
+                for item in DYNAMIC_INTENT_SCENARIOS:
+                    run_dynamic_intent_scenario(item)
+            else:
+                run_scenario_by_id(s["scenario_id"])
     else:
         interactive_menu()
 
 
 if __name__ == "__main__":
     main()
+

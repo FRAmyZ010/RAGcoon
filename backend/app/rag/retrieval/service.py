@@ -329,7 +329,7 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 results = _filter_recommendation_candidates(results, target_domains)
             results = _diversify_candidates_by_project(results, max_per_project=2)
         elif intent == "EXPLORATORY" and results:
-            results = _diversify_candidates_by_project(results, max_per_project=1)
+            results = _diversify_candidates_by_project(results, max_per_project=2)
             top_n = max(top_n, len(results))
 
         print(f"Retrieved (before rerank): {len(results)} results")

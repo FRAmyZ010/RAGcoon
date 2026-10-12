@@ -260,10 +260,9 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
             "the project", "this project", "this system", "that project", "about it", "of it",
             "โปรเจกต์นี้", "โครงงานนี้", "ระบบนี้", "เรื่องนี้", "โครงการนี้",
         ]
-        # Never inherit when asking a generic recommendation or multi-project exploratory query
+        # Never inherit when asking a generic recommendation or other/similar project queries
         is_generic_query = any(k in q_lower for k in [
-            "recommend", "แนะนำ", "similar", "คล้าย", "list", "รายชื่อ", "ทั้งหมด",
-            "all projects", "กี่โครงงาน", "กี่โปรเจกต์", "how many", "มีอะไรบ้าง", "อะไรบ้าง"
+            "recommend", "แนะนำ", "similar", "คล้าย", "อื่นๆ", "other", "all projects",
         ])
         if any(marker in q_lower for marker in explicit_follow_up_markers) and not is_generic_query:
             last_proj = _extract_last_referenced_project(chat_history)

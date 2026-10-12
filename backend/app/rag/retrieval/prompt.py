@@ -206,7 +206,9 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
         else:
             return """4. Enumerated Project Overview: Enumerate distinct projects found in the retrieved context concisely without filler:
-   1. **[Project Title]** ([Year]) - [Core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page <X>].
+   - If the user query asks about a specific component, hardware, module, technology, or feature (e.g. SX1276, ESP32, sensor, algorithm): you MUST explicitly mention how and where that specific component or technology is used in each project based on document evidence.
+   - Format:
+     1. **[Project Title]** ([Year]) - [Direct answer stating how the queried technology/component is used in the project, or core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page: <X>].
    (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:
