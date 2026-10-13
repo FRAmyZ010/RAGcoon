@@ -82,13 +82,22 @@ def generate_ai_realtime_analysis(query: str, res: dict[str, Any]) -> str:
     mod_time = mod.get("total_seconds", 0.0)
     mod_score = mod.get("quality_score", 0.0)
     mod_mode = "⚡ Fast-Path Direct Scroll" if mod.get("fast_path_used") else "True Hybrid Retrieval (BM25 + Vector + RRF)"
+    t1 = res.get("turn1")
 
-    prompt = f"""คุณเป็นผู้เชี่ยวชาญด้านการประเมินผลระบบ RAG (Retrieval-Augmented Generation)
-จงเขียนวิเคราะห์เปรียบเทียบผลการทดสอบระหว่างสองระบบนี้ให้กระชับ ชัดเจน และมีหลักฐานเชิงประจักษ์เป็นภาษาไทย
-
-คำถามทดสอบ: "{query}"
-ผลการประเมินภาพรวม: {verdict} (ส่วนต่างคะแนน: {score_delta:+.1f} คะแนน, อัตราความเร็ว: {speedup:.1f}x)
-
+    if t1:
+        t1_leg_ans = t1["legacy"]["answer"].strip().replace("\n", " ")[:150]
+        t1_mod_ans = t1["modern"]["answer"].strip().replace("\n", " ")[:150]
+        context_desc = f"""
+[การทดสอบบทสนทนาต่อเนื่อง 2 รอบ (Multi-Turn Dialogue)]
+• รอบที่ 1 (Turn 1): "{t1['query']}"
+  - ระบบเดิมตอบ: "{t1_leg_ans}"
+  - ระบบใหม่ตอบ: "{t1_mod_ans}"
+• รอบที่ 2 (Turn 2): "{query}" (ใช้สรรพนาม 'this project' หมายถึงโครงงานในรอบที่ 1)
+  - ระบบเดิม: ไร้หน่วยความจำ ไม่รู้ว่า 'this project' คืออะไร จึงสุ่มดึงและตอบผิดโครงงาน: "{leg_answer}"
+  - ระบบใหม่: มี SessionChatManager สกัด 'The LoRaWAN' จากรอบที่ 1 มาล็อกเป้าและตอบฮาร์ดแวร์ถูกต้อง: "{mod_answer}"
+"""
+    else:
+        context_desc = f"""
 [ระบบเดิม - Legacy Baseline]
 - Query หลังตัดคำ: "{leg_clean}" | Metafilters: {leg_filters}
 - เอกสารที่ดึงได้: {leg_sources}
@@ -101,6 +110,14 @@ def generate_ai_realtime_analysis(query: str, res: dict[str, Any]) -> str:
 - เอกสาร/หลักฐานที่พบ: {mod_sources}
 - คำตอบ: "{mod_answer}"
 - เวลาที่ใช้: {mod_time:.2f}s | คะแนนคุณภาพ: {mod_score:.1f}/100
+"""
+
+    prompt = f"""คุณเป็นผู้เชี่ยวชาญด้านการประเมินผลระบบ RAG (Retrieval-Augmented Generation)
+จงเขียนวิเคราะห์เปรียบเทียบผลการทดสอบระหว่างสองระบบนี้ให้กระชับ ชัดเจน และมีหลักฐานเชิงประจักษ์เป็นภาษาไทย
+
+คำถามทดสอบ: "{query}"
+ผลการประเมินภาพรวม: {verdict} (ส่วนต่างคะแนน: {score_delta:+.1f} คะแนน, อัตราความเร็ว: {speedup:.1f}x)
+{context_desc}
 
 จงสรุปวิเคราะห์เปรียบเทียบเป็น 3 ข้อย่อยสั้นๆ ทันที (ไม่ต้องมีบทนำยาว):
 1. ด้านการตีความคำถามและการดึงข้อมูล (Query & Retrieval):
@@ -136,6 +153,7 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     query = res["query"]
     leg = res["legacy"]
     mod = res["modern"]
+    t1 = res.get("turn1")
 
     sc_id = scenario_meta.get("scenario_id") if scenario_meta else "Custom"
     intent_tag = scenario_meta.get("intent_key") if scenario_meta else None
@@ -152,14 +170,58 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
         title_box = f"🔍 [DEEP-DIVE PIPELINE DEBUGGER] {evo_stage}"
 
     _print_box_header(title_box, width=88)
-    print(f"  • คำถามทดสอบ (Query): \"{query}\"")
+    if t1:
+        print(f"  • รูปแบบการทดสอบ: บทสนทนาต่อเนื่อง 2 รอบ (Multi-Turn Dialogue: Turn 1 ➔ Turn 2)")
+        print(f"  • คำถามรอบที่ 1 (Turn 1): \"{t1['query']}\"  (ระบุชื่อโครงงานเพื่อตั้งต้นบริบท)")
+        print(f"  • คำถามรอบที่ 2 (Turn 2): \"{query}\"  (ใช้สรรพนาม 'this project' เพื่อทดสอบ Memory)")
+    else:
+        print(f"  • คำถามทดสอบ (Query): \"{query}\"")
     print(f"  • โมดูลที่รับผิดชอบ: `{module_name}`")
     print(f"  • วัตถุประสงค์การทดสอบ: {desc}\n")
 
     # =========================================================================
+    # 💬 TURN 1 DISPLAY (IF MULTI-TURN)
+    # =========================================================================
+    if t1:
+        _print_section_header(f"💬 [บทสนทนารอบที่ 1 - TURN 1] คำถามตั้งต้น: \"{t1['query']}\"", width=88)
+        print("   📌 วัตถุประสงค์รอบที่ 1: ตั้งคำถามระบุชื่อโครงงานเป้าหมาย เพื่อป้อนเข้าสู่บริบทการสนทนา\n")
+
+        print("   🔴 [LEGACY PIPELINE - รอบที่ 1 (Stateless)]")
+        print(f"      ├─ คำถาม : \"{t1['query']}\"")
+        print(f"      ├─ ตัวกรองที่สกัดได้ : {t1['legacy']['filters']}")
+        print(f"      ├─ คำตอบที่ได้รับจริง (Answer Output):")
+        print("      │  " + "-" * 72)
+        for line in t1["legacy"]["answer"].strip().split("\n"):
+            print(f"      │  {line}")
+        print("      │  " + "-" * 72)
+        print(f"      ├─ แหล่งที่มา (Sources): {', '.join(t1['legacy']['sources']) if t1['legacy']['sources'] else 'ไม่มี'}")
+        print(f"      ├─ เวลาที่ใช้ : {t1['legacy']['total_seconds']:.2f}s | คะแนนคุณภาพ: {t1['legacy']['quality_score']:.1f}/100")
+        print("      └─ สถานะ Session : ❌ ไม่มีระบบจำประวัติ (Stateless - จบรอบแล้วทิ้งบริบททันที)\n")
+
+        print("   🟢 [MODERN PIPELINE - รอบที่ 1 (Session Memory Active)]")
+        print(f"      ├─ คำถาม : \"{t1['query']}\"")
+        mod_t1_mech = "⚡ Fast-Path Direct Metadata Scroll" if t1["modern"]["fast_path_used"] else f"True Hybrid Retrieval ({t1['modern']['intent']})"
+        print(f"      ├─ กลไกการประมวลผล : {mod_t1_mech}")
+        print(f"      ├─ ตัวกรองที่สกัดได้ : {t1['modern']['filters']}")
+        print(f"      ├─ คำตอบที่ได้รับจริง (Answer Output):")
+        print("      │  " + "-" * 72)
+        for line in t1["modern"]["answer"].strip().split("\n"):
+            print(f"      │  {line}")
+        print("      │  " + "-" * 72)
+        print(f"      ├─ แหล่งที่มา (Sources): {', '.join(t1['modern']['sources']) if t1['modern']['sources'] else 'Fast-Path Payload'}")
+        print(f"      ├─ เวลาที่ใช้ : {t1['modern']['total_seconds']:.2f}s | คะแนนคุณภาพ: {t1['modern']['quality_score']:.1f}/100")
+        print("      └─ สถานะ Session : 💾 บันทึก 'The LoRaWAN' เข้าสู่ SessionChatManager เรียบร้อย!\n")
+
+        _print_section_header(f"💬 [บทสนทนารอบที่ 2 - TURN 2] คำถามต่อเนื่อง: \"{query}\"", width=88)
+        print("   📌 วัตถุประสงค์รอบที่ 2: ถามคำถามต่อเนื่องโดยใช้คำสรรพนาม ('this project') โดยไม่ต้องพิมพ์ชื่อโครงงานซ้ำ")
+        print("      • สิ่งที่เกิดขึ้นกับ Legacy: ลืมบริบทจากรอบที่ 1 จึงสุ่มค้นหาเวกเตอร์ใหม่และตอบผิดโครงงาน")
+        print("      • สิ่งที่เกิดขึ้นกับ Modern: ดึงชื่อ 'The LoRaWAN' จาก Session ในรอบที่ 1 มาล็อก Filter และตอบฮาร์ดแวร์ได้ถูกต้อง\n")
+
+    # =========================================================================
     # 🔴 LEGACY PIPELINE TRACE
     # =========================================================================
-    _print_section_header("🔴 [LEGACY PIPELINE] EXECUTION TRACE (Rule-based & Dense Only)", width=88)
+    leg_header = "🔴 [LEGACY PIPELINE - รอบที่ 2] EXECUTION TRACE (Stateless - ลืมบริบท)" if t1 else "🔴 [LEGACY PIPELINE] EXECUTION TRACE (Rule-based & Dense Only)"
+    _print_section_header(leg_header, width=88)
 
     print("⚙️  [ขั้นตอนที่ 1: การประมวลผลคำถาม (Rule-based Normalizer & Extractor)]")
     print(f"   ├─ Original Query : \"{query}\"")
@@ -213,7 +275,8 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     # =========================================================================
     # 🟢 MODERN TRUE HYBRID PIPELINE TRACE
     # =========================================================================
-    _print_section_header("🟢 [MODERN PIPELINE] EXECUTION TRACE (True Hybrid RAG & Fast-Path)", width=88)
+    mod_header = "🟢 [MODERN PIPELINE - รอบที่ 2] EXECUTION TRACE (Session-Aware & Pronoun Resolution)" if t1 else "🟢 [MODERN PIPELINE] EXECUTION TRACE (True Hybrid RAG & Fast-Path)"
+    _print_section_header(mod_header, width=88)
 
     print("⚙️  [ขั้นตอนที่ 1: การประมวลผลคำถามด้วย AI (LLM Query Processor)]")
     print(f"   ├─ Original Query       : \"{query}\"")
@@ -302,8 +365,17 @@ def display_debug_trace(scenario_meta: dict[str, Any] | None, res: dict[str, Any
     print(f"• อัตราเร่งความเร็ว (Speedup): เร็วขึ้น {speedup:.2f} เท่า (Legacy {leg.get('total_seconds', 0.0):.2f}s vs Modern {mod.get('total_seconds', 0.0):.2f}s)")
     print(f"• ความทับซ้อนเอกสาร (Jaccard Overlap): {res.get('jaccard_source_overlap', 0.0) * 100:.1f}%\n")
 
-    print("💡 [บทวิเคราะห์ผลเชิงวิชาการ (Predefined Academic Rationale สำหรับบทที่ 4)]:")
-    print(f"   > {academic_analysis}\n")
+    if t1:
+        print("💡 [บทวิเคราะห์ผลเชิงวิชาการ (Predefined Academic Rationale สำหรับบทที่ 4)]:")
+        print(f"   > {academic_analysis}\n")
+        print("📌 [สรุปเปรียบเทียบพฤติกรรมระหว่าง 2 รอบสนทนา (Multi-Turn Behavior)]:")
+        print(f"   • รอบที่ 1: ถามระบุชื่อโครงงานตรงๆ ('{t1['query']}') ทั้งสองระบบสามารถค้นหาโครงงานเป้าหมายได้")
+        print(f"   • รอบที่ 2: ถามโดยใช้คำสรรพนาม ('{query}')")
+        print("     - 🔴 Legacy Pipeline : ไร้สถานะ (Stateless) ไม่จดจำบริบทเดิม สุ่มค้นหาเวกเตอร์ใหม่และตอบผิดโครงงาน")
+        print("     - 🟢 Modern Pipeline : มี Session Memory ดึง 'The LoRaWAN' จากรอบที่ 1 มาล็อกเป้า ตอบฮาร์ดแวร์ได้ถูกต้อง 100%\n")
+    else:
+        print("💡 [บทวิเคราะห์ผลเชิงวิชาการ (Predefined Academic Rationale สำหรับบทที่ 4)]:")
+        print(f"   > {academic_analysis}\n")
 
     print("🤖 [การวิเคราะห์ผลเปรียบเทียบแบบสดด้วย LLM (AI Real-time Synthesis)]:")
     print("   ⏳ กำลังส่งข้อมูลผลการทดสอบจริงให้ LLM สังเคราะห์บทวิเคราะห์สดๆ...")

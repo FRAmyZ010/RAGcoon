@@ -136,7 +136,59 @@ def compare_query(query: str, prior_query: Optional[str] = None) -> dict[str, An
     calculate quality scores, and declare a verdict.
     If prior_query is provided, initialize a multi-turn session on Modern pipeline.
     """
-    # 1. Run Legacy Pipeline (Stateless)
+    turn1_data = None
+    session_id = None
+    if prior_query:
+        session_id = f"bench_sess_{int(time.time() * 1000)}"
+
+        # Turn 1: Run Legacy Pipeline (Stateless)
+        leg_t1_out = legacy_answer_question(prior_query)
+        leg_t1_time = leg_t1_out["timing"]["total_seconds"]
+        leg_t1_ans = leg_t1_out.get("answer", "")
+        leg_t1_src = leg_t1_out.get("sources", [])
+        leg_t1_eval = evaluate_output_quality(
+            leg_t1_ans, leg_t1_time, leg_t1_out.get("retrieved_count", 0), leg_t1_src, has_fast_path=False
+        )
+
+        # Turn 1: Run Modern Pipeline (Initializes Session Context)
+        mod_t1_start = time.perf_counter()
+        mod_t1_raw = answer_question(prior_query, session_id=session_id)
+        mod_t1_time = time.perf_counter() - mod_t1_start
+        mod_t1_ans = mod_t1_raw.get("answer", "")
+        mod_t1_src = mod_t1_raw.get("sources", [])
+        mod_t1_intent = mod_t1_raw.get("intent", "FACTOID")
+        is_fast_t1 = bool(mod_t1_raw.get("fast_path_used")) or (
+            mod_t1_raw.get("timing", {}).get("llm_seconds", 0.0) == 0.0
+        )
+        mod_t1_eval = evaluate_output_quality(
+            mod_t1_ans, mod_t1_time, len(mod_t1_raw.get("scored_contexts", [])), mod_t1_src, has_fast_path=is_fast_t1
+        )
+
+        turn1_data = {
+            "query": prior_query,
+            "legacy": {
+                "answer": leg_t1_ans,
+                "sources": leg_t1_src,
+                "clean_query": leg_t1_out.get("clean_query", prior_query),
+                "filters": leg_t1_out.get("filters", {}),
+                "total_seconds": round(leg_t1_time, 3),
+                "quality_score": leg_t1_eval["total_score"],
+                "score_breakdown": leg_t1_eval["breakdown"],
+            },
+            "modern": {
+                "answer": mod_t1_ans,
+                "sources": mod_t1_src,
+                "clean_query": mod_t1_raw.get("normalized_query", prior_query),
+                "filters": mod_t1_raw.get("filters", {}),
+                "intent": mod_t1_intent,
+                "fast_path_used": is_fast_t1,
+                "total_seconds": round(mod_t1_time, 3),
+                "quality_score": mod_t1_eval["total_score"],
+                "score_breakdown": mod_t1_eval["breakdown"],
+            },
+        }
+
+    # Turn 2: Run Legacy Pipeline (Stateless)
     leg_out = legacy_answer_question(query)
     leg_time = leg_out["timing"]["total_seconds"]
     leg_answer = leg_out.get("answer", "")
@@ -145,11 +197,7 @@ def compare_query(query: str, prior_query: Optional[str] = None) -> dict[str, An
         leg_answer, leg_time, leg_out.get("retrieved_count", 0), leg_sources, has_fast_path=False
     )
 
-    # 2. Run Modern Pipeline (Session-Aware if prior_query exists)
-    session_id = f"bench_sess_{int(time.time() * 1000)}" if prior_query else None
-    if prior_query and session_id:
-        answer_question(prior_query, session_id=session_id)
-
+    # Turn 2: Run Modern Pipeline (Continues Session with Memory)
     mod_start = time.perf_counter()
     mod_raw = answer_question(query, session_id=session_id)
     mod_time = time.perf_counter() - mod_start
@@ -180,6 +228,8 @@ def compare_query(query: str, prior_query: Optional[str] = None) -> dict[str, An
 
     return {
         "query": query,
+        "prior_query": prior_query,
+        "turn1": turn1_data,
         "verdict": verdict,
         "reason": reason,
         "jaccard_source_overlap": round(jaccard, 3),
