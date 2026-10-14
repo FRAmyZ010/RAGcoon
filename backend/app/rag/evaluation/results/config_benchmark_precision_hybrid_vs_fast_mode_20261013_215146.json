@@ -1,0 +1,155 @@
+{
+  "timestamp": "2026-10-13 21:51:46",
+  "baseline_config": {
+    "top_k": 15,
+    "rerank_top_n": 5,
+    "collection_name": "embedding_evaluation",
+    "enable_hybrid": true,
+    "enable_reranker": true,
+    "enable_boilerplate_filter": true,
+    "enable_fast_path": true,
+    "max_context_chunks": 5,
+    "max_chunks_per_project": 2,
+    "min_score": 0.0001,
+    "llm_provider": "ollama",
+    "llm_model": "gemma3:4b",
+    "temperature": 0.0,
+    "num_predict": 512,
+    "prompt_preset": "balanced",
+    "system_prompt_override": null,
+    "profile_name": "precision_hybrid",
+    "description": "ค่ามาตรฐานสมดุล (Baseline): Hybrid RRF, Top-K=15, Top-N=5, Chunk=5, Balanced Prompt"
+  },
+  "candidate_config": {
+    "top_k": 10,
+    "rerank_top_n": 3,
+    "collection_name": "embedding_evaluation",
+    "enable_hybrid": true,
+    "enable_reranker": true,
+    "enable_boilerplate_filter": true,
+    "enable_fast_path": true,
+    "max_context_chunks": 3,
+    "max_chunks_per_project": 1,
+    "min_score": 0.0001,
+    "llm_provider": "ollama",
+    "llm_model": "gemma3:4b",
+    "temperature": 0.0,
+    "num_predict": 256,
+    "prompt_preset": "concise",
+    "system_prompt_override": null,
+    "profile_name": "fast_mode",
+    "description": "เน้นความเร็วสูงสุด (Speed-Optimized): Top-K=10, Top-N=3, Chunk=3, Prompt กระชับ, Output=256"
+  },
+  "total_test_cases": 1,
+  "aggregates": {
+    "baseline": {
+      "avg_quality_score": 95.0,
+      "avg_total_latency_sec": 1.948,
+      "hit_rate_pct": 100.0,
+      "key_phrase_recall_pct": 100.0,
+      "gen_speed_tps": 0.0
+    },
+    "candidate": {
+      "avg_quality_score": 100.0,
+      "avg_total_latency_sec": 0.221,
+      "hit_rate_pct": 100.0,
+      "key_phrase_recall_pct": 100.0,
+      "gen_speed_tps": 0.0
+    },
+    "delta": {
+      "score_delta": 5.0,
+      "latency_delta_sec": -1.727,
+      "speedup_ratio": 8.81,
+      "hit_rate_delta_pct": 0.0,
+      "recall_delta_pct": 0.0
+    }
+  },
+  "comparisons": [
+    {
+      "test_id": "GT-04",
+      "category": "Fast-Path Metadata",
+      "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+      "baseline": {
+        "test_id": "GT-04",
+        "category": "Fast-Path Metadata",
+        "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+        "config_profile": "precision_hybrid",
+        "success": true,
+        "answer": "อาจารย์ที่ปรึกษาของโครงงาน **The LoRaWAN** คือ **Asst. Prof. Dr. Suppakarn Chansareewittaya** ครับ\n\n- **คณะกรรมการตรวจโครงงาน (Committee)**: Dr. Mahamah Sebakor, Dr. Surapong Uttama\n- **ปีการศึกษา**: 2020 (พ.ศ. 2563)\n- **เอกสารอ้างอิง**: 📄 `1_6031501044_6031501061_FinalProject.pdf`",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 95.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 20.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 1.7227,
+          "retrieval_seconds": 0.221,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 1.948
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "candidate": {
+        "test_id": "GT-04",
+        "category": "Fast-Path Metadata",
+        "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+        "config_profile": "fast_mode",
+        "success": true,
+        "answer": "อาจารย์ที่ปรึกษาของโครงงาน **The LoRaWAN** คือ **Asst. Prof. Dr. Suppakarn Chansareewittaya** ครับ\n\n- **คณะกรรมการตรวจโครงงาน (Committee)**: Dr. Mahamah Sebakor, Dr. Surapong Uttama\n- **ปีการศึกษา**: 2020 (พ.ศ. 2563)\n- **เอกสารอ้างอิง**: 📄 `1_6031501044_6031501061_FinalProject.pdf`",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 100.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 25.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0001,
+          "retrieval_seconds": 0.221,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 0.221
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "delta": {
+        "score": 5.0,
+        "latency_seconds": -1.727,
+        "speedup_ratio": 8.81,
+        "hit_rate_diff": 0,
+        "recall_diff": 0.0
+      }
+    }
+  ]
+}

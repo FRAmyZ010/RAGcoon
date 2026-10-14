@@ -5,6 +5,8 @@ class ChatRequest(BaseModel):
     workspace_id: str | None = Field(default=None, description="ID ของ Workspace/Session")
     query_text: str = Field(..., description="คำถามภาษาธรรมชาติจากผู้ใช้")
     parent_query_id: int | None = Field(default=None, description="ID ของคำถามก่อนหน้าเพื่อดึงบริบทแชท")
+    llm_provider: str | None = Field(default=None, description="ผู้ให้บริการ LLM (ollama, gemini, openai)")
+    llm_model: str | None = Field(default=None, description="ชื่อโมเดล LLM เช่น gemma3:4b, qwen3:4b, gemini-3.5-flash, gpt-4o-mini")
 
 class TimingMetrics(BaseModel):
     retrieval_seconds: float = 0.0

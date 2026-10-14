@@ -20,14 +20,21 @@ def process_rag_query(
     db: Session,
     query_text: str,
     workspace_id: str | None = None,
-    parent_query_id: int | None = None
+    parent_query_id: int | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
 ) -> ChatResponse:
     """
     ประมวลผลคำถาม RAG แบบ Blocking (Non-Streaming) และบันทึกประวัติลง PostgreSQL
     """
     active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
     try:
-        rag_output = answer_question(query_text)
+        rag_output = answer_question(
+            query_text,
+            session_id=active_workspace_id,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+        )
         answer_text = rag_output.get("answer", "")
         citations_data = rag_output.get("citations", [])
         timing_data = rag_output.get("timing", {})
@@ -79,7 +86,9 @@ def process_rag_stream(
     db: Session,
     query_text: str,
     workspace_id: str | None = None,
-    parent_query_id: int | None = None
+    parent_query_id: int | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
 ) -> Generator[str, None, None]:
     """
     สร้าง Record ใน DB, สตรีมมิ่ง SSE Events ไปยัง Frontend และบันทึกคำตอบฉบับเต็มเมื่อสตรีมจบ
@@ -110,7 +119,12 @@ def process_rag_stream(
     execution_time_data = {}
 
     try:
-        for item in stream_answer_question(question=query_text):
+        for item in stream_answer_question(
+            question=query_text,
+            session_id=active_workspace_id,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+        ):
             event_type = item.get("event", "message")
             event_data = item.get("data", {})
 

@@ -126,24 +126,14 @@ def generate_ai_realtime_analysis(query: str, res: dict[str, Any]) -> str:
 """
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-        resp = requests.post(
-            f"{ollama_url.rstrip('/')}/api/generate",
-            json={
-                "model": ollama_model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 600,
-                },
-            },
-            timeout=90,
+        from backend.app.rag.retrieval.llm_provider import get_llm_provider
+        provider = get_llm_provider()
+        ans, _ = provider.generate(
+            prompt=prompt,
+            system_prompt="คุณเป็นผู้เชี่ยวชาญด้านการประเมินผลระบบ RAG",
+            num_predict=600,
         )
-        if resp.status_code == 200:
-            return resp.json().get("response", "").strip()
-        return f"⚠️ ไม่สามารถสร้าง AI Analysis ได้ (HTTP {resp.status_code})"
+        return ans.strip()
     except Exception as exc:
         return f"⚠️ เกิดข้อผิดพลาดในการเรียก LLM สรุปผลสด: {exc}"
 
@@ -459,12 +449,43 @@ def run_custom_query(query: str) -> None:
     display_debug_trace(None, res)
 
 
+def llm_selector_menu() -> None:
+    """Submenu to switch active LLM provider and model."""
+    from backend.app.rag.retrieval.llm_provider import AVAILABLE_LLM_PROFILES, get_active_llm, set_active_llm
+    active_prov, active_mod = get_active_llm()
+    print("\n" + "=" * 88)
+    print("🤖   เลือกโมเดล LLM สำหรับการทดสอบ (Select Active LLM for Pipeline Testing)")
+    print("=" * 88)
+    print(f"• ปัจจุบันกำลังใช้งาน: {active_prov.upper()} ({active_mod})")
+    print("-" * 88)
+    for idx, p in enumerate(AVAILABLE_LLM_PROFILES, start=1):
+        cur_marker = "  🌟 [Active ใช้งานอยู่]" if p["provider"] == active_prov and p["model"] == active_mod else ""
+        print(f"  [{idx}] {p['label']}{cur_marker}")
+        print(f"      • {p['description']}")
+    print("  [0] ยกเลิก / กลับสู่เมนูหลัก")
+    print("=" * 88)
+    sub = input(f"\n👉 เลือกหมายเลขโมเดล (1-{len(AVAILABLE_LLM_PROFILES)}, 0): ").strip()
+    if sub.isdigit() and 1 <= int(sub) <= len(AVAILABLE_LLM_PROFILES):
+        target = AVAILABLE_LLM_PROFILES[int(sub) - 1]
+        set_active_llm(target["provider"], target["model"])
+        print(f"\n✅ ปรับเปลี่ยนโมเดลสำเร็จ: กำหนดให้ระบบรันด้วย '{target['label']}'")
+    else:
+        print("\n↩️ กลับสู่เมนูหลักโดยไม่เปลี่ยนโมเดล")
+
+
 def interactive_menu() -> None:
     """Interactive CLI menu loop for debugging pipelines."""
+    from backend.app.rag.retrieval.llm_provider import AVAILABLE_LLM_PROFILES, get_active_llm
     total_scenarios = len(BENCHMARK_SCENARIOS)
     while True:
+        active_prov, active_mod = get_active_llm()
+        active_label = next(
+            (p["label"] for p in AVAILABLE_LLM_PROFILES if p["provider"] == active_prov and p["model"] == active_mod),
+            f"{active_prov}:{active_mod}"
+        )
         print("\n" + "=" * 88)
         print("🛠️   RAGcoon Deep-Dive Pipeline Debugger (Legacy vs Modern)")
+        print(f"     🌟 โมเดล LLM ที่ใช้งาน: {active_label}")
         print("=" * 88)
         print("เลือกข้อการทดสอบเพื่อดูการทำงานอย่างละเอียดทุกขั้นตอน:")
         for s in BENCHMARK_SCENARIOS:
@@ -477,16 +498,27 @@ def interactive_menu() -> None:
                 print("      👉 [กด 8 เพื่อเข้าสู่เมนูทดสอบตาม Intent: FACTOID, DEEP_DIVE, COMPARISON, RECOMMENDATION, EXPLORATORY, CODE]")
             else:
                 print(f"      คำถาม: \"{q}\"")
+        print("  [B] การทดลองเปรียบเทียบ Config & Ablation Study (Thesis Chapter 4 Benchmark Suite)")
+        print("  [M] สลับโมเดล LLM (Gemma 3, Qwen 3, Gemini, ChatGPT)")
+        print("  [L] เปรียบเทียบประสิทธิภาพ Multi-LLM Benchmark (Side-by-Side)")
         print(f"  [A] รันและเปรียบเทียบทุกข้อ (1-{total_scenarios}) ต่อเนื่องกัน")
         print("  [C] พิมพ์คำถามทดสอบเอง (Custom Query)")
         print("  [Q] ออกจากโปรแกรม")
         print("=" * 88)
 
-        choice = input(f"\n👉 กรุณาเลือกตัวเลือก (1-{total_scenarios}, A, C, Q): ").strip().upper()
+        choice = input(f"\n👉 กรุณาเลือกตัวเลือก (1-{total_scenarios}, B, M, L, A, C, Q): ").strip().upper()
 
         if choice == "Q":
             print("\n👋 สิ้นสุดการทำงานของระบบ Debugger ขอบคุณครับ\n")
             break
+        elif choice == "B":
+            from backend.app.rag.evaluation.config_benchmark import interactive_menu as config_benchmark_menu
+            config_benchmark_menu()
+        elif choice == "M":
+            llm_selector_menu()
+        elif choice == "L":
+            from backend.app.rag.evaluation.compare_llms import interactive_llm_menu
+            interactive_llm_menu()
         elif choice == "A":
             for s in BENCHMARK_SCENARIOS:
                 if s["scenario_id"] == 8:
@@ -503,7 +535,7 @@ def interactive_menu() -> None:
         elif choice.isdigit() and 1 <= int(choice) <= total_scenarios:
             run_scenario_by_id(int(choice))
         else:
-            print(f"⚠️ ตัวเลือกไม่ถูกต้อง กรุณาเลือกหมายเลข 1 ถึง {total_scenarios} หรือ A, C, Q")
+            print(f"⚠️ ตัวเลือกไม่ถูกต้อง กรุณาเลือกหมายเลข 1 ถึง {total_scenarios} หรือ M, L, A, C, Q")
 
 
 def main() -> None:

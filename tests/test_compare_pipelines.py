@@ -1,6 +1,8 @@
-"""
-Unit tests for the Pipeline Comparison & Benchmark Engine.
-"""
+import sys
+import os
+sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(0, os.path.abspath("backend"))
+
 import pytest
 from backend.app.rag.evaluation.compare_pipelines import (
     compute_jaccard_similarity,

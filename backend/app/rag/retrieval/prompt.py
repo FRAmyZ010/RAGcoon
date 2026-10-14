@@ -9,6 +9,7 @@ import requests
 from dotenv import load_dotenv
 
 from .config import DEFAULT_NUM_CTX, INTENT_CONFIG
+from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
 from .service import is_boilerplate_text, search, search_with_details
 from .session_manager import session_manager
 
@@ -153,7 +154,7 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
 
     # Strip trailing reasoning meta-talk or duplicate summary tails
     cleaned = re.split(
-        r"\n\s*(?:wait,\s*let me|let me check|let me verify|i need to check|i need to analyze|first,\s*i need|to double check|for the scoring matrix|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*notes)",
+        r"\n\s*(?:wait,\s*|let me check|let me verify|i need to check|i need to analyze|first,\s*i need|to double check|for the scoring matrix|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*notes)",
         cleaned,
         flags=re.IGNORECASE,
     )[0].strip()
@@ -311,8 +312,12 @@ def _build_full_prompt(
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    config: Optional[Any] = None,
 ) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
     """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
+    from .rag_config import get_active_config, RAGConfig
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -325,13 +330,30 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
-    concise_rule = (
-        "ตอบกระชับ ตรงประเด็น เอาแต่เนื้อข้อมูลสำคัญ ห้ามเกริ่นนำ ห้ามร่ายน้ำ และห้ามแสดงขั้นตอนการคิดหรือบ่นในใจเด็ดขาด"
-        if is_thai
-        else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
-    )
+    preset_name = getattr(cfg, "prompt_preset", "balanced")
+    if preset_name == "concise":
+        style_rule = (
+            "ตอบกระชับสูงสุด สั้นตรงประเด็น เอาเฉพาะเนื้อหาหลัก ไม่เกิน 2-3 บรรทัด ห้ามเกริ่นนำ ห้ามร่ายน้ำเด็ดขาด"
+            if is_thai
+            else "Be ultra-concise and direct. Output ONLY the core essential fact in 1-2 lines. Zero fluff, zero filler."
+        )
+    elif preset_name == "deep_academic":
+        style_rule = (
+            "วิเคราะห์เชิงลึกตามหลักวิศวกรรมคอมพิวเตอร์อย่างเป็นระบบ แจกแจงรายละเอียดและหลักฐานพร้อมอ้างอิงชัดเจนทุกจุด"
+            if is_thai
+            else "Provide an in-depth, structured academic analysis. Deconstruct components systematically with comprehensive citations."
+        )
+    else:
+        style_rule = (
+            "ตอบกระชับ ตรงประเด็น เอาแต่เนื้อข้อมูลสำคัญ ห้ามเกริ่นนำ ห้ามร่ายน้ำ และห้ามแสดงขั้นตอนการคิดหรือบ่นในใจเด็ดขาด"
+            if is_thai
+            else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
+        )
 
-    system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
+    if getattr(cfg, "system_prompt_override", None):
+        system_content = cfg.system_prompt_override
+    else:
+        system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
 Your primary objective is: MAXIMIZE FACTUAL ACCURACY, EVIDENCE GROUNDING, PROJECT ISOLATION, AND CITATION CORRECTNESS.
 You answer questions using ONLY the retrieved document context below. Accuracy > completeness. Evidence > inference.
 
@@ -347,6 +369,7 @@ CORE PRODUCTION RULES:
 9. NO UNSUPPORTED NUMBERS OR RATINGS: Never invent accuracy, performance metrics, percentages, or subjective ratings (never assign Easy/Medium/Hard or Low/High without explicit document proof).
 10. GOLDEN RULE: When in doubt, DO NOT guess. When deciding between a useful answer that might be wrong and a limited answer that is definitely supported, ALWAYS choose the limited, evidence-grounded answer.
 {intent_instruction}
+{style_rule}
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""
 
@@ -363,7 +386,7 @@ Question:
 {question}"""
 
     intent_cfg = _get_intent_config(intent)
-    num_predict = intent_cfg.get("num_predict", 512)
+    num_predict = getattr(cfg, "num_predict", None) or intent_cfg.get("num_predict", 512)
     thinking_enabled = intent_cfg.get("thinking", False)
 
     think_block = "" if thinking_enabled else "<think>\n</think>\n"
@@ -407,49 +430,61 @@ def get_llm_response(
     intent: str = "FACTOID",
     chat_history: str = "",
     stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Optional[Any] = None,
 ) -> str:
     """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
+    from .rag_config import RAGConfig, get_active_config
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history
+        question, context_list, intent=intent, chat_history=chat_history, config=cfg
     )
 
     if not context_list:
         return fallback_text
 
-    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    provider_to_use = llm_provider or getattr(cfg, "llm_provider", None)
+    model_to_use = llm_model or getattr(cfg, "llm_model", None)
+    provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
     start_t = time.perf_counter()
-    try:
-        response = _http_session.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "raw": True,
-                "stream": False,
-                "think": thinking_enabled,
-                "keep_alive": "30m",
-                "options": {
-                    "temperature": 0.0,
-                    "num_predict": num_predict,
-                    "num_ctx": DEFAULT_NUM_CTX,
-                    "stop": stop_tokens,
-                },
-            },
-            timeout=ollama_timeout,
+
+    temp = getattr(cfg, "temperature", 0.0)
+    user_content = f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\nQuestion:\n{prompt_meta['question_text']}"
+    if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
+        user_content += f"\n\n(Instruction: Please format your response starting directly as relevant to the requested structure: {prefill.strip()})"
+
+    if isinstance(provider, OllamaProvider):
+        raw_res, stats = provider.generate(
+            prompt=prompt,
+            system_prompt="",
+            temperature=temp,
+            num_predict=num_predict,
+            stop_tokens=stop_tokens,
+            thinking=thinking_enabled,
         )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        return f"LLM request failed: {exc}"
+    else:
+        raw_res, stats = provider.generate(
+            prompt=user_content,
+            system_prompt=prompt_meta["system_text"],
+            temperature=temp,
+            num_predict=num_predict,
+            stop_tokens=stop_tokens,
+            thinking=thinking_enabled,
+        )
 
     duration = time.perf_counter() - start_t
-    data = response.json()
-    raw_answer = (prefill + data.get("response", "")) if prefill else data.get("response", "")
+    raw_answer = (prefill + raw_res) if (prefill and not raw_res.startswith(prefill[:10])) else raw_res
 
     if stats_out is not None:
-        p_eval = data.get("prompt_eval_count", 0)
-        e_count = data.get("eval_count", 0)
-        e_dur_ns = data.get("eval_duration", 0)
-        gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+        p_eval = stats.get("prompt_eval_count", 0)
+        e_count = stats.get("eval_count", 0)
+        e_dur_ns = stats.get("eval_duration_ns", 0)
+        gen_speed = stats.get("gen_speed_tps", 0.0)
+        if gen_speed == 0.0 and duration > 0 and e_count > 0:
+            gen_speed = round(e_count / duration, 1)
+
         breakdown = _calculate_token_breakdown(
             prompt_meta["system_text"],
             prompt_meta["history_text"],
@@ -459,11 +494,13 @@ def get_llm_response(
             e_count,
         )
         stats_out.update({
+            "provider": stats.get("provider", getattr(provider, "model_name", "unknown")),
+            "model": stats.get("model", getattr(provider, "model_name", "unknown")),
             "prompt_eval_count": p_eval,
             "eval_count": e_count,
             "eval_duration_ns": e_dur_ns,
             "gen_speed_tps": gen_speed,
-            "ttft_seconds": duration,
+            "ttft_seconds": stats.get("ttft_seconds", duration),
             "llm_seconds": duration,
             "thinking_enabled": thinking_enabled,
             "intent": intent,
@@ -479,17 +516,25 @@ def stream_llm_response(
     intent: str = "FACTOID",
     chat_history: str = "",
     stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Optional[Any] = None,
 ) -> Generator[str, None, None]:
-    """Streaming LLM generator that yields text tokens in real time from Ollama."""
+    """Streaming LLM generator that yields text tokens in real time from the configured provider."""
+    from .rag_config import RAGConfig, get_active_config
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history
+        question, context_list, intent=intent, chat_history=chat_history, config=cfg
     )
 
     if not context_list:
         yield fallback_text
         return
 
-    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    provider_to_use = llm_provider or getattr(cfg, "llm_provider", None)
+    model_to_use = llm_model or getattr(cfg, "llm_model", None)
+    provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
     stream_start = time.perf_counter()
     ttft: Optional[float] = None
 
@@ -497,65 +542,53 @@ def stream_llm_response(
         ttft = time.perf_counter() - stream_start
         yield prefill
 
-    try:
-        with _http_session.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "raw": True,
-                "stream": True,
-                "think": thinking_enabled,
-                "keep_alive": "30m",
-                "options": {
-                    "temperature": 0.0,
-                    "num_predict": num_predict,
-                    "num_ctx": DEFAULT_NUM_CTX,
-                    "stop": stop_tokens,
-                },
-            },
-            stream=True,
-            timeout=ollama_timeout,
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines(decode_unicode=True):
-                if line:
-                    try:
-                        chunk = json.loads(line)
-                        token = chunk.get("response", "")
-                        if token:
-                            if ttft is None:
-                                ttft = time.perf_counter() - stream_start
-                            yield token
-                        if chunk.get("done", False):
-                            if stats_out is not None:
-                                p_eval = chunk.get("prompt_eval_count", 0)
-                                e_count = chunk.get("eval_count", 0)
-                                e_dur_ns = chunk.get("eval_duration", 0)
-                                gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
-                                breakdown = _calculate_token_breakdown(
-                                    prompt_meta["system_text"],
-                                    prompt_meta["history_text"],
-                                    prompt_meta["context_text"],
-                                    prompt_meta["question_text"],
-                                    p_eval,
-                                    e_count,
-                                )
-                                stats_out.update({
-                                    "prompt_eval_count": p_eval,
-                                    "eval_count": e_count,
-                                    "eval_duration_ns": e_dur_ns,
-                                    "gen_speed_tps": gen_speed,
-                                    "ttft_seconds": ttft or (time.perf_counter() - stream_start),
-                                    "thinking_enabled": thinking_enabled,
-                                    "intent": intent,
-                                    "token_breakdown": breakdown,
-                                })
-                            break
-                    except json.JSONDecodeError:
-                        continue
-    except requests.RequestException as exc:
-        yield f"LLM streaming request failed: {exc}"
+    temp = getattr(cfg, "temperature", 0.0)
+    user_content = f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\nQuestion:\n{prompt_meta['question_text']}"
+    if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
+        user_content += f"\n\n(Instruction: Please format your response starting directly as relevant to the requested structure: {prefill.strip()})"
+
+    gen = provider.stream(
+        prompt=prompt if isinstance(provider, OllamaProvider) else user_content,
+        system_prompt="" if isinstance(provider, OllamaProvider) else prompt_meta["system_text"],
+        temperature=temp,
+        num_predict=num_predict,
+        stop_tokens=stop_tokens,
+        thinking=thinking_enabled,
+    )
+
+    tokens_generated = 0
+    for token in gen:
+        if token:
+            if ttft is None:
+                ttft = time.perf_counter() - stream_start
+            tokens_generated += 1
+            yield token
+
+    duration = time.perf_counter() - stream_start
+    gen_speed = (tokens_generated / duration) if duration > 0 else 0.0
+
+    if stats_out is not None:
+        p_eval = len(prompt) // 4
+        breakdown = _calculate_token_breakdown(
+            prompt_meta["system_text"],
+            prompt_meta["history_text"],
+            prompt_meta["context_text"],
+            prompt_meta["question_text"],
+            p_eval,
+            tokens_generated,
+        )
+        stats_out.update({
+            "provider": getattr(provider, "model_name", "unknown"),
+            "model": getattr(provider, "model_name", "unknown"),
+            "prompt_eval_count": p_eval,
+            "eval_count": tokens_generated,
+            "eval_duration_ns": int(duration * 1e9),
+            "gen_speed_tps": round(gen_speed, 1),
+            "ttft_seconds": ttft or duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+            "token_breakdown": breakdown,
+        })
 
 
 def _is_boilerplate_chunk(text: str) -> bool:
@@ -564,14 +597,19 @@ def _is_boilerplate_chunk(text: str) -> bool:
 
 
 def _prepare_rag_context(
-    question: str, session_id: Optional[str] = None
+    question: str,
+    session_id: Optional[str] = None,
+    config: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Unified context retrieval and document assembly for both streaming and non-streaming."""
+    from .rag_config import RAGConfig, get_active_config
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
     chat_history_str = session_manager.format_history_for_prompt(session_id)
-    retrieval_details = search_with_details(question, chat_history=chat_history_str)
+    retrieval_details = search_with_details(question, chat_history=chat_history_str, config=cfg)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})
@@ -581,32 +619,35 @@ def _prepare_rag_context(
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
     intent_cfg = _get_intent_config(intent)
-    max_context_chunks = intent_cfg.get("max_context_chunks", 4)
+    cfg_max_chunks = getattr(cfg, "max_context_chunks", None)
+    max_context_chunks = cfg_max_chunks if cfg_max_chunks is not None else intent_cfg.get("max_context_chunks", 4)
+    cfg_chunks_per_proj = getattr(cfg, "max_chunks_per_project", None)
+    cfg_min_score = getattr(cfg, "min_score", None)
 
     if intent == "RECOMMENDATION":
-        max_chunks_per_project = 2
+        max_chunks_per_project = min(cfg_chunks_per_proj or 2, 2)
         max_total_projects = 4
-        min_score = 0.0001
+        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
     elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
         max_total_projects = 15
         min_score = -1.0
     elif intent == "COMPARISON":
-        max_chunks_per_project = 2
+        max_chunks_per_project = cfg_chunks_per_proj or 2
         max_total_projects = 4
-        min_score = 0.0001
+        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
-        max_chunks_per_project = max_context_chunks
+        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
         max_total_projects = 1
-        min_score = 0.0001
+        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
     elif intent == "CODE":
-        max_chunks_per_project = max_context_chunks
+        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
         max_total_projects = 2
-        min_score = 0.0001
+        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
     else:  # FACTOID / FACTUAL_LOOKUP
-        max_chunks_per_project = max_context_chunks
+        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
         max_total_projects = 3
-        min_score = 0.0001
+        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -798,8 +839,17 @@ def _prepare_rag_context(
     }
 
 
-def answer_question(question: str, session_id: Optional[str] = None) -> dict[str, object]:
+def answer_question(
+    question: str,
+    session_id: Optional[str] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Optional[Any] = None,
+) -> dict[str, object]:
     """Synchronous Question Answering with In-Memory Session Memory."""
+    from .rag_config import RAGConfig, get_active_config
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
     from .prescreen import prescreen_query
     prescreen_res = prescreen_query(question, session_id=session_id)
@@ -811,6 +861,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
             "session_id": session_id,
             "answer": prescreen_res.response,
             "intent": prescreen_res.intent,
+            "config": cfg.to_dict(),
             "contexts": [],
             "sources": [],
             "citations": [],
@@ -832,7 +883,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
 
     # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
     query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
-    prep = _prepare_rag_context(query_to_search, session_id=session_id)
+    prep = _prepare_rag_context(query_to_search, session_id=session_id, config=cfg)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -949,7 +1000,14 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         llm_start = time.perf_counter()
         stats_out = {}
         answer = get_llm_response(
-            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+            question,
+            contexts,
+            intent=intent,
+            chat_history=chat_history_str,
+            stats_out=stats_out,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            config=cfg,
         )
         llm_seconds = time.perf_counter() - llm_start
 
@@ -1001,6 +1059,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         "session_id": session_id,
         "answer": answer,
         "intent": intent,
+        "config": cfg.to_dict(),
         "fast_path_used": bool(template_answer) or retrieval_details.get("fast_path_used", False),
         "contexts": contexts,
         "sources": sources,
@@ -1023,7 +1082,11 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
 
 
 def stream_answer_question(
-    question: str, session_id: Optional[str] = None
+    question: str,
+    session_id: Optional[str] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Optional[Any] = None,
 ) -> Generator[dict[str, Any], None, None]:
     """
     Streaming Generator for Real-Time SSE Tokens + Citations & Timing.
@@ -1034,6 +1097,9 @@ def stream_answer_question(
       - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
+    from .rag_config import RAGConfig, get_active_config
+    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+
     # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
     from .prescreen import prescreen_query
     prescreen_res = prescreen_query(question, session_id=session_id)
@@ -1046,6 +1112,7 @@ def stream_answer_question(
                 "question": question,
                 "session_id": session_id,
                 "intent": prescreen_res.intent,
+                "config": cfg.to_dict(),
                 "normalized_query": question,
                 "filters": {},
                 "sources": [],
@@ -1065,6 +1132,7 @@ def stream_answer_question(
                 "answer": prescreen_res.response,
                 "session_id": session_id,
                 "intent": prescreen_res.intent,
+                "config": cfg.to_dict(),
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1081,7 +1149,7 @@ def stream_answer_question(
 
     # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
     query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
-    prep = _prepare_rag_context(query_to_search, session_id=session_id)
+    prep = _prepare_rag_context(query_to_search, session_id=session_id, config=cfg)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -1107,6 +1175,7 @@ def stream_answer_question(
             "data": {
                 "answer": error_msg,
                 "session_id": session_id,
+                "config": cfg.to_dict(),
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1143,6 +1212,7 @@ def stream_answer_question(
         "question": question,
         "session_id": session_id,
         "intent": intent,
+        "config": cfg.to_dict(),
         "normalized_query": retrieval_details.get("normalized_query", question),
         "filters": prep["filters"],
         "sources": sources,
@@ -1175,6 +1245,7 @@ def stream_answer_question(
                 "answer": fallback_msg,
                 "session_id": session_id,
                 "intent": intent,
+                "config": cfg.to_dict(),
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1219,7 +1290,14 @@ def stream_answer_question(
         llm_start = time.perf_counter()
 
         for token in stream_llm_response(
-            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+            question,
+            contexts,
+            intent=intent,
+            chat_history=chat_history_str,
+            stats_out=stats_out,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            config=cfg,
         ):
             full_tokens.append(token)
             yield {"event": "token", "data": {"token": token}}
@@ -1261,6 +1339,7 @@ def stream_answer_question(
             "answer": cleaned_answer,
             "session_id": session_id,
             "intent": intent,
+            "config": cfg.to_dict(),
             "sources": sources,
             "citations": citations,
             "timing": {

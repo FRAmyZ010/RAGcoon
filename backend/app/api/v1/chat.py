@@ -34,7 +34,9 @@ async def query_rag(
             db=db,
             query_text=request.query_text,
             workspace_id=request.workspace_id,
-            parent_query_id=request.parent_query_id
+            parent_query_id=request.parent_query_id,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
         )
     except Exception as e:
         raise HTTPException(
@@ -55,7 +57,9 @@ def query_rag_stream(
             db=db,
             query_text=request.query_text,
             workspace_id=request.workspace_id,
-            parent_query_id=request.parent_query_id
+            parent_query_id=request.parent_query_id,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
         ),
         media_type="text/event-stream",
         headers={
@@ -119,4 +123,33 @@ async def run_benchmark_endpoint():
     Endpoint สำหรับรันชุดทดสอบ 6 Scenarios เปรียบเทียบ Legacy vs Modern และสรุปรายงานผล
     """
     from app.rag.evaluation.compare_pipelines import run_benchmark_suite
-    return await run_in_threadpool(run_benchmark_suite)
+    return await run_in_threadpool(run_benchmark_suite)
+
+
+@router.get("/llm-profiles")
+def get_available_llm_profiles():
+    """
+    Endpoint สำหรับดึงรายชื่อโมเดล LLM ที่ระบบรองรับ พร้อมระบุตัวที่กำลัง Active อยู่
+    """
+    from app.rag.retrieval.llm_provider import AVAILABLE_LLM_PROFILES, get_active_llm
+    active_prov, active_mod = get_active_llm()
+    return {
+        "active_provider": active_prov,
+        "active_model": active_mod,
+        "profiles": AVAILABLE_LLM_PROFILES,
+    }
+
+
+@router.post("/set-active-llm")
+def set_active_llm_endpoint(provider: str, model: str | None = None):
+    """
+    Endpoint สำหรับสลับโมเดล LLM ที่ใช้งานอยู่ในระบบแบบ Dynamic Runtime
+    """
+    from app.rag.retrieval.llm_provider import set_active_llm, get_active_llm
+    set_active_llm(provider=provider, model=model)
+    active_prov, active_mod = get_active_llm()
+    return {
+        "message": f"Successfully switched active LLM to {active_prov} ({active_mod})",
+        "active_provider": active_prov,
+        "active_model": active_mod,
+    }
