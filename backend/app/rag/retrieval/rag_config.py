@@ -259,3 +259,24 @@ def get_config_preset(name: str) -> RAGConfig:
     if name not in CONFIG_PRESETS:
         raise KeyError(f"Preset '{name}' not found. Available: {list(CONFIG_PRESETS.keys())}")
     return CONFIG_PRESETS[name].clone()
+
+
+def list_available_presets() -> list[dict[str, Any]]:
+    """List all presets with their profile name and description for UI and API selection."""
+    return [
+        {
+            "profile_name": k,
+            "description": v.description,
+            "top_k": v.top_k,
+            "rerank_top_n": v.rerank_top_n,
+            "enable_hybrid": v.enable_hybrid,
+            "enable_reranker": v.enable_reranker,
+            "enable_boilerplate_filter": v.enable_boilerplate_filter,
+            "enable_fast_path": v.enable_fast_path,
+            "prompt_preset": v.prompt_preset,
+            "llm_provider": v.llm_provider,
+            "llm_model": v.llm_model,
+        }
+        for k, v in CONFIG_PRESETS.items()
+    ]
+

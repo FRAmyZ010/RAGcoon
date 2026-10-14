@@ -22,11 +22,10 @@ from .llm_query_processor import process_query_with_llm
 
 
 def _get_routing_params(intent: str) -> tuple[int, int]:
-    """Return adaptive (top_k, top_n) based on query intent from INTENT_CONFIG."""
-    cfg = INTENT_CONFIG.get(intent, INTENT_CONFIG.get("FACTOID", {}))
-    top_k = cfg.get("top_k", DEFAULT_TOP_K)
-    top_n = cfg.get("rerank_top_n", DEFAULT_TOP_N)
-    return top_k, top_n
+    """Return adaptive (top_k, top_n) based on granular query intent from IntentConfig."""
+    from .intent_config import get_intent_config
+    intent_cfg = get_intent_config(intent)
+    return intent_cfg.top_k, intent_cfg.rerank_top_n
 
 
 def is_boilerplate_text(text: str) -> bool:

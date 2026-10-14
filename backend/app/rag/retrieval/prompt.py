@@ -330,7 +330,12 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
-    preset_name = getattr(cfg, "prompt_preset", "balanced")
+    from .intent_config import get_intent_config
+    intent_cfg = get_intent_config(intent)
+    if intent_cfg.custom_system_instruction:
+        intent_instruction += f"\n\n[Custom Guidance for {intent}]:\n{intent_cfg.custom_system_instruction}"
+
+    preset_name = getattr(cfg, "prompt_preset", None) or intent_cfg.prompt_preset or "balanced"
     if preset_name == "concise":
         style_rule = (
             "ตอบกระชับสูงสุด สั้นตรงประเด็น เอาเฉพาะเนื้อหาหลัก ไม่เกิน 2-3 บรรทัด ห้ามเกริ่นนำ ห้ามร่ายน้ำเด็ดขาด"
@@ -342,6 +347,18 @@ def _build_full_prompt(
             "วิเคราะห์เชิงลึกตามหลักวิศวกรรมคอมพิวเตอร์อย่างเป็นระบบ แจกแจงรายละเอียดและหลักฐานพร้อมอ้างอิงชัดเจนทุกจุด"
             if is_thai
             else "Provide an in-depth, structured academic analysis. Deconstruct components systematically with comprehensive citations."
+        )
+    elif preset_name == "code_focused":
+        style_rule = (
+            "เน้นการสกัดและแสดงโค้ด ชิ้นส่วนคำสั่ง และสคีมาทางเทคนิค โดยคงรูปแบบและไวยากรณ์ตามเอกสารต้นทางอย่างเคร่งครัด"
+            if is_thai
+            else "Focus on extracting and formatting technical code snippets and schema definitions strictly matching document evidence."
+        )
+    elif preset_name == "comparative_table":
+        style_rule = (
+            "เน้นการจัดโครงสร้างเปรียบเทียบในรูปแบบตาราง Markdown และแจกแจงความแตกต่างทีละมิติอย่างเป็นระบบ"
+            if is_thai
+            else "Structure comparisons into a clear, aligned Markdown table followed by key differences by dimension."
         )
     else:
         style_rule = (
@@ -385,9 +402,8 @@ If the context contains no relevant information, reply exactly: {insufficient_re
 Question:
 {question}"""
 
-    intent_cfg = _get_intent_config(intent)
-    num_predict = getattr(cfg, "num_predict", None) or intent_cfg.get("num_predict", 512)
-    thinking_enabled = intent_cfg.get("thinking", False)
+    num_predict = getattr(cfg, "num_predict", None) or intent_cfg.num_predict or 512
+    thinking_enabled = intent_cfg.thinking
 
     think_block = "" if thinking_enabled else "<think>\n</think>\n"
     q_lower = question.lower()
@@ -618,38 +634,19 @@ def _prepare_rag_context(
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
-    intent_cfg = _get_intent_config(intent)
+    from .intent_config import get_intent_config
+    intent_cfg = get_intent_config(intent)
+
     cfg_max_chunks = getattr(cfg, "max_context_chunks", None)
-    max_context_chunks = cfg_max_chunks if cfg_max_chunks is not None else intent_cfg.get("max_context_chunks", 4)
+    max_context_chunks = cfg_max_chunks if cfg_max_chunks is not None else intent_cfg.max_context_chunks
+
     cfg_chunks_per_proj = getattr(cfg, "max_chunks_per_project", None)
+    max_chunks_per_project = cfg_chunks_per_proj if cfg_chunks_per_proj is not None else intent_cfg.max_chunks_per_project
+
+    max_total_projects = intent_cfg.max_total_projects
     cfg_min_score = getattr(cfg, "min_score", None)
-
-    if intent == "RECOMMENDATION":
-        max_chunks_per_project = min(cfg_chunks_per_proj or 2, 2)
-        max_total_projects = 4
-        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
-    elif intent == "EXPLORATORY":
-        max_chunks_per_project = 1
-        max_total_projects = 15
-        min_score = -1.0
-    elif intent == "COMPARISON":
-        max_chunks_per_project = cfg_chunks_per_proj or 2
-        max_total_projects = 4
-        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
-    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
-        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
-        max_total_projects = 1
-        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
-    elif intent == "CODE":
-        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
-        max_total_projects = 2
-        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
-    else:  # FACTOID / FACTUAL_LOOKUP
-        max_chunks_per_project = cfg_chunks_per_proj or max_context_chunks
-        max_total_projects = 3
-        min_score = cfg_min_score if cfg_min_score is not None else 0.0001
-
-    preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
+    min_score = cfg_min_score if cfg_min_score is not None else intent_cfg.min_score
+    preserve_same_project_chunks = intent_cfg.preserve_raw_code or _is_code_query(question) or intent == "CODE"
 
     projects_ordered: list[str] = []
     projects_data: dict[str, dict] = {}

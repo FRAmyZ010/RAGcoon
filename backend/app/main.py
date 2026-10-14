@@ -9,19 +9,38 @@ import app.models  # โหลด Models ทั้งหมดเพื่อใ
 from app.api.v1.router import api_router
 from app.services.auth_service import ensure_administrator_seed
 
-# สร้างตารางใน PostgreSQL หากยังไม่มี
-Base.metadata.create_all(bind=engine)
+import logging
+import time
 
-# Soft-migrate: เพิ่มคอลัมน์ใหม่บน DB ที่มีอยู่แล้ว (create_all ไม่แก้ตารางเก่า)
-with engine.begin() as conn:
-    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
+logger = logging.getLogger("ragcoon.main")
 
-# Seed Administrator from env (idempotent — ไม่ reset password ถ้ามี user แล้ว)
-_seed_db = SessionLocal()
-try:
-    ensure_administrator_seed(_seed_db)
-finally:
-    _seed_db.close()
+def init_database(max_retries: int = 5, retry_delay: float = 2.0) -> bool:
+    """Initialize database tables, run soft migrations, and seed default admin.
+    Handles transient DB connection delays (e.g. during Docker container cold start).
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to database and initializing schema (attempt {attempt}/{max_retries})...")
+            Base.metadata.create_all(bind=engine)
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
+            _seed_db = SessionLocal()
+            try:
+                ensure_administrator_seed(_seed_db)
+            finally:
+                _seed_db.close()
+            logger.info("Database initialized successfully.")
+            return True
+        except Exception as exc:
+            logger.warning(f"Database initialization attempt {attempt} failed: {exc}")
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+            else:
+                logger.error("Could not connect to database after retries. Continuing startup.")
+                return False
+
+# Attempt immediate initialization (non-blocking if DB not yet reachable)
+init_database(max_retries=1, retry_delay=0.5)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -43,7 +62,8 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 def startup_prewarm():
-    """Pre-warm all RAG models and caches asynchronously to eliminate cold-start wait."""
+    """Pre-warm all RAG models and caches asynchronously to eliminate cold-start wait, and ensure DB connection."""
+    init_database(max_retries=5, retry_delay=2.0)
     from app.rag.retrieval.prewarm import start_background_prewarm
     start_background_prewarm()
 
