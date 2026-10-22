@@ -366,7 +366,7 @@ export default function AIconfig() {
 
         {tab === "Multi-LLM" && (
           <div className="grid gap-3 md:grid-cols-2">
-            {profiles.map((profile) => {
+            {profiles.filter((profile) => profile.provider !== "gemini" && profile.provider !== "openai").map((profile) => {
               const ping = pings[profile.id];
               const active = activeLlm?.provider === profile.provider && activeLlm?.model === profile.model;
               return (
@@ -374,7 +374,7 @@ export default function AIconfig() {
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="flex items-center gap-1 font-bold">
                       {profile.model}
-                      <Hint text={`Context window ${profile.context_window || "n/a"}. Typical latency ${profile.latency || "n/a"}. These notes are not settings. Ping only measures reply time. Gemini and GPT need an API key.`} />
+                      <Hint text={`Context window ${profile.context_window || "n/a"}. Typical latency ${profile.latency || "n/a"}. These notes are not settings. Ping only measures reply time.`} />
                     </h2>
                     {active && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">ACTIVE</span>}
                   </div>
@@ -444,20 +444,59 @@ export default function AIconfig() {
                 <Hint text="Runs 2 questions from the spec set and compares whether the candidate finds the expected document and how fast it is." />
               </div>
               {benchmark && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500">Delta score <Hint text="Candidate hit score minus baseline. 100 means the expected source was found." /></div>
-                    <div className="text-lg font-bold">{benchmark.summary.delta_score}</div>
+                <>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Delta score <Hint text="Candidate hit score minus baseline. 100 means the expected source was found." /></div>
+                      <div className="text-lg font-bold">{benchmark.summary.delta_score}</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Speedup <Hint text="Baseline time divided by candidate time. Above 1 means the candidate is faster." /></div>
+                      <div className="text-lg font-bold">{benchmark.summary.speedup}x</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Cases <Hint text="How many spec questions ran. This button runs 2." /></div>
+                      <div className="text-lg font-bold">{benchmark.summary.cases}</div>
+                    </div>
                   </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500">Speedup <Hint text="Baseline time divided by candidate time. Above 1 means the candidate is faster." /></div>
-                    <div className="text-lg font-bold">{benchmark.summary.speedup}x</div>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500">Cases <Hint text="How many spec questions ran. This button runs 2." /></div>
-                    <div className="text-lg font-bold">{benchmark.summary.cases}</div>
-                  </div>
-                </div>
+                  {benchmark.details?.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b text-[11px] text-gray-500">
+                            <th className="py-2 pr-3 font-semibold">Question</th>
+                            <th className="py-2 pr-3 font-semibold">{baselineName} score</th>
+                            <th className="py-2 pr-3 font-semibold">{candidateName} score</th>
+                            <th className="py-2 pr-3 font-semibold">{baselineName} time</th>
+                            <th className="py-2 pr-3 font-semibold">{candidateName} time</th>
+                            <th className="py-2 font-semibold">Speedup</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {benchmark.details.map((row) => (
+                            <tr key={row.id || row.query} className="border-t align-top">
+                              <td className="py-2 pr-3">{row.query}</td>
+                              <td className="py-2 pr-3">{row.baseline_score}</td>
+                              <td className="py-2 pr-3">{row.candidate_score}</td>
+                              <td className="py-2 pr-3">{row.baseline_seconds}s</td>
+                              <td className="py-2 pr-3">{row.candidate_seconds}s</td>
+                              <td className="py-2">{row.speedup}x</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {benchmark.llm_summary && (
+                    <div className="mt-3 whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-800">
+                      <div className="mb-1 flex items-center gap-1 font-semibold text-gray-500">
+                        Summary
+                        <Hint text="Written by the active model from both answers, their sources, and the times in this table." />
+                      </div>
+                      {benchmark.llm_summary}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="overflow-x-auto rounded-xl bg-white shadow-sm">

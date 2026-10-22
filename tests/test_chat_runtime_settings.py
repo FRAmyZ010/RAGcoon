@@ -22,7 +22,7 @@ from app.rag.retrieval.runtime_settings import (
     resolve_system_prompt,
     restore_chat_settings,
 )
-from app.rag.evaluation.benchmark_run import load_handoff_cases
+from app.rag.evaluation.benchmark_run import build_benchmark_summary_prompt, load_handoff_cases
 from app.rag.retrieval.intent_config import get_intent_config, reset_intent_configs
 from app.rag.retrieval.system_prompt import DEFAULT_SYSTEM_PROMPT
 
@@ -79,6 +79,25 @@ class HandoffIntentMatrixTests(unittest.TestCase):
             "อาจารสุรพลดูแลเรื่องไรบ้าง",
             "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
         })
+
+    def test_benchmark_summary_prompt_includes_both_answers(self):
+        prompt = build_benchmark_summary_prompt("fast_mode", "deep_academic", [{
+            "query": "Who advises The LoRaWAN?",
+            "baseline_score": 100,
+            "candidate_score": 0,
+            "baseline_seconds": 1.2,
+            "candidate_seconds": 3.4,
+            "speedup": 0.35,
+            "baseline_answer": "Ajarn A advises it.",
+            "candidate_answer": "No advisor was found.",
+            "baseline_sources": "lora.pdf",
+            "candidate_sources": "none",
+        }])
+        self.assertIn("Ajarn A advises it.", prompt)
+        self.assertIn("No advisor was found.", prompt)
+        self.assertIn("English", prompt)
+        self.assertIn("fast_mode", prompt)
+        self.assertIn("deep_academic", prompt)
 
 
 if __name__ == "__main__":
