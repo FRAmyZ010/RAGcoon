@@ -9,7 +9,6 @@ import requests
 from dotenv import load_dotenv
 
 from .config import DEFAULT_NUM_CTX, INTENT_CONFIG
-from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
 from .service import is_boilerplate_text, search, search_with_details
 from .session_manager import session_manager
 
@@ -154,29 +153,10 @@ def clean_answer(answer: str, is_thai: bool = False) -> str:
 
     # Strip trailing reasoning meta-talk or duplicate summary tails
     cleaned = re.split(
-        r"\n\s*(?:wait,\s*|let me check|let me verify|i need to check|i need to analyze|first,\s*i need|to double check|for the scoring matrix|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*notes)",
+        r"\n\s*(?:wait,\s*let me|let me check|let me verify|i need to check|i need to analyze|first,\s*i need|to double check|for the scoring matrix|###\s*ข้อสังเกต|###\s*ตรวจสอบ|###\s*notes)",
         cleaned,
         flags=re.IGNORECASE,
     )[0].strip()
-
-    # Strip any trailing '## Sources' or '## แหล่งที่มา' block since UI renders citations
-    cleaned = re.split(r"\n\s*##\s*(?:Sources|Source|แหล่งที่มา|เอกสารอ้างอิง)\b", cleaned, flags=re.IGNORECASE)[0].strip()
-
-    # Strip empty sections like '### 🔔 บริการภายนอก / การแจ้งเตือนภายนอก...' or '### ⚠️ ข้อมูลที่ไม่ได้ระบุ...'
-    cleaned = re.sub(
-        r"\n*###\s*(?:🔔|⚠️|📌|🏗️|🔄|🛠️|👤)?\s*.*?(?:บริการภายนอก|แจ้งเตือนภายนอก|External Services|ข้อมูลที่ไม่ได้ระบุ|Not Specified).*?[\s\S]*?(?=(?:\n###|\Z))",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    # Strip unprompted trailing disclaimers about missing database / SQL if not asked
-    cleaned = re.sub(
-        r"\n*(?:ไม่พบข้อมูลเกี่ยวกับ\s*(?:Database|ฐานข้อมูล|SQL)|The retrieved document does not specify the requested code or SQL)[\s\S]*?$",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
-    ).strip()
 
     return cleaned or fallback_text
 
@@ -197,43 +177,54 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    - **Why It Fits**: [Concise 1-sentence explanation of relevance to the requested topic]
    - **Possible Extension**: [AI-generated suggestion clearly labeled as an extension, NOT a documented feature of the original project]
 
-   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "EXPLORATORY":
         if any(w in q_lower for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             return """4. Theme-Based Similarity Grouping:
    - Group the retrieved projects into clear, logical domain categories.
    - Under each group, list the matching projects concisely:
      * **[Project Title]** ([Year]) - [Core objective in 1 sentence] [Source: <file>, Page <X>].
-   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
+   ## Sources
+   - List each project source filename and pages."""
         else:
             return """4. Enumerated Project Overview: Enumerate distinct projects found in the retrieved context concisely without filler:
-   - If the user query asks about a specific component, hardware, module, technology, or feature (e.g. SX1276, ESP32, sensor, algorithm): you MUST explicitly mention how and where that specific component or technology is used in each project based on document evidence.
-   - Format:
-     1. **[Project Title]** ([Year]) - [Direct answer stating how the queried technology/component is used in the project, or core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page: <X>].
-   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
+   1. **[Project Title]** ([Year]) - [Core objective in 1-2 concise sentences]. (Authors: [Author Names], Advisor: [Advisor Name]) [Source: <file>, Page <X>].
+   ## Sources
+   - List each project source filename and pages."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:
-   Describe documented components and relationships strictly from the retrieved context.
-   CRITICAL FORMATTING & OMISSION RULES:
-   - Include ONLY sections that actually contain documented evidence in the retrieved context.
-   - Do NOT output empty sections, placeholder bullets, or sections stating 'ไม่มีข้อมูล' or 'Not specified'.
-   - NEVER output sections for External Services, Not Specified, or Sources.
+   Use this exact structure (describe ONLY documented components and relationships; if information is absent, state 'Not specified in the retrieved document.'):
 
-   Sections to include IF documented:
    ### 📌 Project Overview
    Explain the documented purpose.
 
    ### 🏗️ System Architecture
-   Describe documented components and relationships. (Include only if documented).
+   Describe ONLY documented components and relationships. (Never assume Frontend, Backend, REST API, Database, Docker, Cloud unless explicitly documented).
 
    ### 🔄 Data Flow
-   Describe the documented flow. Use a text diagram when evidence supports it. (Include only if documented).
+   Describe the documented flow. Use a text diagram when evidence supports it:
+   Component A
+       ↓
+   Component B
+       ↓
+   Component C
+   Every arrow must be supported by the document.
 
    ### 🛠️ Technologies & Hardware
-   List explicitly documented technologies and hardware components with inline citations. (Include only if documented).
+   List ONLY explicitly documented technologies/hardware.
 
    ### 👤 User Interaction
-   Explain documented user actions. (Include only if documented)."""
+   Explain documented user actions.
+
+   ### 🔔 External Services / Notifications
+   Explain documented external services.
+
+   ### ⚠️ Not Specified
+   Clearly identify architecture or technology information that is missing in the document.
+
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "COMPARISON":
         return """4. Evidence-Based Structured Comparison:
    ONLY compare documented attributes (Project purpose, Main features, Users, Workflow, Technologies, Hardware, Software, Database, External services, Limitations, Documented results).
@@ -251,7 +242,9 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    ## Key Differences
    - Concise bullet points comparing the core systems strictly from document evidence.
 
-   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
+   ## Sources
+   - [Project A Title]: <Filename.pdf>, Pages: <Pages>
+   - [Project B Title]: <Filename.pdf>, Pages: <Pages>"""
     elif intent == "CODE":
         return """4. Code & Technical Implementation Extraction:
    - Only provide code if actual code or SQL exists in the retrieved context.
@@ -259,14 +252,14 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
      'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
    - If nothing relevant exists, state:
      'The retrieved document does not specify the requested code or SQL.'
-   (CRITICAL: Do NOT generate a '## Sources' section at the end; citations are already displayed in the UI)."""
+   ## Sources
+   - [Project Title]: <Filename.pdf>, Pages: <Pages>"""
     else:  # FACTOID / FACTUAL_LOOKUP
         return """4. Direct & Evidence-Grounded Answer with Citations:
    - Answer the question directly, flexibly, and accurately based ONLY on explicitly documented evidence in the retrieved context.
    - If asked for hardware, components, technologies, or tools: list all distinct items explicitly mentioned across the retrieved text as bullet points with their respective citations. Do NOT force predetermined template categories (such as microcontroller or sensor placeholders), and do NOT create placeholder bullets for unmentioned items.
    - If a requested item is not found in the document, state clearly that it is not specified (never attach a source citation to unmentioned information).
-   - Every factual claim derived from a document must have an exact inline citation [Source: <filename>, Page: <X>].
-   - Do NOT generate a '## Sources' section at the end (sources are already displayed by the user interface)."""
+   - Every factual claim derived from a document must have an exact inline citation [Source: <filename>, Page: <X>]."""
 
 
 def _calculate_token_breakdown(
@@ -307,17 +300,50 @@ def _calculate_token_breakdown(
     }
 
 
+def _rag_config(config: Any):
+    """Return a benchmark RAGConfig only when the caller passed one."""
+    if config is None:
+        return None
+    from .rag_config import RAGConfig
+    return config if isinstance(config, RAGConfig) else None
+
+
+def _preset_style(preset: str, is_thai: bool) -> str:
+    if preset == "concise":
+        return (
+            "ตอบกระชับสูงสุด สั้นตรงประเด็น เอาเฉพาะเนื้อหาหลัก ไม่เกิน 2-3 บรรทัด ห้ามเกริ่นนำ ห้ามร่ายน้ำเด็ดขาด"
+            if is_thai
+            else "Be ultra-concise and direct. Output ONLY the core essential fact in 1-2 lines. Zero fluff, zero filler."
+        )
+    if preset == "deep_academic":
+        return (
+            "วิเคราะห์เชิงลึกตามหลักวิศวกรรมคอมพิวเตอร์อย่างเป็นระบบ แจกแจงรายละเอียดและหลักฐานพร้อมอ้างอิงชัดเจนทุกจุด"
+            if is_thai
+            else "Provide an in-depth, structured academic analysis. Deconstruct components systematically with comprehensive citations."
+        )
+    if preset == "code_focused":
+        return (
+            "เน้นการสกัดและแสดงโค้ด ชิ้นส่วนคำสั่ง และสคีมาทางเทคนิค โดยคงรูปแบบและไวยากรณ์ตามเอกสารต้นทางอย่างเคร่งครัด"
+            if is_thai
+            else "Focus on extracting and formatting technical code snippets and schema definitions strictly matching document evidence."
+        )
+    if preset == "comparative_table":
+        return (
+            "เน้นการจัดโครงสร้างเปรียบเทียบในรูปแบบตาราง Markdown และแจกแจงความแตกต่างทีละมิติอย่างเป็นระบบ"
+            if is_thai
+            else "Structure comparisons into a clear, aligned Markdown table followed by key differences by dimension."
+        )
+    return ""
+
+
 def _build_full_prompt(
     question: str,
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
-    config: Optional[Any] = None,
+    config: Any = None,
 ) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
     """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
-    from .rag_config import get_active_config, RAGConfig
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
-
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
@@ -330,47 +356,13 @@ def _build_full_prompt(
     insufficient_reply = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร" if is_thai else "I don't know."
     intent_instruction = _build_intent_instruction(intent, question)
 
-    from .intent_config import get_intent_config
-    intent_cfg = get_intent_config(intent)
-    if intent_cfg.custom_system_instruction:
-        intent_instruction += f"\n\n[Custom Guidance for {intent}]:\n{intent_cfg.custom_system_instruction}"
+    concise_rule = (
+        "ตอบกระชับ ตรงประเด็น เอาแต่เนื้อข้อมูลสำคัญ ห้ามเกริ่นนำ ห้ามร่ายน้ำ และห้ามแสดงขั้นตอนการคิดหรือบ่นในใจเด็ดขาด"
+        if is_thai
+        else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
+    )
 
-    preset_name = getattr(cfg, "prompt_preset", None) or intent_cfg.prompt_preset or "balanced"
-    if preset_name == "concise":
-        style_rule = (
-            "ตอบกระชับสูงสุด สั้นตรงประเด็น เอาเฉพาะเนื้อหาหลัก ไม่เกิน 2-3 บรรทัด ห้ามเกริ่นนำ ห้ามร่ายน้ำเด็ดขาด"
-            if is_thai
-            else "Be ultra-concise and direct. Output ONLY the core essential fact in 1-2 lines. Zero fluff, zero filler."
-        )
-    elif preset_name == "deep_academic":
-        style_rule = (
-            "วิเคราะห์เชิงลึกตามหลักวิศวกรรมคอมพิวเตอร์อย่างเป็นระบบ แจกแจงรายละเอียดและหลักฐานพร้อมอ้างอิงชัดเจนทุกจุด"
-            if is_thai
-            else "Provide an in-depth, structured academic analysis. Deconstruct components systematically with comprehensive citations."
-        )
-    elif preset_name == "code_focused":
-        style_rule = (
-            "เน้นการสกัดและแสดงโค้ด ชิ้นส่วนคำสั่ง และสคีมาทางเทคนิค โดยคงรูปแบบและไวยากรณ์ตามเอกสารต้นทางอย่างเคร่งครัด"
-            if is_thai
-            else "Focus on extracting and formatting technical code snippets and schema definitions strictly matching document evidence."
-        )
-    elif preset_name == "comparative_table":
-        style_rule = (
-            "เน้นการจัดโครงสร้างเปรียบเทียบในรูปแบบตาราง Markdown และแจกแจงความแตกต่างทีละมิติอย่างเป็นระบบ"
-            if is_thai
-            else "Structure comparisons into a clear, aligned Markdown table followed by key differences by dimension."
-        )
-    else:
-        style_rule = (
-            "ตอบกระชับ ตรงประเด็น เอาแต่เนื้อข้อมูลสำคัญ ห้ามเกริ่นนำ ห้ามร่ายน้ำ และห้ามแสดงขั้นตอนการคิดหรือบ่นในใจเด็ดขาด"
-            if is_thai
-            else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
-        )
-
-    if getattr(cfg, "system_prompt_override", None):
-        system_content = cfg.system_prompt_override
-    else:
-        system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
+    system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
 Your primary objective is: MAXIMIZE FACTUAL ACCURACY, EVIDENCE GROUNDING, PROJECT ISOLATION, AND CITATION CORRECTNESS.
 You answer questions using ONLY the retrieved document context below. Accuracy > completeness. Evidence > inference.
 
@@ -379,16 +371,23 @@ CORE PRODUCTION RULES:
 2. CURRENT QUERY & FILTER ISOLATION: Never inherit project, advisor, author, or year filters from previous turns unless explicitly referenced. No explicit constraint in current query = NO FILTER.
 3. PROJECT ISOLATION: Every project is an independent evidence scope. Never transfer technologies, hardware, features, authors, or advisors between projects. For comparisons, evaluate each project on its own evidence.
 4. INLINE CITATION GROUNDING & EXACT PAGE NUMBERS: Every factual claim must have an inline citation: [Source: <source_file>, Page: <page_number>]. You MUST cite the EXACT page number from the excerpt header where the fact is written. For example, if "NodeMCU ESP8266" is inside an excerpt marked "PAGE: 36", you MUST cite "Page: 36". NEVER cite a title/abstract page (e.g. Page 5) for a technical component that appears on another page. Never fabricate page numbers.
-5. CODE, FIGURE & DATABASE RULES: When asked for code or database, a schema is NOT SQL. If the user did NOT specifically ask for code, SQL, or database, do NOT mention missing code or database.
+5. CODE, FIGURE & DATABASE RULES: A schema is NOT SQL. Figure title ≠ complete figure content. If actual code/SQL is not present in retrieved context, state: 'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
 6. RECOMMENDATION VS AI EXTENSION: Recommendations search across projects by default. Any model-generated extension must be explicitly labeled: 'AI Suggestion:' and never presented as a documented feature.
 7. AGGREGATION & COUNT INTEGRITY: Top-K retrieval results do not prove repository-wide totals. If not exhaustive, state: 'I found X matching projects in the retrieved results, but this does not establish the total number of projects in the repository.'
 8. NO INTERNAL REASONING: Zero preamble, zero filler, zero chain-of-thought monologue (never output 'Let me check...', 'I need to...', 'First, I will...'). Start directly with the answer.
 9. NO UNSUPPORTED NUMBERS OR RATINGS: Never invent accuracy, performance metrics, percentages, or subjective ratings (never assign Easy/Medium/Hard or Low/High without explicit document proof).
 10. GOLDEN RULE: When in doubt, DO NOT guess. When deciding between a useful answer that might be wrong and a limited answer that is definitely supported, ALWAYS choose the limited, evidence-grounded answer.
 {intent_instruction}
-{style_rule}
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""
+
+    rag_cfg = _rag_config(config)
+    if rag_cfg is not None and rag_cfg.system_prompt_override:
+        system_content = rag_cfg.system_prompt_override
+    elif rag_cfg is not None:
+        style_rule = _preset_style(rag_cfg.prompt_preset, is_thai)
+        if style_rule:
+            system_content = f"{system_content}\n{style_rule}"
 
     history_block = (
         f"Recent Conversation History:\n{chat_history.strip()}\n\n"
@@ -402,8 +401,11 @@ If the context contains no relevant information, reply exactly: {insufficient_re
 Question:
 {question}"""
 
-    num_predict = getattr(cfg, "num_predict", None) or intent_cfg.num_predict or 512
-    thinking_enabled = intent_cfg.thinking
+    intent_cfg = _get_intent_config(intent)
+    num_predict = intent_cfg.get("num_predict", 512)
+    if rag_cfg is not None and rag_cfg.num_predict:
+        num_predict = rag_cfg.num_predict
+    thinking_enabled = intent_cfg.get("thinking", False)
 
     think_block = "" if thinking_enabled else "<think>\n</think>\n"
     q_lower = question.lower()
@@ -417,18 +419,14 @@ Question:
     elif intent == "EXPLORATORY":
         prefill = "1. **"
 
-    extra_stops = [
-        "\n## Sources", "\n## Source", "\n## แหล่งที่มา",
-        "\n### ⚠️", "\n### 🔔", "\n### บริการภายนอก", "\n### 🔔 บริการภายนอก",
-    ]
     model_name = OLLAMA_MODEL.lower()
     if "gemma" in model_name:
         full_user = f"{system_content}\n\n{user_content}"
         prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
-        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"] + extra_stops
+        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
     else:
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
-        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"] + extra_stops
+        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"]
 
     prompt_meta = {
         "system_text": system_content,
@@ -440,42 +438,43 @@ Question:
     return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens
 
 
-def get_llm_response(
-    question: str,
-    context_list: list[str],
-    intent: str = "FACTOID",
-    chat_history: str = "",
-    stats_out: Optional[dict[str, Any]] = None,
-    llm_provider: Optional[str] = None,
-    llm_model: Optional[str] = None,
-    config: Optional[Any] = None,
+def _generate_with_provider(
+    prompt: str,
+    is_thai: bool,
+    num_predict: int,
+    thinking_enabled: bool,
+    prefill: str,
+    prompt_meta: dict[str, str],
+    stop_tokens: list[str],
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    config: Any,
+    stats_out: Optional[dict[str, Any]],
+    intent: str,
 ) -> str:
-    """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
-    from .rag_config import RAGConfig, get_active_config
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+    from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
 
-    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history, config=cfg
-    )
-
-    if not context_list:
-        return fallback_text
-
-    provider_to_use = llm_provider or getattr(cfg, "llm_provider", None)
-    model_to_use = llm_model or getattr(cfg, "llm_model", None)
+    rag_cfg = _rag_config(config)
+    provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
+    model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
     provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
-    start_t = time.perf_counter()
-
-    temp = getattr(cfg, "temperature", 0.0)
-    user_content = f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\nQuestion:\n{prompt_meta['question_text']}"
+    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
+    user_content = (
+        f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\n"
+        f"Question:\n{prompt_meta['question_text']}"
+    )
     if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
-        user_content += f"\n\n(Instruction: Please format your response starting directly as relevant to the requested structure: {prefill.strip()})"
+        user_content += (
+            "\n\n(Instruction: Please format your response starting directly as relevant "
+            f"to the requested structure: {prefill.strip()})"
+        )
 
+    start_t = time.perf_counter()
     if isinstance(provider, OllamaProvider):
         raw_res, stats = provider.generate(
             prompt=prompt,
             system_prompt="",
-            temperature=temp,
+            temperature=temperature,
             num_predict=num_predict,
             stop_tokens=stop_tokens,
             thinking=thinking_enabled,
@@ -484,23 +483,16 @@ def get_llm_response(
         raw_res, stats = provider.generate(
             prompt=user_content,
             system_prompt=prompt_meta["system_text"],
-            temperature=temp,
+            temperature=temperature,
             num_predict=num_predict,
             stop_tokens=stop_tokens,
             thinking=thinking_enabled,
         )
-
     duration = time.perf_counter() - start_t
-    raw_answer = (prefill + raw_res) if (prefill and not raw_res.startswith(prefill[:10])) else raw_res
-
+    raw_answer = (prefill + raw_res) if prefill else raw_res
     if stats_out is not None:
-        p_eval = stats.get("prompt_eval_count", 0)
-        e_count = stats.get("eval_count", 0)
-        e_dur_ns = stats.get("eval_duration_ns", 0)
-        gen_speed = stats.get("gen_speed_tps", 0.0)
-        if gen_speed == 0.0 and duration > 0 and e_count > 0:
-            gen_speed = round(e_count / duration, 1)
-
+        p_eval = int(stats.get("prompt_eval_count", 0) or 0)
+        e_count = int(stats.get("eval_count", 0) or 0)
         breakdown = _calculate_token_breakdown(
             prompt_meta["system_text"],
             prompt_meta["history_text"],
@@ -510,13 +502,101 @@ def get_llm_response(
             e_count,
         )
         stats_out.update({
-            "provider": stats.get("provider", getattr(provider, "model_name", "unknown")),
-            "model": stats.get("model", getattr(provider, "model_name", "unknown")),
+            "prompt_eval_count": p_eval,
+            "eval_count": e_count,
+            "eval_duration_ns": stats.get("eval_duration_ns", int(duration * 1e9)),
+            "gen_speed_tps": stats.get("gen_speed_tps", 0.0),
+            "ttft_seconds": stats.get("ttft_seconds", duration),
+            "llm_seconds": duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+            "token_breakdown": breakdown,
+        })
+    return clean_answer(raw_answer, is_thai=is_thai)
+
+
+def get_llm_response(
+    question: str,
+    context_list: list[str],
+    intent: str = "FACTOID",
+    chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
+) -> str:
+    """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
+        question, context_list, intent=intent, chat_history=chat_history, config=config
+    )
+
+    if not context_list:
+        return fallback_text
+
+    if llm_provider or llm_model or _rag_config(config) is not None:
+        return _generate_with_provider(
+            prompt,
+            is_thai,
+            num_predict,
+            thinking_enabled,
+            prefill,
+            prompt_meta,
+            stop_tokens,
+            llm_provider,
+            llm_model,
+            config,
+            stats_out,
+            intent,
+        )
+
+    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    start_t = time.perf_counter()
+    try:
+        response = _http_session.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "raw": True,
+                "stream": False,
+                "think": thinking_enabled,
+                "keep_alive": "30m",
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": num_predict,
+                    "num_ctx": DEFAULT_NUM_CTX,
+                    "stop": stop_tokens,
+                },
+            },
+            timeout=ollama_timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return f"LLM request failed: {exc}"
+
+    duration = time.perf_counter() - start_t
+    data = response.json()
+    raw_answer = (prefill + data.get("response", "")) if prefill else data.get("response", "")
+
+    if stats_out is not None:
+        p_eval = data.get("prompt_eval_count", 0)
+        e_count = data.get("eval_count", 0)
+        e_dur_ns = data.get("eval_duration", 0)
+        gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+        breakdown = _calculate_token_breakdown(
+            prompt_meta["system_text"],
+            prompt_meta["history_text"],
+            prompt_meta["context_text"],
+            prompt_meta["question_text"],
+            p_eval,
+            e_count,
+        )
+        stats_out.update({
             "prompt_eval_count": p_eval,
             "eval_count": e_count,
             "eval_duration_ns": e_dur_ns,
             "gen_speed_tps": gen_speed,
-            "ttft_seconds": stats.get("ttft_seconds", duration),
+            "ttft_seconds": duration,
             "llm_seconds": duration,
             "thinking_enabled": thinking_enabled,
             "intent": intent,
@@ -526,54 +606,51 @@ def get_llm_response(
     return clean_answer(raw_answer, is_thai=is_thai)
 
 
-def stream_llm_response(
-    question: str,
-    context_list: list[str],
-    intent: str = "FACTOID",
-    chat_history: str = "",
-    stats_out: Optional[dict[str, Any]] = None,
-    llm_provider: Optional[str] = None,
-    llm_model: Optional[str] = None,
-    config: Optional[Any] = None,
+def _stream_with_provider(
+    prompt: str,
+    num_predict: int,
+    thinking_enabled: bool,
+    prefill: str,
+    prompt_meta: dict[str, str],
+    stop_tokens: list[str],
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    config: Any,
+    stats_out: Optional[dict[str, Any]],
+    intent: str,
 ) -> Generator[str, None, None]:
-    """Streaming LLM generator that yields text tokens in real time from the configured provider."""
-    from .rag_config import RAGConfig, get_active_config
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
+    from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
 
-    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history, config=cfg
-    )
-
-    if not context_list:
-        yield fallback_text
-        return
-
-    provider_to_use = llm_provider or getattr(cfg, "llm_provider", None)
-    model_to_use = llm_model or getattr(cfg, "llm_model", None)
+    rag_cfg = _rag_config(config)
+    provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
+    model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
     provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
+    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
     stream_start = time.perf_counter()
     ttft: Optional[float] = None
-
     if prefill:
         ttft = time.perf_counter() - stream_start
         yield prefill
 
-    temp = getattr(cfg, "temperature", 0.0)
-    user_content = f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\nQuestion:\n{prompt_meta['question_text']}"
+    user_content = (
+        f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\n"
+        f"Question:\n{prompt_meta['question_text']}"
+    )
     if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
-        user_content += f"\n\n(Instruction: Please format your response starting directly as relevant to the requested structure: {prefill.strip()})"
+        user_content += (
+            "\n\n(Instruction: Please format your response starting directly as relevant "
+            f"to the requested structure: {prefill.strip()})"
+        )
 
-    gen = provider.stream(
+    tokens_generated = 0
+    for token in provider.stream(
         prompt=prompt if isinstance(provider, OllamaProvider) else user_content,
         system_prompt="" if isinstance(provider, OllamaProvider) else prompt_meta["system_text"],
-        temperature=temp,
+        temperature=temperature,
         num_predict=num_predict,
         stop_tokens=stop_tokens,
         thinking=thinking_enabled,
-    )
-
-    tokens_generated = 0
-    for token in gen:
+    ):
         if token:
             if ttft is None:
                 ttft = time.perf_counter() - stream_start
@@ -581,8 +658,6 @@ def stream_llm_response(
             yield token
 
     duration = time.perf_counter() - stream_start
-    gen_speed = (tokens_generated / duration) if duration > 0 else 0.0
-
     if stats_out is not None:
         p_eval = len(prompt) // 4
         breakdown = _calculate_token_breakdown(
@@ -594,17 +669,119 @@ def stream_llm_response(
             tokens_generated,
         )
         stats_out.update({
-            "provider": getattr(provider, "model_name", "unknown"),
-            "model": getattr(provider, "model_name", "unknown"),
             "prompt_eval_count": p_eval,
             "eval_count": tokens_generated,
             "eval_duration_ns": int(duration * 1e9),
-            "gen_speed_tps": round(gen_speed, 1),
+            "gen_speed_tps": (tokens_generated / duration) if duration > 0 else 0.0,
             "ttft_seconds": ttft or duration,
             "thinking_enabled": thinking_enabled,
             "intent": intent,
             "token_breakdown": breakdown,
         })
+
+
+def stream_llm_response(
+    question: str,
+    context_list: list[str],
+    intent: str = "FACTOID",
+    chat_history: str = "",
+    stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
+) -> Generator[str, None, None]:
+    """Streaming LLM generator that yields text tokens in real time from Ollama."""
+    prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
+        question, context_list, intent=intent, chat_history=chat_history, config=config
+    )
+
+    if not context_list:
+        yield fallback_text
+        return
+
+    if llm_provider or llm_model or _rag_config(config) is not None:
+        yield from _stream_with_provider(
+            prompt,
+            num_predict,
+            thinking_enabled,
+            prefill,
+            prompt_meta,
+            stop_tokens,
+            llm_provider,
+            llm_model,
+            config,
+            stats_out,
+            intent,
+        )
+        return
+
+    ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    stream_start = time.perf_counter()
+    ttft: Optional[float] = None
+
+    if prefill:
+        ttft = time.perf_counter() - stream_start
+        yield prefill
+
+    try:
+        with _http_session.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "raw": True,
+                "stream": True,
+                "think": thinking_enabled,
+                "keep_alive": "30m",
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": num_predict,
+                    "num_ctx": DEFAULT_NUM_CTX,
+                    "stop": stop_tokens,
+                },
+            },
+            stream=True,
+            timeout=ollama_timeout,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines(decode_unicode=True):
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        token = chunk.get("response", "")
+                        if token:
+                            if ttft is None:
+                                ttft = time.perf_counter() - stream_start
+                            yield token
+                        if chunk.get("done", False):
+                            if stats_out is not None:
+                                p_eval = chunk.get("prompt_eval_count", 0)
+                                e_count = chunk.get("eval_count", 0)
+                                e_dur_ns = chunk.get("eval_duration", 0)
+                                gen_speed = (e_count / (e_dur_ns / 1e9)) if e_dur_ns > 0 else 0.0
+                                breakdown = _calculate_token_breakdown(
+                                    prompt_meta["system_text"],
+                                    prompt_meta["history_text"],
+                                    prompt_meta["context_text"],
+                                    prompt_meta["question_text"],
+                                    p_eval,
+                                    e_count,
+                                )
+                                stats_out.update({
+                                    "prompt_eval_count": p_eval,
+                                    "eval_count": e_count,
+                                    "eval_duration_ns": e_dur_ns,
+                                    "gen_speed_tps": gen_speed,
+                                    "ttft_seconds": ttft or (time.perf_counter() - stream_start),
+                                    "thinking_enabled": thinking_enabled,
+                                    "intent": intent,
+                                    "token_breakdown": breakdown,
+                                })
+                            break
+                    except json.JSONDecodeError:
+                        continue
+    except requests.RequestException as exc:
+        yield f"LLM streaming request failed: {exc}"
 
 
 def _is_boilerplate_chunk(text: str) -> bool:
@@ -615,17 +792,14 @@ def _is_boilerplate_chunk(text: str) -> bool:
 def _prepare_rag_context(
     question: str,
     session_id: Optional[str] = None,
-    config: Optional[Any] = None,
+    config: Any = None,
 ) -> dict[str, Any]:
     """Unified context retrieval and document assembly for both streaming and non-streaming."""
-    from .rag_config import RAGConfig, get_active_config
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
-
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
     chat_history_str = session_manager.format_history_for_prompt(session_id)
-    retrieval_details = search_with_details(question, chat_history=chat_history_str, config=cfg)
+    retrieval_details = search_with_details(question, chat_history=chat_history_str, config=config)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})
@@ -634,19 +808,41 @@ def _prepare_rag_context(
     has_filter = bool(filters)
 
     # Dynamic Intent-Aware Context Quota & Smart Trimming
-    from .intent_config import get_intent_config
-    intent_cfg = get_intent_config(intent)
+    intent_cfg = _get_intent_config(intent)
+    max_context_chunks = intent_cfg.get("max_context_chunks", 4)
 
-    cfg_max_chunks = getattr(cfg, "max_context_chunks", None)
-    max_context_chunks = cfg_max_chunks if cfg_max_chunks is not None else intent_cfg.max_context_chunks
+    if intent == "RECOMMENDATION":
+        max_chunks_per_project = 2
+        max_total_projects = 4
+        min_score = 0.0001
+    elif intent == "EXPLORATORY":
+        max_chunks_per_project = 1
+        max_total_projects = 15
+        min_score = -1.0
+    elif intent == "COMPARISON":
+        max_chunks_per_project = 2
+        max_total_projects = 4
+        min_score = 0.0001
+    elif intent in {"DEEP_DIVE", "EXPLANATION"}:
+        max_chunks_per_project = max_context_chunks
+        max_total_projects = 1
+        min_score = 0.0001
+    elif intent == "CODE":
+        max_chunks_per_project = max_context_chunks
+        max_total_projects = 2
+        min_score = 0.0001
+    else:  # FACTOID / FACTUAL_LOOKUP
+        max_chunks_per_project = max_context_chunks
+        max_total_projects = 3
+        min_score = 0.0001
 
-    cfg_chunks_per_proj = getattr(cfg, "max_chunks_per_project", None)
-    max_chunks_per_project = cfg_chunks_per_proj if cfg_chunks_per_proj is not None else intent_cfg.max_chunks_per_project
+    rag_cfg = _rag_config(config)
+    if rag_cfg is not None:
+        max_context_chunks = rag_cfg.max_context_chunks
+        max_chunks_per_project = rag_cfg.max_chunks_per_project
+        min_score = rag_cfg.min_score
 
-    max_total_projects = intent_cfg.max_total_projects
-    cfg_min_score = getattr(cfg, "min_score", None)
-    min_score = cfg_min_score if cfg_min_score is not None else intent_cfg.min_score
-    preserve_same_project_chunks = intent_cfg.preserve_raw_code or _is_code_query(question) or intent == "CODE"
+    preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
     projects_ordered: list[str] = []
     projects_data: dict[str, dict] = {}
@@ -654,12 +850,8 @@ def _prepare_rag_context(
 
     for item in scored_contexts:
         score = float(item.get("score", 0.0))
-        raw_score = item.get("raw_score")
-        if raw_score is not None and float(raw_score) < -3.5 and not has_filter:
-            continue
         if score < min_score and projects_data:
             continue
-
 
         payload = item.get("payload", {}) or {}
         source = payload.get("source", "Unknown source")
@@ -841,46 +1033,10 @@ def answer_question(
     session_id: Optional[str] = None,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
-    config: Optional[Any] = None,
+    config: Any = None,
 ) -> dict[str, object]:
     """Synchronous Question Answering with In-Memory Session Memory."""
-    from .rag_config import RAGConfig, get_active_config
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
-
-    # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
-    from .prescreen import prescreen_query
-    prescreen_res = prescreen_query(question, session_id=session_id)
-    if prescreen_res.handled:
-        session_manager.add_user_message(session_id, question)
-        session_manager.add_assistant_message(session_id, prescreen_res.response)
-        return {
-            "question": question,
-            "session_id": session_id,
-            "answer": prescreen_res.response,
-            "intent": prescreen_res.intent,
-            "config": cfg.to_dict(),
-            "contexts": [],
-            "sources": [],
-            "citations": [],
-            "scored_contexts": [],
-            "normalized_query": question,
-            "filters": {},
-            "query_variants": [],
-            "retrieved_count": 0,
-            "errors": [],
-            "timing": {
-                "query_proc_seconds": 0.001,
-                "retrieval_seconds": 0.0,
-                "rerank_seconds": 0.0,
-                "llm_seconds": 0.0,
-                "total_seconds": 0.001,
-            },
-            "performance": {},
-        }
-
-    # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
-    query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
-    prep = _prepare_rag_context(query_to_search, session_id=session_id, config=cfg)
+    prep = _prepare_rag_context(question, session_id=session_id, config=config)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -931,42 +1087,6 @@ def answer_question(
     from .template_responder import try_generate_template_response
     template_answer = try_generate_template_response(question, prep)
 
-    # Fast Fallback when no relevant context was found (Zero LLM wait)
-    if not contexts and not template_answer:
-        fallback_msg = (
-            f"ขออภัยครับ ไม่พบข้อมูลเกี่ยวกับ '{question.strip()}' ในฐานข้อมูลเล่มโครงงานวิศวกรรมคอมพิวเตอร์ครับ 🦝\n\n"
-            f"*(ระบบมีข้อมูลเกี่ยวกับโครงงานฮาร์ดแวร์, IoT, Web/Mobile App, และ Machine Learning ของภาควิชา หากต้องการสืบค้นหัวข้ออื่น สามารถสอบถามได้เลยครับ)*"
-            if is_thai
-            else f"I'm sorry, but no relevant information about '{question.strip()}' was found in the senior project documents. 🦝"
-        )
-        if prescreen_res.greeting_prefix:
-            fallback_msg = prescreen_res.greeting_prefix + fallback_msg
-
-        session_manager.add_assistant_message(session_id, fallback_msg)
-        return {
-            "question": question,
-            "session_id": session_id,
-            "answer": fallback_msg,
-            "intent": intent,
-            "contexts": [],
-            "sources": [],
-            "citations": [],
-            "scored_contexts": [],
-            "normalized_query": retrieval_details.get("normalized_query", question),
-            "filters": prep["filters"],
-            "query_variants": retrieval_details.get("query_variants", []),
-            "retrieved_count": 0,
-            "errors": [],
-            "timing": {
-                "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
-                "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
-                "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
-                "llm_seconds": 0.0,
-                "total_seconds": retrieval_timing.get("total_seconds", 0.0),
-            },
-            "performance": {},
-        }
-
     if template_answer:
         answer = template_answer
         # Fast-Path Shortcut does not need page numbers in citations
@@ -1004,19 +1124,15 @@ def answer_question(
             stats_out=stats_out,
             llm_provider=llm_provider,
             llm_model=llm_model,
-            config=cfg,
+            config=config,
         )
         llm_seconds = time.perf_counter() - llm_start
 
         if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
             answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
-    if prescreen_res.greeting_prefix and not answer.startswith(prescreen_res.greeting_prefix.strip()):
-        answer = prescreen_res.greeting_prefix + answer
-
     # Add assistant response to session history
     session_manager.add_assistant_message(session_id, answer)
-
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
     tb = stats_out.get("token_breakdown", {})
@@ -1056,8 +1172,6 @@ def answer_question(
         "session_id": session_id,
         "answer": answer,
         "intent": intent,
-        "config": cfg.to_dict(),
-        "fast_path_used": bool(template_answer) or retrieval_details.get("fast_path_used", False),
         "contexts": contexts,
         "sources": sources,
         "citations": citations,
@@ -1066,6 +1180,7 @@ def answer_question(
         "filters": prep["filters"],
         "query_variants": retrieval_details.get("query_variants", []),
         "retrieved_count": retrieval_details.get("retrieved_count", len(scored_contexts)),
+        "fast_path_used": bool(retrieval_details.get("fast_path_used")),
         "errors": retrieval_errors,
         "timing": {
             "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
@@ -1083,7 +1198,7 @@ def stream_answer_question(
     session_id: Optional[str] = None,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
-    config: Optional[Any] = None,
+    config: Any = None,
 ) -> Generator[dict[str, Any], None, None]:
     """
     Streaming Generator for Real-Time SSE Tokens + Citations & Timing.
@@ -1094,59 +1209,7 @@ def stream_answer_question(
       - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
-    from .rag_config import RAGConfig, get_active_config
-    cfg = config if isinstance(config, RAGConfig) else get_active_config()
-
-    # 0. Prescreen Intent Routing (INT-01 Greeting, INT-02 Small Talk, INT-04 Ambiguous, INT-05 Out-of-domain, INT-07 Nonsense)
-    from .prescreen import prescreen_query
-    prescreen_res = prescreen_query(question, session_id=session_id)
-    if prescreen_res.handled:
-        session_manager.add_user_message(session_id, question)
-        session_manager.add_assistant_message(session_id, prescreen_res.response)
-        yield {
-            "event": "metadata",
-            "data": {
-                "question": question,
-                "session_id": session_id,
-                "intent": prescreen_res.intent,
-                "config": cfg.to_dict(),
-                "normalized_query": question,
-                "filters": {},
-                "sources": [],
-                "citations": [],
-                "retrieved_count": 0,
-                "timing": {
-                    "query_proc_seconds": 0.001,
-                    "retrieval_seconds": 0.0,
-                    "rerank_seconds": 0.0,
-                },
-            },
-        }
-        yield {"event": "token", "data": {"token": prescreen_res.response}}
-        yield {
-            "event": "done",
-            "data": {
-                "answer": prescreen_res.response,
-                "session_id": session_id,
-                "intent": prescreen_res.intent,
-                "config": cfg.to_dict(),
-                "sources": [],
-                "citations": [],
-                "timing": {
-                    "query_proc_seconds": 0.001,
-                    "retrieval_seconds": 0.0,
-                    "rerank_seconds": 0.0,
-                    "llm_seconds": 0.0,
-                    "total_seconds": 0.001,
-                },
-                "performance": {},
-            },
-        }
-        return
-
-    # If query has a greeting prefix (INT-06: Mixed Intent), search the cleaned query
-    query_to_search = prescreen_res.cleaned_query if prescreen_res.greeting_prefix else question
-    prep = _prepare_rag_context(query_to_search, session_id=session_id, config=cfg)
+    prep = _prepare_rag_context(question, session_id=session_id, config=config)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -1160,6 +1223,25 @@ def stream_answer_question(
     citations = prep["citations"]
     chat_history_str = prep["chat_history_str"]
 
+    # 1. Yield metadata before tokens, including when retrieval fails.
+    metadata_payload = {
+        "question": question,
+        "session_id": session_id,
+        "intent": intent,
+        "model": OLLAMA_MODEL,
+        "normalized_query": retrieval_details.get("normalized_query", question),
+        "filters": prep["filters"],
+        "sources": sources,
+        "citations": citations,
+        "retrieved_count": len(scored_contexts),
+        "timing": {
+            "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
+            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
+            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
+        },
+    }
+    yield {"event": "metadata", "data": metadata_payload}
+
     if not contexts and retrieval_errors:
         error_msg = (
             "การดึงข้อมูลล้มเหลว: ไม่สามารถเชื่อมต่อกับ Qdrant ได้"
@@ -1172,7 +1254,7 @@ def stream_answer_question(
             "data": {
                 "answer": error_msg,
                 "session_id": session_id,
-                "config": cfg.to_dict(),
+                "model": OLLAMA_MODEL,
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1203,63 +1285,6 @@ def stream_answer_question(
             c_copy["pages_formatted"] = ""
             cleaned_citations.append(c_copy)
         citations = cleaned_citations
-
-    # 1. Yield Initial Metadata Event (Instant feedback on intent and retrieved documents)
-    metadata_payload = {
-        "question": question,
-        "session_id": session_id,
-        "intent": intent,
-        "config": cfg.to_dict(),
-        "normalized_query": retrieval_details.get("normalized_query", question),
-        "filters": prep["filters"],
-        "sources": sources,
-        "citations": citations,
-        "retrieved_count": len(scored_contexts),
-        "timing": {
-            "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
-            "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
-            "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
-        },
-    }
-    yield {"event": "metadata", "data": metadata_payload}
-
-    # Fast Fallback when no relevant context was found (Zero LLM wait)
-    if not contexts and not template_answer:
-        fallback_msg = (
-            f"ขออภัยครับ ไม่พบข้อมูลเกี่ยวกับ '{question.strip()}' ในฐานข้อมูลเล่มโครงงานวิศวกรรมคอมพิวเตอร์ครับ 🦝\n\n"
-            f"*(ระบบมีข้อมูลเกี่ยวกับโครงงานฮาร์ดแวร์, IoT, Web/Mobile App, และ Machine Learning ของภาควิชา หากต้องการสืบค้นหัวข้ออื่น สามารถสอบถามได้เลยครับ)*"
-            if is_thai
-            else f"I'm sorry, but no relevant information about '{question.strip()}' was found in the senior project documents. 🦝"
-        )
-        if prescreen_res.greeting_prefix:
-            fallback_msg = prescreen_res.greeting_prefix + fallback_msg
-
-        yield {"event": "token", "data": {"token": fallback_msg}}
-        session_manager.add_assistant_message(session_id, fallback_msg)
-        yield {
-            "event": "done",
-            "data": {
-                "answer": fallback_msg,
-                "session_id": session_id,
-                "intent": intent,
-                "config": cfg.to_dict(),
-                "sources": [],
-                "citations": [],
-                "timing": {
-                    "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
-                    "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
-                    "rerank_seconds": retrieval_timing.get("rerank_seconds", 0.0),
-                    "llm_seconds": 0.0,
-                    "total_seconds": retrieval_timing.get("total_seconds", 0.0),
-                },
-                "performance": {},
-            },
-        }
-        return
-
-    # Yield greeting prefix first if mixed intent
-    if prescreen_res.greeting_prefix:
-        yield {"event": "token", "data": {"token": prescreen_res.greeting_prefix}}
 
     if template_answer:
         cleaned_answer = template_answer
@@ -1294,7 +1319,7 @@ def stream_answer_question(
             stats_out=stats_out,
             llm_provider=llm_provider,
             llm_model=llm_model,
-            config=cfg,
+            config=config,
         ):
             full_tokens.append(token)
             yield {"event": "token", "data": {"token": token}}
@@ -1306,12 +1331,8 @@ def stream_answer_question(
         if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
             cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
-    if prescreen_res.greeting_prefix and not cleaned_answer.startswith(prescreen_res.greeting_prefix.strip()):
-        cleaned_answer = prescreen_res.greeting_prefix + cleaned_answer
-
     # Add assistant response to session manager
     session_manager.add_assistant_message(session_id, cleaned_answer)
-
 
     total_seconds = retrieval_timing.get("total_seconds", 0.0) + llm_seconds
     tb = stats_out.get("token_breakdown", {})
@@ -1336,7 +1357,7 @@ def stream_answer_question(
             "answer": cleaned_answer,
             "session_id": session_id,
             "intent": intent,
-            "config": cfg.to_dict(),
+            "model": OLLAMA_MODEL,
             "sources": sources,
             "citations": citations,
             "timing": {

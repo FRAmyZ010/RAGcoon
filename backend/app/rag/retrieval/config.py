@@ -27,65 +27,65 @@ if not QDRANT_API_KEY:
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
 COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "embedding_evaluation")
 
-DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "15"))
-DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "5"))
-DEFAULT_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+DEFAULT_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "25"))
+DEFAULT_TOP_N: int = int(os.getenv("RERANK_TOP_N", "7"))
+DEFAULT_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
 INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "FACTUAL_LOOKUP": {
-        "top_k": 15,
-        "rerank_top_n": 5,
+        "top_k": 25,
+        "rerank_top_n": 6,
         "num_predict": 512,
-        "max_context_chunks": 5,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "FACTOID": {
-        "top_k": 15,
-        "rerank_top_n": 5,
+        "top_k": 25,
+        "rerank_top_n": 6,
         "num_predict": 512,
-        "max_context_chunks": 5,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "EXPLANATION": {
-        "top_k": 15,
-        "rerank_top_n": 5,
-        "num_predict": 640,
-        "max_context_chunks": 5,
+        "top_k": 20,
+        "rerank_top_n": 6,
+        "num_predict": 512,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "DEEP_DIVE": {
-        "top_k": 15,
-        "rerank_top_n": 5,
-        "num_predict": 1024,
-        "max_context_chunks": 5,
+        "top_k": 20,
+        "rerank_top_n": 6,
+        "num_predict": 640,
+        "max_context_chunks": 6,
         "thinking": False,
     },
     "COMPARISON": {
-        "top_k": 24,
-        "rerank_top_n": 6,
-        "num_predict": 768,
-        "max_context_chunks": 6,
+        "top_k": 40,
+        "rerank_top_n": 8,
+        "num_predict": 640,
+        "max_context_chunks": 8,
         "thinking": False,
     },
     "RECOMMENDATION": {
-        "top_k": 24,
-        "rerank_top_n": 8,
-        "num_predict": 768,
-        "max_context_chunks": 6,
+        "top_k": 60,
+        "rerank_top_n": 15,
+        "num_predict": 640,
+        "max_context_chunks": 8,
         "thinking": False,
     },
     "EXPLORATORY": {
-        "top_k": 25,
-        "rerank_top_n": 12,
-        "num_predict": 640,
-        "max_context_chunks": 10,
+        "top_k": 60,
+        "rerank_top_n": 20,
+        "num_predict": 512,
+        "max_context_chunks": 15,
         "thinking": False,
     },
     "CODE": {
-        "top_k": 15,
-        "rerank_top_n": 5,
-        "num_predict": 768,
-        "max_context_chunks": 5,
+        "top_k": 20,
+        "rerank_top_n": 6,
+        "num_predict": 512,
+        "max_context_chunks": 6,
         "thinking": False,
     },
 }
@@ -98,34 +98,13 @@ client: QdrantClient = QdrantClient(
 )
 
 
-import threading
-
-_embed_lock = threading.Lock()
-_embed_model: HuggingFaceEmbeddings | None = None
-
-_rerank_lock = threading.Lock()
-_reranker: CrossEncoder | None = None
-
-
+@lru_cache(maxsize=1)
 def get_embed_model() -> HuggingFaceEmbeddings:
-    """Load the embedding model safely with thread lock to prevent concurrent initialization race conditions."""
-    global _embed_model
-    if _embed_model is None:
-        with _embed_lock:
-            if _embed_model is None:
-                _embed_model = HuggingFaceEmbeddings(
-                    model_name=EMBEDDING_MODEL,
-                    model_kwargs={"device": "cpu"},
-                    encode_kwargs={"normalize_embeddings": True},
-                )
-    return _embed_model
+    """Load the embedding model only for an actual semantic search."""
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 
+@lru_cache(maxsize=1)
 def get_reranker() -> CrossEncoder:
-    """Load the reranker safely with thread lock to prevent concurrent initialization race conditions."""
-    global _reranker
-    if _reranker is None:
-        with _rerank_lock:
-            if _reranker is None:
-                _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
-    return _reranker
+    """Load the reranker only when results need reranking."""
+    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")

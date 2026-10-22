@@ -1,13 +1,20 @@
-export default function Button({ children, variant = 'primary', className = '', ...props }) {
-  const baseStyle = 'px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 font-mono';
-  const variants = {
-    primary: 'bg-[#2563EB] text-white hover:bg-blue-700',
-    dark: 'bg-[#2D2D2D] text-white hover:bg-[#3D3D3D]',
-    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-100',
-  };
+const variants = {
+  primary: 'bg-ember-600 text-white hover:bg-ember-700 disabled:bg-ember-100',
+  secondary: 'bg-white text-ink-900 border border-line hover:bg-canvas',
+  ghost: 'bg-transparent text-ink-900 hover:bg-canvas',
+  danger: 'bg-white text-ember-700 border border-line hover:bg-ember-50',
+};
+const sizes = { sm: 'text-sm px-3 py-1.5', md: 'text-sm px-4 py-2' };
 
+export default function Button({ children, variant = 'primary', size = 'md', icon: Icon, className = '', ...props }) {
   return (
-    <button className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>
+    <button
+      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium
+        transition-colors disabled:cursor-not-allowed disabled:opacity-60
+        ${variants[variant]} ${sizes[size]} ${className}`}
+      {...props}
+    >
+      {Icon && <Icon size={16} />}
       {children}
     </button>
   );

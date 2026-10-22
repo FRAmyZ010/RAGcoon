@@ -14,6 +14,8 @@ class Document(Base):
     supervisory_committee = Column(Text, nullable=True)
     keywords = Column(Text, nullable=True)
     status = Column(String(50), nullable=False, default="PENDING")
+    status_message = Column(Text, nullable=True)
+    view_count = Column(Integer, nullable=False, default=0, server_default="0")
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="documents")

@@ -35,12 +35,12 @@ _Avoid_: Reference, link, source (as vague synonyms without the citation meaning
 ### Conversation
 
 **Workspace**:
-A browser-local anonymous chat thread identified by `workspace_id`. The product target is localStorage as what the General User sees; server workspace APIs may remain temporarily in parallel until removed.
-_Avoid_: Project, user account, treating the `projects` table as a chat Workspace
+A browser-local anonymous chat thread identified by `workspace_id`. Workspace history and thread messages are managed only in browser `localStorage`. The Frontend does not call `GET /workspaces*`. Server workspace APIs may still exist until a later removal, but they are not the history source for the UI.
+_Avoid_: Project, user account, treating the `projects` table as a chat Workspace; loading Sidebar Recents from the server
 
 **Search Query**:
-One user question and its generated answer within a Workspace. Multi-turn context is sent by the client with later requests. Server-stored threads are not the long-term source of truth for General User history.
-_Avoid_: Search (as a separate catalog feature); FAQ Entry
+One user question and its generated answer within a Workspace. Multi-turn context is sent by the client on `POST /api/v1/chat/query-stream` as `messages` (at most the latest 3 turns). The UI stores the assistant role as `'bot'` and maps it to `'assistant'` in that payload. `parent_query_id` stays on the request schema for database compatibility and is not sent by the Frontend. Completed or errored streams are logged to PostgreSQL `search_queries` via `BackgroundTasks`. Server-stored threads are not the long-term source of truth for General User history.
+_Avoid_: Search (as a separate catalog feature); FAQ Entry; sending `parent_query_id` from the Frontend
 
 ### FAQ
 
@@ -63,3 +63,37 @@ _Avoid_: Keyword search page, catalog search, “search feature” as distinct f
 **Usage Metric**:
 Anonymous operational signal for monitoring (e.g. visit counts, search counts, latency) without storing the General User’s message thread. Not a Sprint 2 focus.
 _Avoid_: Chat history, Workspace transcript, personal query log
+
+## Sprint 2 P1 Architecture Locks
+
+### Client-side history (localStorage only)
+
+- Workspace history and thread messages live only in browser `localStorage`.
+- The Frontend does not call or implement `GET /workspaces*`.
+- A draft "New Chat" thread is not added to Sidebar Recents until the first response stream is successfully saved.
+- Sidebar Recents includes a manual thread deletion button.
+- On refresh, the app loads the latest thread from `localStorage`. If that data is corrupted, it falls back to "New chat".
+
+### API payload and role mapping (`POST /api/v1/chat/query-stream`)
+
+`ChatRequest` accepts:
+
+- `workspace_id` (str)
+- `query_text` (str)
+- `messages` (list of `ChatMessage`, capped at the latest 3 turns)
+
+`parent_query_id` remains on the Pydantic schema for database backwards-compatibility. The Frontend does not send it.
+
+The Frontend UI stores the assistant role as `'bot'` and maps `'bot'` to `'assistant'` when building the API request payload.
+
+### Backend and RAG session wiring
+
+Import `session_manager` as the instance, not the module:
+
+`from app.rag.retrieval.session_manager import session_manager`
+
+On each stream request: take at most 3 turns from `messages`, call `session_manager.clear_session()`, sync those client messages into `session_manager`, then run the RAG pipeline.
+
+### Persistence and logging
+
+Completed streams, and streams that error midway, log query, answer, sources, citations, and timing to PostgreSQL `search_queries` via `BackgroundTasks`.

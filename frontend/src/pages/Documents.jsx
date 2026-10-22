@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -19,17 +19,24 @@ import {
   RefreshCw,
   Check,
   CircleAlert,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   deleteDocument,
   listDocuments,
   mapDocumentToRow,
   openDocumentPreview,
-  uploadDocument,
-  MAX_UPLOAD_BYTES,
-  MAX_BATCH_UPLOAD_FILES,
+  uploadDocumentsBatch,
+  MAX_TOTAL_UPLOAD_BYTES,
+  MAX_TOTAL_UPLOAD_MB,
 } from "../services/documentsApi";
 import { clearAuth } from "../services/authApi";
+
+const STATUS_POLL_MS = 5000;
+const DOCUMENTS_PAGE_SIZE = 10;
+const IN_FLIGHT_STATUSES = new Set(["Pending", "Processing"]);
 
 function splitCommaList(value) {
   if (!value || value === "—") return [];
@@ -42,18 +49,23 @@ function splitCommaList(value) {
 function statusChipClass(status) {
   if (status === "Ready") return "bg-green-100 text-green-800";
   if (status === "Failed") return "bg-red-100 text-red-800";
+  if (status === "Pending") return "bg-slate-100 text-slate-700";
   return "bg-yellow-100 text-yellow-800";
 }
 
 export default function DocumentsManagement() {
   const navigate = useNavigate();
   const displayName = localStorage.getItem("username") || "Admin";
-  const [activeMenuIndex, setActiveMenuIndex] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [filesData, setFilesData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadQueue, setUploadQueue] = useState([]);
@@ -64,20 +76,28 @@ export default function DocumentsManagement() {
   const [detailsRow, setDetailsRow] = useState(null);
   const fileInputRef = useRef(null);
   const toastTimerRef = useRef(null);
-  const uploadCancelRef = useRef(false);
-  const uploadAbortRef = useRef(null);
+  const backgroundUploadRef = useRef(false);
 
-  const fetchDocuments = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const fetchDocuments = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
-      const docs = await listDocuments();
-      setFilesData(docs.map(mapDocumentToRow));
+      const docs = await listDocuments({ limit: 200 });
+      const rows = docs.map(mapDocumentToRow);
+      setFilesData(rows);
+      setSelectedIds((prev) => {
+        const valid = new Set(rows.map((row) => row.id));
+        return new Set([...prev].filter((id) => valid.has(id)));
+      });
     } catch (err) {
-      setError(err.message || "Failed to load documents");
-      setFilesData([]);
+      if (!silent) {
+        setError(err.message || "Failed to load documents");
+        setFilesData([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -91,198 +111,208 @@ export default function DocumentsManagement() {
     };
   }, []);
 
+  useEffect(() => {
+    const needsPoll = filesData.some((row) => IN_FLIGHT_STATUSES.has(row.status));
+    if (!needsPoll) return undefined;
+
+    const timer = setInterval(() => {
+      fetchDocuments({ silent: true });
+    }, STATUS_POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [filesData, fetchDocuments]);
+
   const showUploadToast = (summary) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setUploadToast(summary);
     toastTimerRef.current = setTimeout(() => setUploadToast(null), 5500);
   };
 
-  const finishUploadSession = async ({ succeeded, failed, cancelled, total }) => {
-    await fetchDocuments();
-    setUploading(false);
-    setIsUploadModalOpen(false);
-    setUploadQueue([]);
-    setUploadError("");
-    uploadCancelRef.current = false;
-    uploadAbortRef.current = null;
-    if (succeeded > 0 || failed > 0 || cancelled > 0) {
-      showUploadToast({ total, succeeded, failed, cancelled });
-    }
-  };
-
   const closeUploadModal = () => {
-    if (uploading) {
-      const ok = window.confirm(
-        "ยกเลิกคิวอัปโหลดที่เหลือหรือไม่?\n\nไฟล์ที่อัปโหลดสำเร็จแล้วจะยังอยู่ในระบบ — เฉพาะไฟล์ที่รอคิว/กำลังทำจะถูกยกเลิก"
-      );
-      if (!ok) return;
-      uploadCancelRef.current = true;
-      uploadAbortRef.current?.abort();
-      return;
-    }
-
-    const finished = uploadQueue.filter(
-      (q) => q.status === "success" || q.status === "error" || q.status === "cancelled"
-    );
-    if (finished.length > 0) {
-      const succeeded = finished.filter((q) => q.status === "success").length;
-      const failed = finished.filter((q) => q.status === "error").length;
-      const cancelled = finished.filter((q) => q.status === "cancelled").length;
-      showUploadToast({
-        total: finished.length,
-        succeeded,
-        failed,
-        cancelled,
-      });
-    }
+    if (uploading) return;
     setIsUploadModalOpen(false);
     setUploadQueue([]);
     setUploadError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const openUploadModal = () => {
+    if (backgroundUploadRef.current) {
+      setError("กำลังอัปโหลดชุดก่อนหน้าอยู่ กรุณารอสักครู่แล้วลองใหม่");
+      return;
+    }
     setUploadError("");
     setUploadQueue([]);
-    uploadCancelRef.current = false;
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setIsUploadModalOpen(true);
   };
 
-  const handleUploadFiles = async (fileList) => {
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
+  const submitCandidates = uploadQueue.filter((q) => q.status === "pending");
+  const submitTotalBytes = submitCandidates.reduce(
+    (sum, item) => sum + (item.file?.size || 0),
+    0
+  );
+  const queueOverTotalLimit = submitTotalBytes > MAX_TOTAL_UPLOAD_BYTES;
+  const canSubmitUpload =
+    !uploading && submitCandidates.length > 0 && !queueOverTotalLimit;
 
-    if (files.length > MAX_BATCH_UPLOAD_FILES) {
-      setUploadError(`อัปโหลดได้สูงสุด ${MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง`);
-      return;
-    }
-
-    for (const file of files) {
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        setUploadError(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
-        return;
-      }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        setUploadError(`ไฟล์ใหญ่เกิน 25MB: ${file.name}`);
-        return;
-      }
-    }
-
-    const queue = files.map((file, index) => ({
-      id: `${file.name}-${file.size}-${index}-${Date.now()}`,
-      name: file.name,
-      file,
-      status: "pending",
-      error: null,
-    }));
-
-    uploadCancelRef.current = false;
-    const abortController = new AbortController();
-    uploadAbortRef.current = abortController;
-
-    setUploading(true);
+  const clearUploadQueue = () => {
+    if (uploading) return;
+    setUploadQueue([]);
     setUploadError("");
-    setUploadQueue(queue);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
-    const statusById = Object.fromEntries(queue.map((q) => [q.id, "pending"]));
-    let succeeded = 0;
-    let failed = 0;
+  const addFilesToQueue = (fileList) => {
+    if (uploading) return;
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
 
-    const patchRow = (id, status, error = null) => {
-      statusById[id] = status;
-      setUploadQueue((prev) =>
-        prev.map((row) => (row.id === id ? { ...row, status, error } : row))
-      );
-    };
+    const warnings = [];
+    const accepted = [];
+    let hitMaxTotal = false;
+    const queueNames = new Set(
+      uploadQueue.map((item) => item.name.toLowerCase())
+    );
+    const serverNames = new Set(
+      filesData
+        .map((row) => (row.filename || row.source || "").toLowerCase())
+        .filter(Boolean)
+    );
+    let runningTotal = uploadQueue
+      .filter((item) => item.status === "pending")
+      .reduce((sum, item) => sum + (item.file?.size || 0), 0);
 
-    const cancelRemaining = (fromId = null) => {
-      for (const item of queue) {
-        const st = statusById[item.id];
-        if (st === "pending" || st === "uploading" || item.id === fromId) {
-          if (st === "success" || st === "error") continue;
-          patchRow(item.id, "cancelled", "ยกเลิกโดยผู้ใช้");
-        }
+    for (const file of incoming) {
+      const name = file.name || "unnamed";
+      const lower = name.toLowerCase();
+
+      if (!lower.endsWith(".pdf")) {
+        warnings.push(`${name} ไม่รองรับ`);
+        continue;
       }
-    };
-
-    for (const item of queue) {
-      if (uploadCancelRef.current) {
-        cancelRemaining();
-        break;
+      if (file.size <= 0) {
+        warnings.push(`${name} ไฟล์ว่างเปล่า หรือไฟล์เสีย`);
+        continue;
+      }
+      if (
+        queueNames.has(lower) ||
+        accepted.some((f) => f.name.toLowerCase() === lower)
+      ) {
+        warnings.push(`${name} ชื่อไฟล์ซ้ำในคิว`);
+        continue;
+      }
+      if (serverNames.has(lower)) {
+        warnings.push(`${name} มีชื่อไฟล์ซ้ำในระบบแล้ว`);
+        continue;
+      }
+      if (runningTotal + file.size > MAX_TOTAL_UPLOAD_BYTES) {
+        hitMaxTotal = true;
+        continue;
       }
 
-      patchRow(item.id, "uploading");
-
-      try {
-        await uploadDocument(item.file, { signal: abortController.signal });
-        succeeded += 1;
-        patchRow(item.id, "success");
-      } catch (err) {
-        const aborted =
-          err?.name === "AbortError" ||
-          String(err?.message || "").toLowerCase().includes("abort") ||
-          uploadCancelRef.current;
-
-        if (aborted) {
-          cancelRemaining(item.id);
-          break;
-        }
-
-        failed += 1;
-        patchRow(item.id, "error", err.message || "Upload failed");
-      }
+      accepted.push(file);
+      queueNames.add(lower);
+      runningTotal += file.size;
     }
 
-    if (uploadCancelRef.current) {
-      cancelRemaining();
+    if (hitMaxTotal) {
+      warnings.push(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
     }
 
-    const cancelled = Object.values(statusById).filter((s) => s === "cancelled").length;
-    const total = queue.length;
-    const wasCancelled = uploadCancelRef.current;
+    const nextQueue = [
+      ...uploadQueue,
+      ...accepted.map((file, index) => ({
+        id: `${file.name}-${file.size}-${Date.now()}-${index}`,
+        name: file.name,
+        file,
+        status: "pending",
+        error: null,
+      })),
+    ];
 
-    if (wasCancelled) {
-      await new Promise((r) => setTimeout(r, 250));
-      await finishUploadSession({
-        succeeded,
-        failed,
-        cancelled,
-        total,
-      });
+    setUploadQueue(nextQueue);
+    setUploadError(warnings.length ? [...new Set(warnings)].join(" · ") : "");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const submitUploadQueue = () => {
+    const queue = uploadQueue.filter((q) => q.status === "pending");
+    const files = queue.map((item) => item.file).filter(Boolean);
+    const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    if (uploading || files.length === 0 || totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+      if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+        setUploadError(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+      }
+      return;
+    }
+    if (backgroundUploadRef.current) {
+      setUploadError("กำลังอัปโหลดชุดก่อนหน้าอยู่ กรุณารอสักครู่");
       return;
     }
 
-    await fetchDocuments();
-    setUploading(false);
-    uploadAbortRef.current = null;
+    const total = files.length;
+    const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
 
-    if (failed === 0) {
-      await new Promise((r) => setTimeout(r, 700));
-      setIsUploadModalOpen(false);
-      setUploadQueue([]);
-      showUploadToast({ total, succeeded, failed, cancelled: 0 });
-    }
+    setUploadError("");
+    setIsUploadModalOpen(false);
+    setUploadQueue([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    showUploadToast({
+      kind: "accepted",
+      total,
+      totalMb,
+    });
+
+    backgroundUploadRef.current = true;
+    setUploading(true);
+
+    (async () => {
+      try {
+        const result = await uploadDocumentsBatch(files);
+        await fetchDocuments({ silent: true });
+        showUploadToast({
+          kind: "done",
+          total: result?.summary?.total ?? total,
+          succeeded: result?.summary?.succeeded ?? 0,
+          failed: result?.summary?.failed ?? 0,
+        });
+      } catch (err) {
+        setError(err.message || "Upload failed");
+        showUploadToast({
+          kind: "error",
+          total,
+          message: err.message || "Upload failed",
+        });
+        await fetchDocuments({ silent: true });
+      } finally {
+        backgroundUploadRef.current = false;
+        setUploading(false);
+      }
+    })();
   };
 
   const handleFileChange = (e) => {
     const files = e.target.files;
-    if (files?.length) handleUploadFiles(files);
+    if (files?.length) addFilesToQueue(files);
     e.target.value = "";
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
+    if (uploading) return;
     const files = e.dataTransfer.files;
-    if (files?.length) handleUploadFiles(files);
+    if (files?.length) addFilesToQueue(files);
   };
 
   const closeActionMenu = () => {
-    setActiveMenuIndex(null);
+    setActiveMenuId(null);
     setMenuPos(null);
   };
 
-  const toggleActionMenu = (index, event) => {
-    if (activeMenuIndex === index) {
+  const toggleActionMenu = (id, event) => {
+    if (activeMenuId === id) {
       closeActionMenu();
       return;
     }
@@ -291,8 +321,71 @@ export default function DocumentsManagement() {
       top: rect.bottom + 4,
       right: Math.max(8, window.innerWidth - rect.right),
     });
-    setActiveMenuIndex(index);
+    setActiveMenuId(id);
   };
+
+  const STATUS_SORT_RANK = {
+    Failed: 0,
+    Processing: 1,
+    Pending: 2,
+    Ready: 3,
+  };
+
+  const filteredFiles = filesData
+    .filter((row) => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return [row.title, row.authors, row.advisor, row.year]
+        .map((value) => String(value ?? "").toLowerCase())
+        .some((value) => value.includes(q));
+    })
+    .slice()
+    .sort((a, b) => {
+      const rankA = STATUS_SORT_RANK[a.status] ?? 99;
+      const rankB = STATUS_SORT_RANK[b.status] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
+
+      const dateA = a.uploadedAt || 0;
+      const dateB = b.uploadedAt || 0;
+      if (dateA !== dateB) return dateB - dateA;
+
+      const titleA = String(a.title || a.filename || "").toLowerCase();
+      const titleB = String(b.title || b.filename || "").toLowerCase();
+      return titleA.localeCompare(titleB);
+    });
+
+  const pageCount = Math.max(1, Math.ceil(filteredFiles.length / DOCUMENTS_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * DOCUMENTS_PAGE_SIZE;
+  const visibleFiles = filteredFiles.slice(pageStart, pageStart + DOCUMENTS_PAGE_SIZE);
+  const pageEnd = pageStart + visibleFiles.length;
+
+  const selectedCount = selectedIds.size;
+  const allVisibleSelected =
+    visibleFiles.length > 0 && visibleFiles.every((row) => selectedIds.has(row.id));
+
+  const toggleRowSelected = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleFiles.forEach((row) => next.delete(row.id));
+      } else {
+        visibleFiles.forEach((row) => next.add(row.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   const handleRemove = async (id) => {
     if (!window.confirm("ลบเอกสารนี้ถาวรหรือไม่?")) return;
@@ -302,11 +395,42 @@ export default function DocumentsManagement() {
     try {
       await deleteDocument(id);
       setFilesData((prev) => prev.filter((file) => file.id !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (err) {
       setError(err.message || "Delete failed");
     } finally {
       setActionBusyId(null);
     }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`ลบเอกสารที่เลือก ${ids.length} รายการถาวรหรือไม่?`)) return;
+
+    setBulkBusy(true);
+    closeActionMenu();
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteDocument(id);
+        setFilesData((prev) => prev.filter((file) => file.id !== id));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } catch (err) {
+        failed += 1;
+        setError(err.message || "Delete failed");
+      }
+    }
+    setBulkBusy(false);
+    if (failed === 0) clearSelection();
   };
 
   const handlePreview = (id) => {
@@ -317,7 +441,7 @@ export default function DocumentsManagement() {
   const handleDownload = (id, filename) => {
     closeActionMenu();
     const link = document.createElement("a");
-    link.href = `/api/v1/documents/${id}/file?download=true`;
+    link.href = `/api/v1/documents/${id}/file?download=true&t=${Date.now()}`;
     link.download = filename || `document-${id}.pdf`;
     link.rel = "noopener";
     document.body.appendChild(link);
@@ -326,7 +450,7 @@ export default function DocumentsManagement() {
   };
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-base text-gray-800 sm:text-lg">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-gray-100 font-sans text-xs text-gray-800 sm:text-sm">
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -335,14 +459,14 @@ export default function DocumentsManagement() {
       )}
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col justify-between bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ${
+        className={`fixed lg:static inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col justify-between bg-[#2d2d2d] p-3 text-white transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div>
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-lg sm:text-xl">
-              <span className="text-2xl">🦝</span>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-sm sm:text-base">
+              <span className="text-lg">🦝</span>
               <span>RAGcoon</span>
             </div>
             <button
@@ -353,26 +477,33 @@ export default function DocumentsManagement() {
             </button>
           </div>
 
-          <nav className="space-y-1.5">
+          <nav className="space-y-1">
             <Link
               to="/dashboard"
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-white/10"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
-              <LayoutDashboard className="h-4 w-4" />
+              <LayoutDashboard className="h-3.5 w-3.5" />
               <span>Dashboard</span>
             </Link>
             <Link
               to="/documents"
-              className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 font-bold text-gray-900"
+              className="flex items-center gap-2.5 rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900"
             >
-              <FolderClosed className="h-4 w-4" />
+              <FolderClosed className="h-3.5 w-3.5" />
               <span>Documents</span>
             </Link>
             <Link
-              to="/chat"
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 hover:bg-white/10"
+              to="/feedback-admin"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
-              <MessageSquare className="h-4 w-4" />
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Feedback</span>
+            </Link>
+            <Link
+              to="/chat"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
               <span>Chat Workspace</span>
             </Link>
           </nav>
@@ -384,36 +515,36 @@ export default function DocumentsManagement() {
             clearAuth();
             navigate("/login", { replace: true });
           }}
-          className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 font-bold text-gray-900 hover:bg-gray-200"
+          className="flex w-full items-center justify-between rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900 hover:bg-gray-200"
         >
           <span>Log Out</span>
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
         </button>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 min-w-0">
-        <header className="mb-6 flex items-center justify-between">
+      <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 min-w-0">
+        <header className="mb-4 flex items-center justify-between">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden rounded-lg p-2 bg-white shadow-sm hover:bg-gray-50"
+            className="lg:hidden rounded-lg p-1.5 bg-white shadow-sm hover:bg-gray-50"
           >
             ☰
           </button>
-          <div className="flex items-center gap-3 ml-auto">
-            <Bell className="h-5 w-5 cursor-pointer text-gray-600 hover:text-black" />
+          <div className="flex items-center gap-2.5 ml-auto">
+            <Bell className="h-4 w-4 cursor-pointer text-gray-600 hover:text-black" />
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-full bg-[#800000] text-white font-bold text-xs flex items-center justify-center">
+              <div className="h-6 w-6 rounded-full bg-[#800000] text-white font-bold text-[10px] flex items-center justify-center">
                 {displayName.slice(0, 2).toUpperCase()}
               </div>
-              <span className="font-bold text-gray-800 hidden sm:inline">{displayName}</span>
+              <span className="font-bold text-gray-800 hidden sm:inline text-sm">{displayName}</span>
             </div>
           </div>
         </header>
 
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Documents Management</h1>
-            <p className="text-sm text-gray-500 sm:text-base">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900">Documents Management</h1>
+            <p className="text-[11px] text-gray-500 sm:text-xs">
               จัดการและอัปโหลดไฟล์โครงงาน Senior Project เข้าสู่คลังข้อมูล RAG Engine
             </p>
           </div>
@@ -422,48 +553,96 @@ export default function DocumentsManagement() {
             <button
               onClick={fetchDocuments}
               disabled={loading}
-              className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               title="Refresh"
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
             <button
               onClick={openUploadModal}
-              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700 shadow-sm"
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               <span>Upload File</span>
             </button>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 sm:text-sm">
             {error}
           </div>
         )}
 
-        <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search title, author, advisor, year..."
+              className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-2.5 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-gray-500 sm:text-sm"
+            />
+          </div>
+          {selectedCount > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-900 sm:text-xs">
+              <span className="font-semibold">Selected {selectedCount}</span>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={bulkBusy}
+                className="rounded-md px-1.5 py-1 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        <section className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px]">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-sm">
+            <table className="w-full text-left border-collapse min-w-[860px]">
+              <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 font-semibold text-[11px] sm:text-xs">
                 <tr>
-                  <th className="py-3 px-4">Title</th>
-                  <th className="py-3 px-3">Academic Year</th>
-                  <th className="py-3 px-3">Source</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Date</th>
-                  <th className="py-3 px-3 text-center">Details</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-1.5 px-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      disabled={loading || visibleFiles.length === 0}
+                      onChange={toggleSelectAllVisible}
+                      className="h-3 w-3 cursor-pointer rounded border-gray-300 accent-blue-600 disabled:cursor-not-allowed"
+                      aria-label="Select all visible documents"
+                    />
+                  </th>
+                  <th className="py-1.5 px-2.5">Title</th>
+                  <th className="py-1.5 px-2">Academic Year</th>
+                  <th className="py-1.5 px-2">Source</th>
+                  <th className="py-1.5 px-2">Status</th>
+                  <th className="py-1.5 px-2">Date</th>
+                  <th className="py-1.5 px-2 text-center">Details</th>
+                  <th className="py-1.5 px-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-sm sm:text-base">
+              <tbody className="divide-y divide-gray-100 text-[11px] sm:text-xs">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading documents...
                       </span>
                     </td>
@@ -472,66 +651,105 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-500">
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
                       ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
                     </td>
                   </tr>
                 )}
 
+                {!loading && filesData.length > 0 && filteredFiles.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-gray-500">
+                      ไม่พบเอกสารที่ตรงกับคำค้น
+                    </td>
+                  </tr>
+                )}
+
                 {!loading &&
-                  filesData.map((row, idx) => (
-                    <tr key={row.id} className="hover:bg-gray-50 transition">
-                      <td className="py-3 px-4 font-bold text-gray-900">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-[#800000] shrink-0" />
-                          <span className="truncate max-w-[240px]" title={row.title}>
+                  visibleFiles.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`transition hover:bg-gray-50 ${
+                        selectedIds.has(row.id) ? "bg-blue-50/60" : ""
+                      }`}
+                    >
+                      <td className="py-1.5 px-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(row.id)}
+                          onChange={() => toggleRowSelected(row.id)}
+                          className="h-3 w-3 cursor-pointer rounded border-gray-300 accent-blue-600"
+                          aria-label={`Select ${row.title}`}
+                        />
+                      </td>
+                      <td className="py-1.5 px-2.5 font-bold text-gray-900">
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="h-3 w-3 text-[#800000] shrink-0" />
+                          <span className="truncate max-w-[220px]" title={row.title}>
                             {row.title}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-gray-600 whitespace-nowrap">{row.year}</td>
-                      <td className="py-3 px-3 text-gray-600">
-                        <span className="truncate max-w-[200px] block" title={row.source}>
+                      <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">{row.year}</td>
+                      <td className="py-1.5 px-2 text-gray-600">
+                        <span className="truncate max-w-[180px] block" title={row.source}>
                           {row.source}
                         </span>
                       </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            row.status === "Ready"
-                              ? "bg-green-100 text-green-700"
-                              : row.status === "Failed"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {row.status}
-                        </span>
+                      <td className="py-1.5 px-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className={`w-fit px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                              row.status === "Ready"
+                                ? "bg-green-100 text-green-700"
+                                : row.status === "Failed"
+                                  ? "bg-red-100 text-red-700"
+                                  : row.status === "Pending"
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-yellow-100 text-yellow-700"
+                            }`}
+                            title={
+                              row.status === "Failed" && row.statusMessage
+                                ? row.statusMessage
+                                : undefined
+                            }
+                          >
+                            {row.status}
+                          </span>
+                          {row.status === "Failed" && row.statusMessage && (
+                            <span
+                              className="max-w-[220px] truncate text-[10px] leading-snug text-red-600"
+                              title={row.statusMessage}
+                            >
+                              {row.statusMessage}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-3 px-3 text-gray-500 whitespace-nowrap">{row.date}</td>
-                      <td className="py-3 px-3 text-center">
+                      <td className="py-1.5 px-2 text-gray-500 whitespace-nowrap">{row.date}</td>
+                      <td className="py-1.5 px-2 text-center">
                         <button
                           type="button"
                           onClick={() => setDetailsRow(row)}
-                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-100 sm:text-xs"
                           aria-label={`View details for ${row.title}`}
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-3 w-3" />
                           <span className="hidden sm:inline">View</span>
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-1.5 px-2.5 text-right">
                         <button
                           type="button"
-                          onClick={(e) => toggleActionMenu(idx, e)}
-                          disabled={actionBusyId === row.id}
-                          className="p-1 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                          onClick={(e) => toggleActionMenu(row.id, e)}
+                          disabled={actionBusyId === row.id || bulkBusy}
+                          className="p-0.5 rounded-md hover:bg-gray-200 disabled:opacity-50"
                           aria-label="Open actions"
                         >
                           {actionBusyId === row.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                            <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
                           ) : (
-                            <MoreVertical className="h-4 w-4 text-gray-500" />
+                            <MoreVertical className="h-3 w-3 text-gray-500" />
                           )}
                         </button>
                       </td>
@@ -540,10 +758,46 @@ export default function DocumentsManagement() {
               </tbody>
             </table>
           </div>
+          {!loading && filteredFiles.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-gray-200 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing {pageStart + 1}–{pageEnd} of {filteredFiles.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeActionMenu();
+                    setPage(currentPage - 1);
+                  }}
+                  disabled={currentPage <= 1}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Previous
+                </button>
+                <span className="px-2 font-semibold text-gray-800">
+                  {currentPage} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeActionMenu();
+                    setPage(currentPage + 1);
+                  }}
+                  disabled={currentPage >= pageCount}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </main>
 
-      {activeMenuIndex != null && menuPos && filesData[activeMenuIndex] && (
+      {activeMenuId != null && menuPos && filesData.find((row) => row.id === activeMenuId) && (
         <>
           <div className="fixed inset-0 z-40" onClick={closeActionMenu} aria-hidden />
           <div
@@ -552,7 +806,7 @@ export default function DocumentsManagement() {
           >
             <button
               type="button"
-              onClick={() => handlePreview(filesData[activeMenuIndex].id)}
+              onClick={() => handlePreview(activeMenuId)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -560,12 +814,10 @@ export default function DocumentsManagement() {
             </button>
             <button
               type="button"
-              onClick={() =>
-                handleDownload(
-                  filesData[activeMenuIndex].id,
-                  filesData[activeMenuIndex].filename
-                )
-              }
+              onClick={() => {
+                const row = filesData.find((item) => item.id === activeMenuId);
+                handleDownload(activeMenuId, row?.filename);
+              }}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-gray-700 hover:bg-gray-100"
             >
               <Download className="h-3.5 w-3.5" />
@@ -573,7 +825,7 @@ export default function DocumentsManagement() {
             </button>
             <button
               type="button"
-              onClick={() => handleRemove(filesData[activeMenuIndex].id)}
+              onClick={() => handleRemove(activeMenuId)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 font-medium text-red-600 hover:bg-red-50"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -625,6 +877,11 @@ export default function DocumentsManagement() {
                     </span>
                   )}
                 </div>
+                {detailsRow.status === "Failed" && detailsRow.statusMessage && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {detailsRow.statusMessage}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -770,30 +1027,18 @@ export default function DocumentsManagement() {
                 dragActive
                   ? "border-blue-500 bg-blue-50"
                   : "border-gray-300 hover:bg-gray-50"
-              } ${uploading ? "pointer-events-none opacity-70" : ""}`}
+              }`}
             >
-              {uploading ? (
-                <>
-                  <Loader2 className="mb-2 h-10 w-10 animate-spin text-blue-500" />
-                  <p className="text-base font-bold text-gray-700">กำลังอัปโหลดทีละไฟล์...</p>
-                  <p className="mt-1 text-sm text-gray-400">ดูสถานะรายไฟล์ด้านล่าง</p>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
-                  <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
-                  <p className="mt-1 text-sm text-gray-400">
-                    สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ · PDF · Max 25MB / ไฟล์
-                  </p>
-                </>
-              )}
+              <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
+              <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
+              <p className="mt-1 text-sm text-gray-400">
+                PDF · รวมไม่เกิน {MAX_TOTAL_UPLOAD_MB}MB
+              </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,application/pdf"
                 multiple
                 className="hidden"
-                disabled={uploading}
                 onChange={handleFileChange}
               />
             </label>
@@ -805,78 +1050,52 @@ export default function DocumentsManagement() {
             )}
 
             {uploadQueue.length > 0 && (
-              <div className="mt-4 max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <div className="px-1 text-sm font-semibold text-gray-700">
-                  คิวอัปโหลด · สำเร็จ{" "}
-                  {uploadQueue.filter((q) => q.status === "success").length} / {uploadQueue.length}
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="text-sm font-semibold text-gray-800">
+                  ไฟล์ที่เลือก {uploadQueue.length} · รวม{" "}
+                  {(submitTotalBytes / (1024 * 1024)).toFixed(1)} / {MAX_TOTAL_UPLOAD_MB}MB
                 </div>
-                {[
-                  ...uploadQueue.filter(
-                    (q) => q.status !== "success" && q.status !== "cancelled"
-                  ),
-                  ...uploadQueue.filter((q) => q.status === "cancelled"),
-                  ...uploadQueue.filter((q) => q.status === "success"),
-                ].map((item, index) => (
-                  <div
-                    key={item.id}
-                    className={`upload-queue-item flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                      item.status === "success"
-                        ? "is-success border-green-200 bg-green-50 text-green-900"
-                        : item.status === "error"
-                          ? "border-red-200 bg-red-50 text-red-800"
-                          : item.status === "cancelled"
-                            ? "border-gray-300 bg-gray-100 text-gray-600"
-                          : item.status === "uploading"
-                            ? "is-uploading border-blue-200 bg-blue-50 text-blue-900"
-                            : "border-gray-200 bg-white text-gray-700"
-                    }`}
-                    style={{ animationDelay: `${index * 40}ms` }}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {item.status === "success" && <Check className="h-4 w-4 text-green-600" />}
-                      {item.status === "error" && <CircleAlert className="h-4 w-4 text-red-600" />}
-                      {item.status === "cancelled" && <X className="h-4 w-4 text-gray-500" />}
-                      {item.status === "uploading" && (
-                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                      )}
-                      {item.status === "pending" && (
-                        <span className="block h-4 w-4 rounded-full border-2 border-gray-300" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium" title={item.name}>
-                        {item.name}
-                      </div>
-                      <div className="mt-0.5 text-xs opacity-80 sm:text-sm">
-                        {item.status === "pending" && "รอคิว"}
-                        {item.status === "uploading" && "กำลังอัปโหลดและ ingest..."}
-                        {item.status === "success" && "อัปโหลดเสร็จแล้ว"}
-                        {item.status === "cancelled" && "ยกเลิกแล้ว"}
-                        {item.status === "error" && (item.error || "ล้มเหลว")}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <button
+                  type="button"
+                  onClick={clearUploadQueue}
+                  className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                >
+                  ล้างทั้งหมด
+                </button>
               </div>
             )}
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
               <button
+                type="button"
                 onClick={closeUploadModal}
                 className="rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100"
               >
-                {uploading
-                  ? "Cancel"
-                  : uploadQueue.some((q) => q.status === "error" || q.status === "cancelled")
-                    ? "Close"
-                    : "Cancel"}
+                Cancel
               </button>
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold text-gray-700 hover:bg-gray-50"
               >
-                {uploading ? "Uploading..." : "Choose PDFs"}
+                Choose PDFs
+              </button>
+              <button
+                type="button"
+                onClick={submitUploadQueue}
+                disabled={!canSubmitUpload}
+                title={
+                  canSubmitUpload
+                    ? "อัปโหลดไฟล์ที่เลือก"
+                    : queueOverTotalLimit
+                      ? `ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`
+                      : submitCandidates.length === 0
+                        ? "ยังไม่มีไฟล์ในคิว"
+                        : "ไม่สามารถส่งได้"
+                }
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Submit
               </button>
             </div>
           </div>
@@ -886,7 +1105,13 @@ export default function DocumentsManagement() {
       {uploadToast && (
         <div className="fixed bottom-6 right-6 z-[60] w-[min(100%-2rem,22rem)] animate-[upload-row-in_0.3s_ease-out] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl">
           <div className="mb-2 flex items-start justify-between gap-2">
-            <div className="font-bold text-gray-900">สรุปการอัปโหลด</div>
+            <div className="font-bold text-gray-900">
+              {uploadToast.kind === "accepted"
+                ? "รับไฟล์แล้ว"
+                : uploadToast.kind === "error"
+                  ? "อัปโหลดไม่สำเร็จ"
+                  : "สรุปการอัปโหลด"}
+            </div>
             <button
               type="button"
               onClick={() => setUploadToast(null)}
@@ -896,29 +1121,37 @@ export default function DocumentsManagement() {
               <X className="h-4 w-4" />
             </button>
           </div>
-          <p className="text-sm text-gray-600 sm:text-base">
-            สำเร็จ {uploadToast.succeeded} / {uploadToast.total}
-            {uploadToast.failed > 0 ? ` · ล้มเหลว ${uploadToast.failed}` : ""}
-            {uploadToast.cancelled > 0 ? ` · ยกเลิก ${uploadToast.cancelled}` : ""}
-          </p>
-          <ul className="mt-2 space-y-1 text-sm text-gray-700">
-            <li className="flex items-center gap-2 text-green-700">
-              <Check className="h-4 w-4" />
-              {uploadToast.succeeded} ไฟล์พร้อมใช้งาน
-            </li>
-            {uploadToast.failed > 0 && (
-              <li className="flex items-center gap-2 text-red-700">
-                <CircleAlert className="h-4 w-4" />
-                {uploadToast.failed} ไฟล์ไม่สำเร็จ
-              </li>
-            )}
-            {uploadToast.cancelled > 0 && (
-              <li className="flex items-center gap-2 text-gray-600">
-                <X className="h-4 w-4" />
-                {uploadToast.cancelled} ไฟล์ถูกยกเลิก
-              </li>
-            )}
-          </ul>
+          {uploadToast.kind === "accepted" && (
+            <p className="text-sm text-gray-600">
+              รับไฟล์แล้ว {uploadToast.total} ไฟล์
+              {uploadToast.totalMb ? ` · ${uploadToast.totalMb}MB` : ""}
+              <br />
+              กำลังประมวลผลเบื้องหลัง — ดูสถานะในตารางได้เลย
+            </p>
+          )}
+          {uploadToast.kind === "done" && (
+            <>
+              <p className="text-sm text-gray-600">
+                รับเข้าคิว {uploadToast.succeeded} / {uploadToast.total}
+                {uploadToast.failed > 0 ? ` · ไม่ผ่าน ${uploadToast.failed}` : ""}
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                <li className="flex items-center gap-2 text-green-700">
+                  <Check className="h-4 w-4" />
+                  {uploadToast.succeeded} ไฟล์เข้าคิวแล้ว (Pending/Processing)
+                </li>
+                {uploadToast.failed > 0 && (
+                  <li className="flex items-center gap-2 text-red-700">
+                    <CircleAlert className="h-4 w-4" />
+                    {uploadToast.failed} ไฟล์ไม่สำเร็จ
+                  </li>
+                )}
+              </ul>
+            </>
+          )}
+          {uploadToast.kind === "error" && (
+            <p className="text-sm text-red-700">{uploadToast.message}</p>
+          )}
         </div>
       )}
     </div>
