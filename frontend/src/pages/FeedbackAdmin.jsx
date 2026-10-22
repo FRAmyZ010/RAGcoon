@@ -52,7 +52,7 @@ export default function FeedbackAdmin() {
       const data = await listFeedback({ feedbackType, status, q });
       setRows(data);
     } catch (err) {
-      setError(err.message || "โหลด Feedback ไม่สำเร็จ");
+      setError(err.message || "Could not load feedback");
     } finally {
       setLoading(false);
     }
@@ -70,7 +70,7 @@ export default function FeedbackAdmin() {
       await updateFeedbackStatus(id, nextStatus);
       await load();
     } catch (err) {
-      setError(err.message || "อัปเดตสถานะไม่สำเร็จ");
+      setError(err.message || "Could not update the status");
     }
   };
 
@@ -153,7 +153,7 @@ export default function FeedbackAdmin() {
 
         <div className="mb-4">
           <h1 className="text-base font-bold text-gray-900 sm:text-lg">Feedback</h1>
-          <p className="text-[11px] text-gray-500 sm:text-xs">{rows.length} รายการ</p>
+          <p className="text-[11px] text-gray-500 sm:text-xs">{rows.length} items</p>
         </div>
 
         <div className="mb-4 flex flex-col gap-2 sm:flex-row">
@@ -214,7 +214,7 @@ export default function FeedbackAdmin() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
-                    ยังไม่มี Feedback
+                    No feedback yet
                   </td>
                 </tr>
               )}

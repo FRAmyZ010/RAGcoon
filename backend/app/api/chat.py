@@ -23,7 +23,7 @@ def query_rag(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"เกิดข้อผิดพลาดในการประมวลผลคำถาม: {str(e)}"
+            detail=f"Could not process the question: {str(e)}"
         )
 
 @router.get("/history", response_model=list[SearchQueryHistoryResponse])

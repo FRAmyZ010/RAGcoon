@@ -7,7 +7,7 @@ export default function Placeholder({ title }) {
         <div className="mb-3 text-3xl">🦝</div>
         <h1 className="text-xl font-bold text-gray-900">{title}</h1>
         <p className="mt-2 text-base text-gray-500">
-          หน้านี้อยู่ในแผน Sprint ถัดไป ยังไม่ได้พัฒนา
+          This page is planned for a later sprint.
         </p>
         <div className="mt-6 flex justify-center gap-3 text-base">
           <Link

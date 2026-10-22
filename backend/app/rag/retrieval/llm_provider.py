@@ -544,7 +544,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "gemma3:4b",
         "label": "Ollama Gemma 3 (4B) [Local Default]",
-        "description": "โมเดลท้องถิ่นขนาด 4B ทำงานแบบ Offline บนเครื่อง ประหยัดทรัพยากร",
+        "description": "Small 4B local model. Runs offline on this machine.",
         "is_cloud": False,
     },
     {
@@ -552,7 +552,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "qwen3:4b",
         "label": "Ollama Qwen 3 (4B) [Local Reasoning]",
-        "description": "โมเดล Qwen 3 ขนาด 4B สำหรับงานวิเคราะห์และการตอบเชิงเหตุผล",
+        "description": "Qwen 3 4B for reasoning over the project documents.",
         "is_cloud": False,
     },
     {
@@ -560,7 +560,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "qwen2.5:7b",
         "label": "Ollama Qwen 2.5 (7B) [Local Accuracy]",
-        "description": "โมเดล local ที่เหมาะกับตารางและโค้ดที่ซับซ้อน",
+        "description": "Local model suited to tables and longer code.",
         "is_cloud": False,
     },
     {
@@ -568,7 +568,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "gemini",
         "model": "gemini-3.5-flash",
         "label": "Google Gemini 3.5 Flash [Cloud Ultra-Fast]",
-        "description": "โมเดลบนคลาวด์ของ Google ความเร็วสูงมากและแม่นยำสูง รองรับบริบทใหญ่",
+        "description": "Fast Google cloud model with a very large context window.",
         "is_cloud": True,
     },
     {
@@ -576,7 +576,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "gemini",
         "model": "gemini-3.5-flash-lite",
         "label": "Google Gemini 3.5 Flash-Lite [Cloud Cost-Effective]",
-        "description": "โมเดลตัวเบาของ Gemini เน้นความเร็วในการสร้างคำตอบและประหยัด Token",
+        "description": "Lighter Gemini model for short, fast answers.",
         "is_cloud": True,
     },
     {
@@ -584,7 +584,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "openai",
         "model": "gpt-4o-mini",
         "label": "OpenAI ChatGPT (GPT-4o Mini) [Cloud SOTA]",
-        "description": "โมเดลเรือธงขนาดกะทัดรัดของ OpenAI สังเคราะห์ภาษาได้สละสลวย",
+        "description": "Compact OpenAI model for steady synthesis.",
         "is_cloud": True,
     },
     {
@@ -592,7 +592,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "openai",
         "model": "gpt-4o",
         "label": "OpenAI GPT-4o [Cloud Flagship]",
-        "description": "ใช้เมื่อต้องการคำตอบเชิงวิเคราะห์ที่ละเอียด",
+        "description": "Use when the answer needs detailed analysis.",
         "is_cloud": True,
     },
 ]

@@ -31,37 +31,37 @@ PROFILE_NOTES = {
     "gemma3:4b": {
         "context_window": "4,096 tokens",
         "latency": "~0.8s - 1.5s",
-        "fit": "โมเดลขนาดเล็ก ทำงานในเครื่องได้รวดเร็ว",
+        "fit": "Small local model. Fast on this machine.",
     },
     "qwen3:4b": {
         "context_window": "4,096 tokens",
         "latency": "~0.9s - 1.6s",
-        "fit": "ภาษาไทยและบริบทโครงงานวิจัยตอบตรงตามเอกสาร",
+        "fit": "Stronger Thai and project-context answers grounded in the documents.",
     },
     "qwen2.5:7b": {
         "context_window": "8,192 tokens",
         "latency": "~1.5s - 3.0s",
-        "fit": "ความแม่นยำสูงสุดในโหมด local สำหรับตารางและโค้ด",
+        "fit": "Highest local accuracy for tables and code.",
     },
     "gemini-3.5-flash": {
         "context_window": "1,000,000 tokens",
         "latency": "~0.4s - 0.8s",
-        "fit": "เร็วและรองรับภาษาไทยเป็นธรรมชาติ",
+        "fit": "Fast cloud model with natural Thai.",
     },
     "gemini-3.5-flash-lite": {
         "context_window": "1,000,000 tokens",
         "latency": "~0.3s - 0.6s",
-        "fit": "ตอบสั้นและคัดกรองข้อมูลได้เร็ว",
+        "fit": "Short answers and quick filtering.",
     },
     "gpt-4o-mini": {
         "context_window": "128,000 tokens",
         "latency": "~0.5s - 1.0s",
-        "fit": "สังเคราะห์คำตอบและจัดโครงสร้างได้คงที่",
+        "fit": "Steady synthesis and document structure.",
     },
     "gpt-4o": {
         "context_window": "128,000 tokens",
         "latency": "~1.0s - 2.0s",
-        "fit": "ใช้เมื่อต้องการคำตอบเชิงวิเคราะห์ที่ละเอียด",
+        "fit": "Use when the answer needs detailed analysis.",
     },
 }
 
@@ -140,7 +140,7 @@ def activate_llm(payload: dict, db: Session = Depends(_admin)):
     provider = str(payload.get("provider") or "").strip()
     model = payload.get("model")
     if not provider:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ต้องระบุ provider")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider is required")
     set_active_llm(provider, model)
     active_provider, active_model = get_active_llm()
     save_llm(db, active_provider, active_model)
@@ -154,7 +154,7 @@ def run_benchmark(payload: dict, _db: Session = Depends(_admin)):
     baseline = str(payload.get("baseline") or "precision_hybrid")
     candidate = str(payload.get("candidate") or "fast_mode")
     if baseline == candidate:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="baseline กับ candidate ต้องคนละโหมด")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Baseline and candidate must be different presets")
     try:
         limit = int(payload.get("limit") or 2)
     except (TypeError, ValueError):
@@ -170,7 +170,7 @@ def ping_llm(payload: dict, _db: Session = Depends(_admin)):
     provider = str(payload.get("provider") or "").strip()
     model = payload.get("model")
     if not provider:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ต้องระบุ provider")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider is required")
     result = test_provider_connectivity(provider, model)
     online = bool(result.get("success"))
     return {

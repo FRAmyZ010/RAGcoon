@@ -41,7 +41,7 @@ async def upload_document(
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น"
+            detail="Only PDF documents are supported"
         )
 
     try:
@@ -81,7 +81,7 @@ async def upload_documents_batch(
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="ต้องมีไฟล์อย่างน้อย 1 ไฟล์",
+            detail="At least one file is required",
         )
 
     total_bytes = 0
@@ -99,8 +99,8 @@ async def upload_documents_batch(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"ขนาดไฟล์รวมเกิน {MAX_TOTAL_UPLOAD_MB}MB "
-                f"(ขนาดปัจจุบัน {total_bytes / (1024 * 1024):.1f}MB)"
+                f"Total size exceeds {MAX_TOTAL_UPLOAD_MB}MB "
+                f"(current size {total_bytes / (1024 * 1024):.1f}MB)"
             ),
         )
 
@@ -115,7 +115,7 @@ async def upload_documents_batch(
                 BatchUploadItemResult(
                     filename=filename,
                     ok=False,
-                    error="รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น",
+                    error="Only PDF documents are supported",
                     status_code=400,
                 )
             )
@@ -194,7 +194,7 @@ def download_document_file(
     if not file_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ไม่พบไฟล์เอกสารรหัส: {document_id}"
+            detail=f"Document file not found: {document_id}"
         )
 
     return FileResponse(
@@ -215,7 +215,7 @@ def get_document_detail(
     if not doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ไม่พบเอกสารรหัส: {document_id}"
+            detail=f"Document not found: {document_id}"
         )
     return doc
 
@@ -229,6 +229,6 @@ def remove_document(
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ไม่พบเอกสารรหัส: {document_id}"
+            detail=f"Document not found: {document_id}"
         )
-    return {"message": f"ลบเอกสารรหัส {document_id} สำเร็จเรียบร้อยแล้ว"}
+    return {"message": f"Deleted document {document_id}"}

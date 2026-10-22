@@ -72,7 +72,7 @@ def query_rag_stream(
     if _too_many_sends(client_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="ส่งข้อความถี่เกินไป รอสักครู่แล้วลองใหม่",
+            detail="Too many messages. Wait a moment and try again.",
         )
     return StreamingResponse(
         process_rag_stream(
@@ -107,7 +107,7 @@ def read_workspace_detail(
     if not workspace_detail:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ไม่พบข้อมูล Workspace รหัส: {workspace_id}"
+            detail=f"Workspace not found: {workspace_id}"
         )
     return workspace_detail
 

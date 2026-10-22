@@ -17,7 +17,7 @@ def read_overview(
     _: User = Depends(get_current_administrator),
 ):
     if days not in SEARCH_WINDOWS:
-        raise HTTPException(status_code=400, detail="เลือกได้แค่ 1, 7, 15 หรือ 30 วัน")
+        raise HTTPException(status_code=400, detail="Choose 1, 7, 15, or 30 days")
     return get_overview(db, days)
 
 

@@ -17,7 +17,7 @@ async function request(path, options = {}) {
     if (!window.location.pathname.startsWith("/login")) window.location.assign("/login");
   }
   if (!res.ok) {
-    let detail = "คำขอไม่สำเร็จ";
+    let detail = "Request failed";
     try {
       const data = await res.json();
       if (typeof data?.detail === "string") detail = data.detail;

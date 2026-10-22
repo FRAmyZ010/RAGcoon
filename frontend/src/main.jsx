@@ -19,9 +19,9 @@ function MissingChat() {
       <div className="max-w-md rounded-3xl bg-white px-8 py-10 text-center shadow-lg">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#800000]">404</p>
         <h1 className="mt-2 text-2xl font-semibold">Not Found</h1>
-        <p className="mt-2 text-sm text-slate-500">ไม่พบแชทนี้ หรือคุณไม่มีสิทธิ์เปิดดู</p>
+        <p className="mt-2 text-sm text-slate-500">This chat was not found, or you do not have access to it.</p>
         <Link to="/chat" className="mt-6 inline-flex rounded-full bg-[#800000] px-5 py-2 text-sm font-semibold text-white">
-          กลับไปแชทของคุณ
+          Back to your chat
         </Link>
       </div>
     </div>

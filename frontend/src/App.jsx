@@ -450,7 +450,7 @@ export default function App() {
               </div>
               {pendingDeleteId === thread.id && (
                 <div className="mb-1 mt-1 flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-gray-200">
-                  <span>ลบแชทนี้?</span>
+                  <span>Delete this chat?</span>
                   <span className="flex gap-2">
                     <button
                       type="button"
