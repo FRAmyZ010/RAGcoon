@@ -80,7 +80,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 1. Baseline: Balanced Standard
     "precision_hybrid": RAGConfig(
         profile_name="precision_hybrid",
-        description="ค่ามาตรฐานสมดุล (Baseline): Hybrid RRF, Top-K=15, Top-N=5, Chunk=5, Balanced Prompt",
+        description="Balanced baseline: hybrid search, top_k 15, rerank 5, 5 context chunks, 512-token answers.",
         top_k=15,
         rerank_top_n=5,
         enable_hybrid=True,
@@ -97,7 +97,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 2. Fast-Mode: Latency & Speed Optimized
     "fast_mode": RAGConfig(
         profile_name="fast_mode",
-        description="เน้นความเร็วสูงสุด (Speed-Optimized): Top-K=10, Top-N=3, Chunk=3, Prompt กระชับ, Output=256",
+        description="Fastest path: top_k 10, rerank 3, 3 context chunks, one chunk per project, 256-token answers.",
         top_k=10,
         rerank_top_n=3,
         enable_hybrid=True,
@@ -114,7 +114,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 3. Deep-Academic: Maximum Depth & Information Richness
     "deep_academic": RAGConfig(
         profile_name="deep_academic",
-        description="เน้นความลึกเชิงวิชาการ (Deep-Academic): Top-K=25, Top-N=8, Chunk=8, Prompt แจกแจงโครงสร้าง, Output=1024",
+        description="Deepest answers: top_k 25, rerank 8, 8 context chunks, four per project, 1024-token answers.",
         top_k=25,
         rerank_top_n=8,
         enable_hybrid=True,
@@ -131,7 +131,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 4. Ablation Study 1: Dense Only (No BM25 Keyword Search)
     "ablation_dense_only": RAGConfig(
         profile_name="ablation_dense_only",
-        description="[Ablation 1] ตัด Sparse BM25 ออก (Dense Vector Only) เพื่อวัดผลของ Hybrid Search",
+        description="Ablation: same as the baseline, with exact-word search turned off.",
         top_k=15,
         rerank_top_n=5,
         enable_hybrid=False,
@@ -148,7 +148,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 5. Ablation Study 2: No Reranker (Raw Vector/BM25 Ranking Only)
     "ablation_no_rerank": RAGConfig(
         profile_name="ablation_no_rerank",
-        description="[Ablation 2] ตัด Cross-Encoder Reranker ออก เพื่อวัดผลของ Neural Re-ranking",
+        description="Ablation: same as the baseline, without the second-pass ranker.",
         top_k=15,
         rerank_top_n=5,
         enable_hybrid=True,
@@ -165,7 +165,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 6. Ablation Study 3: No Boilerplate Filter (Unfiltered Noise)
     "ablation_no_filter": RAGConfig(
         profile_name="ablation_no_filter",
-        description="[Ablation 3] ปิด Boilerplate Filter เพื่อวัดผลกระทบจากขยะเอกสาร (TOC, อ้างอิง, ลายมือชื่อ)",
+        description="Ablation: same as the baseline, without dropping contents pages and reference lists.",
         top_k=15,
         rerank_top_n=5,
         enable_hybrid=True,
@@ -182,7 +182,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 7. LLM Model Benchmark: Ollama Qwen 3 (4B)
     "model_qwen3": RAGConfig(
         profile_name="model_qwen3",
-        description="ทดสอบโมเดล Ollama Qwen 3 (4B) ในการตอบและวิเคราะห์เหตุผล",
+        description="Baseline retrieval, and the answer model is forced to qwen3:4b.",
         llm_provider="ollama",
         llm_model="qwen3:4b",
         top_k=15,
@@ -201,7 +201,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 8. LLM Model Benchmark: Google Gemini (Cloud)
     "model_gemini": RAGConfig(
         profile_name="model_gemini",
-        description="ทดสอบโมเดล Google Gemini Cloud API (gemini-3.5-flash)",
+        description="Baseline retrieval, and the answer model is forced to gemini-3.5-flash. Needs an API key.",
         llm_provider="gemini",
         llm_model="gemini-3.5-flash",
         top_k=15,
@@ -220,7 +220,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 9. LLM Model Benchmark: OpenAI ChatGPT (Cloud)
     "model_openai": RAGConfig(
         profile_name="model_openai",
-        description="ทดสอบโมเดล OpenAI ChatGPT Cloud API (gpt-4o-mini)",
+        description="Baseline retrieval, and the answer model is forced to gpt-4o-mini. Needs an API key.",
         llm_provider="openai",
         llm_model="gpt-4o-mini",
         top_k=15,

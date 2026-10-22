@@ -6,7 +6,6 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  FolderClosed,
   Menu,
   MessageSquare,
   MessageSquarePlus,
@@ -25,6 +24,7 @@ import {
   toApiMessages,
   upsertChatThread,
 } from "./services/chatHistory";
+import MarkdownMessage from "./components/MarkdownMessage";
 import { openDocumentPreview } from "./services/documentsApi";
 import { submitFeedback } from "./services/feedbackApi";
 
@@ -449,7 +449,7 @@ export default function App() {
               </div>
               {pendingDeleteId === thread.id && (
                 <div className="mb-1 mt-1 flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-gray-200">
-                  <span>ลบแชทนี้?</span>
+                  <span>Delete this chat?</span>
                   <span className="flex gap-2">
                     <button
                       type="button"
@@ -479,13 +479,6 @@ export default function App() {
         </div>
 
         <div className="mt-4 space-y-1 border-t border-gray-700 pt-3">
-          <Link
-            to="/documents"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
-          >
-            <FolderClosed className="h-4 w-4" />
-            <span>Documents</span>
-          </Link>
           <Link
             to="/feedback"
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
@@ -586,14 +579,14 @@ export default function App() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="rounded-2xl rounded-tl-md border border-gray-200 bg-[#fafafa] px-4 py-4 text-sm leading-relaxed text-gray-800 shadow-sm sm:px-5 sm:text-base">
-                            <div className="whitespace-pre-wrap">
-                              {msg.text || (
-                                <span className="inline-flex items-center gap-2 text-gray-400">
-                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-400" />
-                                  Thinking...
-                                </span>
-                              )}
-                            </div>
+                            {msg.text ? (
+                              <MarkdownMessage text={msg.text} />
+                            ) : (
+                              <span className="inline-flex items-center gap-2 text-gray-400">
+                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-400" />
+                                Thinking...
+                              </span>
+                            )}
                           </div>
 
                           {(msg.text || (msg.citations && msg.citations.length > 0)) && (

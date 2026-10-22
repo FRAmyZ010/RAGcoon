@@ -9,6 +9,7 @@ import {
   LogOut,
   MessageSquare,
   Search,
+  Sliders,
 } from "lucide-react";
 import { clearAuth } from "../services/authApi";
 import { fetchOverview } from "../services/dashboardApi";
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/documents", label: "Documents", icon: FolderClosed },
   { to: "/feedback-admin", label: "Feedback", icon: MessageSquare },
+  { to: "/ai-config", label: "AI Configuration", icon: Sliders },
   { to: "/chat", label: "Chat Workspace", icon: MessageSquare },
 ];
 
@@ -158,7 +160,7 @@ export default function Dashboard() {
         if (!cancelled) setOverview(data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || "โหลด Dashboard ไม่สำเร็จ");
+        if (!cancelled) setError(err.message || "Could not load the dashboard");
       })
       .finally(() => {
         if (!cancelled) {
@@ -276,7 +278,7 @@ export default function Dashboard() {
           </button>
           <div className="min-w-0">
             <h1 className="text-base font-bold text-gray-900 sm:text-lg">Overview</h1>
-            <p className="text-[11px] text-gray-500 sm:text-xs">ตัวเลขจากคลังเอกสาร การค้นหา และการเข้าชม</p>
+            <p className="text-[11px] text-gray-500 sm:text-xs">Counts from the document library, searches, and visits</p>
           </div>
           <div className="ml-auto flex items-center gap-2.5">
             <div className="relative hidden sm:block">
@@ -326,7 +328,7 @@ export default function Dashboard() {
         <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           <Panel
             title="Search Activity"
-            hint={`จำนวนคำถามรายวัน ใน ${rangeLabel}`}
+            hint={`Daily questions over ${rangeLabel}`}
             action={
               <div className="flex shrink-0 rounded-lg bg-gray-100 p-0.5">
                 {RANGES.map((item) => (
@@ -353,9 +355,9 @@ export default function Dashboard() {
             )}
           </Panel>
 
-          <Panel title="Documents by years" hint="จำนวนเอกสารทั้งหมด ตามปีการศึกษา">
+          <Panel title="Documents by years" hint="Document count by academic year">
             {years.length === 0 ? (
-              <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสาร"}</p>
+              <p className="text-xs text-gray-500">{loading ? "Loading..." : "No documents yet"}</p>
             ) : (
               <div className="flex h-44 items-end gap-3 px-2">
                 {years.map((row) => (
@@ -374,10 +376,10 @@ export default function Dashboard() {
             )}
           </Panel>
 
-          <Panel title="Top Keywords" hint="คำที่พบบ่อยในเอกสารทั้งหมด">
+          <Panel title="Top Keywords" hint="Words that appear most often across all documents">
             <div className="flex max-h-52 flex-col gap-2.5 overflow-y-auto pr-1">
               {keywords.length === 0 && (
-                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มี keyword"}</p>
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "No keywords yet"}</p>
               )}
               {keywords.map((item, index) => (
                 <div key={item.keyword} className="grid grid-cols-[minmax(0,9rem)_1fr_1.5rem] items-center gap-3">
@@ -394,10 +396,10 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          <Panel title="Most Viewed Documents" hint="เอกสารที่ถูกเปิดดูมากสุดทั้งหมด">
+          <Panel title="Most Viewed Documents" hint="Documents opened most often">
             <div className="flex max-h-52 flex-col gap-2 overflow-y-auto pr-1">
               {viewed.length === 0 && (
-                <p className="text-xs text-gray-500">{loading ? "Loading..." : "ยังไม่มีเอกสารที่ถูกเปิด"}</p>
+                <p className="text-xs text-gray-500">{loading ? "Loading..." : "No documents have been opened yet"}</p>
               )}
               {viewed.map((doc, index) => (
                 <div key={doc.document_id} className="flex items-center gap-3 rounded-lg px-1 py-1.5 hover:bg-gray-50">

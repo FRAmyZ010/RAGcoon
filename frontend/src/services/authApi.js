@@ -40,7 +40,7 @@ export async function login(username, password) {
   }
 
   if (!data?.access_token) {
-    throw new Error("ไม่ได้รับ access_token จากเซิร์ฟเวอร์");
+    throw new Error("The server did not return an access token");
   }
 
   setAuthToken(data.access_token);
@@ -52,7 +52,7 @@ export async function login(username, password) {
 export async function fetchMe() {
   const token = getAuthToken();
   if (!token) {
-    throw new Error("ยังไม่ได้เข้าสู่ระบบ");
+    throw new Error("You are not signed in");
   }
 
   const res = await fetch(`${AUTH_BASE}/me`, {

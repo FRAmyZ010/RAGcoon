@@ -20,7 +20,7 @@ def get_current_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="ต้องเข้าสู่ระบบก่อน",
+            detail="Sign in required",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -31,7 +31,7 @@ def get_current_user(
         if is_token_invalid(exc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token ไม่ถูกต้องหรือหมดอายุ",
+                detail="The token is invalid or expired",
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
         raise
@@ -40,7 +40,7 @@ def get_current_user(
     if not username:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token ไม่ถูกต้อง",
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -53,7 +53,7 @@ def get_current_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="ไม่พบผู้ใช้ในระบบ",
+            detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
@@ -66,6 +66,6 @@ def get_current_administrator(
     if role_name != ROLE_ADMINISTRATOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="ต้องเป็น Administrator เท่านั้น",
+            detail="Administrator access required",
         )
     return current_user

@@ -21,16 +21,16 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file) return alert("กรุณาเลือกไฟล์ PDF ก่อนครับ");
+    if (!file) return alert("Choose a PDF first.");
 
     try {
       setLoading(true);
       await uploadDocumentApi(file, formData);
-      alert("อัปโหลดเอกสารเข้าสู่ระบบสำเร็จ!");
+      alert("Document uploaded.");
       if (onUploadSuccess) onUploadSuccess();
       onClose();
     } catch (err) {
-      alert("เกิดข้อผิดพลาดในการอัปโหลดไฟล์");
+      alert("The upload failed.");
       console.error(err);
     } finally {
       setLoading(false);
@@ -54,7 +54,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
               type="text"
               name="project_title"
               required
-              placeholder="ชื่อโครงงาน"
+              placeholder="Project title"
               className="w-full p-2 border rounded-md"
               onChange={handleChange}
             />
@@ -76,7 +76,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
               <input
                 type="text"
                 name="advisor"
-                placeholder="ชื่ออาจารย์ที่ปรึกษา"
+                placeholder="Advisor name"
                 className="w-full p-2 border rounded-md"
                 onChange={handleChange}
               />
@@ -88,7 +88,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
             <input
               type="text"
               name="authors"
-              placeholder="ชื่อผู้จัดทำ"
+              placeholder="Author names"
               className="w-full p-2 border rounded-md"
               onChange={handleChange}
             />

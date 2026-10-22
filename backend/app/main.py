@@ -51,7 +51,15 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 def startup_prewarm():
-    """Warm retrieval models in the background. Does not change the chat path."""
+    """Restore saved AI settings, then warm retrieval models."""
+    from app.core.database import SessionLocal
+    from app.services.ai_config_service import hydrate_runtime
+
+    db = SessionLocal()
+    try:
+        hydrate_runtime(db)
+    finally:
+        db.close()
     from app.rag.retrieval.prewarm import start_background_prewarm
     start_background_prewarm()
 

@@ -209,11 +209,14 @@ def search_with_details(
             enable_boilerplate_filter = rag_cfg.enable_boilerplate_filter
             enable_fast_path = rag_cfg.enable_fast_path
         else:
-            top_k, top_n = _get_routing_params(intent)
-            enable_hybrid = True
+            from .intent_config import get_intent_config
+            intent_cfg = get_intent_config(intent)
+            top_k = intent_cfg.top_k
+            top_n = intent_cfg.rerank_top_n
+            enable_hybrid = intent_cfg.enable_hybrid
             enable_reranker = True
-            enable_boilerplate_filter = True
-            enable_fast_path = True
+            enable_boilerplate_filter = intent_cfg.enable_boilerplate_filter
+            enable_fast_path = intent_cfg.enable_fast_path
         print("NORMALIZED / CLEAN QUERY:", clean_query)
         print("INTENT:", intent)
         print("FILTERS:", filters)

@@ -4,7 +4,7 @@ import { FolderText, Send, Bot, User, Menu, X } from "lucide-react";
 
 export default function Chat() {
   const [messages, setMessages] = useState([
-    { id: 1, sender: "bot", text: "สวัสดีครับ มีคำถามเกี่ยวกับเอกสารโครงงานชิ้นไหน สอบถามได้เลยครับ" }
+    { id: 1, sender: "bot", text: "Ask me about a senior project document." }
   ]);
   const [inputQuery, setInputQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,7 +21,7 @@ export default function Chat() {
   return (
     <div className="flex h-screen bg-gray-50 font-mono text-[#353535] overflow-hidden">
       
-      {/* 🔴 Responsive Sidebar Drawer (ซ่อนแบบ Overlay บนมือถือ / โชว์ปกติบนจอใหญ่ lg:) */}
+      {/* Sidebar drawer: overlay on small screens, static from lg */}
       <div 
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -36,7 +36,7 @@ export default function Chat() {
           </div>
           <div className="flex-1 overflow-y-auto space-y-2">
             <div className="p-2.5 bg-blue-50 text-[#1D61E7] rounded-lg text-xs font-bold truncate cursor-pointer">
-              💬 โครงงานระบบอัตโนมัติ 2024
+              Automation system project 2024
             </div>
           </div>
         </div>
@@ -48,7 +48,7 @@ export default function Chat() {
         {/* 🔴 Top Header Bar */}
         <div className="bg-white border-b border-gray-200 p-3 sm:p-4 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-2">
-            {/* ปุ่มเปิด Sidebar บนมือถือ */}
+            {/* Open the sidebar on small screens */}
             <button 
               onClick={() => setSidebarOpen(true)} 
               className="p-1.5 text-gray-600 lg:hidden hover:bg-gray-100 rounded-lg"
@@ -58,11 +58,11 @@ export default function Chat() {
             <h1 className="font-bold text-xs sm:text-sm text-gray-800 truncate">RAGcoon Query Assistant</h1>
           </div>
 
-          {/* 🔵 ปุ่มลิงก์สลับไปหน้า Documents ( Responsive: ซ่อนคำว่า Documents บนมือถือ ) */}
+          {/* Documents link. The label is hidden on small screens. */}
           <Link
             to="/documents"
             className="px-3 py-1.5 sm:px-4 sm:py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded-lg shadow-sm flex items-center gap-2 transition text-xs font-bold"
-            title="ไปที่หน้า Documents"
+            title="Open Documents"
           >
             <FolderText className="h-4 w-4 text-[#800000]" />
             <span className="hidden sm:inline">Documents</span>
@@ -97,7 +97,7 @@ export default function Chat() {
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="พิมพ์คำถามเกี่ยวกับโครงงานที่นี่..."
+              placeholder="Ask about a senior project..."
               className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:border-[#1D61E7]"
             />
             <button type="submit" className="p-2.5 sm:p-3 bg-[#1D61E7] hover:bg-blue-700 text-white rounded-xl transition shrink-0">
