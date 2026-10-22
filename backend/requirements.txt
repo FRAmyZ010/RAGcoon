@@ -16,6 +16,7 @@ qdrant-client
 python-multipart
 sqlalchemy
 psycopg2-binary
+psycopg[binary]
 sqlmodel
 requests
 rapidfuzz

@@ -40,6 +40,18 @@ function formatSeconds(value) {
   return n.toFixed(2);
 }
 
+/** Works on LAN http://IP hosts where crypto.randomUUID() is unavailable. */
+function createWorkspaceId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `ws-${crypto.randomUUID().slice(0, 12)}`;
+    }
+  } catch {
+    /* insecure context (http://LAN-IP) */
+  }
+  return `ws-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
@@ -280,7 +292,7 @@ export default function App() {
     const userQuery = messages[botIndex - 1].text;
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
-      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
     }
 
@@ -295,25 +307,24 @@ export default function App() {
     if (!input.trim() || loading) return;
 
     const userQuery = input.trim();
-    setInput("");
-
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
-      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
     }
 
+    setInput("");
     await streamQuery(userQuery, workspaceId, { priorMessages: messages });
   };
 
   const handleSuggestion = async (text) => {
     if (loading) return;
-    setInput("");
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
-      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
     }
+    setInput("");
     await streamQuery(text, workspaceId, { priorMessages: messages });
   };
 
