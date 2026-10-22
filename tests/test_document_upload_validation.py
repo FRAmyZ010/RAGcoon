@@ -2,9 +2,11 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
+from app.schemas.document import DocumentResponse, ProcessingStatus
 from app.services.document_service import (
-    MAX_UPLOAD_BYTES,
+    MAX_TOTAL_UPLOAD_BYTES,
     DocumentUploadError,
     DuplicateDocumentError,
     _assert_pdf_file,
@@ -42,8 +44,31 @@ class UploadValidationTests(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_max_upload_constant(self):
-        self.assertEqual(MAX_UPLOAD_BYTES, 25 * 1024 * 1024)
+    def test_reject_file_over_total_limit(self):
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(b"%PDF-1.4\n")
+            tmp.write(b"x" * (MAX_TOTAL_UPLOAD_BYTES + 1))
+            path = tmp.name
+        try:
+            with self.assertRaises(DocumentUploadError) as ctx:
+                _assert_pdf_file(path, "huge.pdf")
+            self.assertIn("เกิน", ctx.exception.message)
+        finally:
+            os.remove(path)
+
+    def test_max_total_upload_constant(self):
+        self.assertEqual(MAX_TOTAL_UPLOAD_BYTES, 100 * 1024 * 1024)
+
+    def test_legacy_failed_row_gets_a_reason(self):
+        row = DocumentResponse(
+            id=1,
+            filename="old.pdf",
+            file_path="storage/old.pdf",
+            status=ProcessingStatus.FAILED,
+            status_message=None,
+            upload_date=datetime.now(timezone.utc),
+        )
+        self.assertIn("ไม่ทราบสาเหตุ", row.status_message)
 
     def test_duplicate_error_is_conflict(self):
         err = DuplicateDocumentError("Demo Project")

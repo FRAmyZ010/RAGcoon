@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
+import os
 from app.api.deps import get_current_administrator
 from app.core.database import get_db
 from app.models.user import User
@@ -12,27 +13,30 @@ from app.schemas.document import (
     BatchUploadSummary,
 )
 from app.services.document_service import (
-    process_document_upload_auto,
+    accept_document_upload,
+    ingest_document_task,
     get_all_documents,
     get_document_by_id,
     delete_document_by_id,
     resolve_document_file_path,
+    record_document_view,
     DocumentUploadError,
-    MAX_BATCH_UPLOAD_FILES,
+    MAX_TOTAL_UPLOAD_BYTES,
+    MAX_TOTAL_UPLOAD_MB,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_administrator),
 ):
     """
-    Endpoint สำหรับอัปโหลดไฟล์ PDF (Automated Flow)
-    ผู้ใช้ส่งเพียงไฟล์ PDF เข้ามา ระบบจะทำการสกัด Metadata (Title, Author, Advisor, Year)
-    พร้อมทำ Chunking และ Embed ลง Qdrant ให้อัตโนมัติ 100%
+    Accept a PDF quickly (PENDING), then ingest asynchronously.
+    Status transitions: PENDING → PROCESSING → COMPLETED | FAILED.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -41,18 +45,21 @@ async def upload_document(
         )
 
     try:
-        return await run_in_threadpool(
-            process_document_upload_auto,
+        document = await run_in_threadpool(
+            accept_document_upload,
             db=db,
-            file=file
+            file=file,
         )
     except DocumentUploadError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Document Auto-Ingestion Error: {str(e)}"
+            detail=f"Document Accept Error: {str(e)}"
         )
+
+    background_tasks.add_task(ingest_document_task, document.id)
+    return document
 
 
 @router.post(
@@ -61,29 +68,44 @@ async def upload_document(
     status_code=status.HTTP_200_OK,
 )
 async def upload_documents_batch(
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_administrator),
 ):
     """
-    อัปโหลดหลาย PDF ในครั้งเดียว (สูงสุด MAX_BATCH_UPLOAD_FILES)
-    Partial success: ไฟล์ที่ผ่านถูกบันทึก; ไฟล์ที่พังคืน error รายตัว
+    Accept multiple PDFs in one request (total size ≤ MAX_TOTAL_UPLOAD_BYTES).
+    Each accepted file is queued for async ingest. No max file-count cap.
+    Partial success: accepted files return PENDING rows; rejected files return errors.
     """
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="ต้องมีไฟล์อย่างน้อย 1 ไฟล์",
         )
-    if len(files) > MAX_BATCH_UPLOAD_FILES:
+
+    total_bytes = 0
+    for file in files:
+        # Best-effort size probe; full validation still runs per file on disk.
+        try:
+            pos = file.file.tell()
+            file.file.seek(0, os.SEEK_END)
+            total_bytes += file.file.tell()
+            file.file.seek(pos)
+        except Exception:
+            pass
+
+    if total_bytes > MAX_TOTAL_UPLOAD_BYTES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"อัปโหลดได้สูงสุด {MAX_BATCH_UPLOAD_FILES} ไฟล์ต่อครั้ง "
-                f"(ส่งมา {len(files)} ไฟล์)"
+                f"ขนาดไฟล์รวมเกิน {MAX_TOTAL_UPLOAD_MB}MB "
+                f"(ขนาดปัจจุบัน {total_bytes / (1024 * 1024):.1f}MB)"
             ),
         )
 
     results: list[BatchUploadItemResult] = []
+    accepted_ids: list[int] = []
 
     for file in files:
         filename = file.filename or "uploaded.pdf"
@@ -101,10 +123,11 @@ async def upload_documents_batch(
 
         try:
             document = await run_in_threadpool(
-                process_document_upload_auto,
+                accept_document_upload,
                 db=db,
                 file=file,
             )
+            accepted_ids.append(document.id)
             results.append(
                 BatchUploadItemResult(
                     filename=filename,
@@ -129,10 +152,13 @@ async def upload_documents_batch(
                 BatchUploadItemResult(
                     filename=filename,
                     ok=False,
-                    error=f"Document Auto-Ingestion Error: {str(e)}",
+                    error=f"Document Accept Error: {str(e)}",
                     status_code=500,
                 )
             )
+
+    for document_id in accepted_ids:
+        background_tasks.add_task(ingest_document_task, document_id)
 
     succeeded = sum(1 for item in results if item.ok)
     failed = len(results) - succeeded
@@ -163,6 +189,8 @@ def download_document_file(
 ):
     """Serve the original PDF for browser preview / download (Public)."""
     file_path, filename = resolve_document_file_path(db=db, document_id=document_id)
+    if file_path:
+        record_document_view(db=db, document_id=document_id)
     if not file_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -174,6 +202,7 @@ def download_document_file(
         media_type="application/pdf",
         filename=filename,
         content_disposition_type="attachment" if download else "inline",
+        headers={"Cache-Control": "no-store"},
     )
 
 @router.get("/{document_id}", response_model=DocumentResponse)

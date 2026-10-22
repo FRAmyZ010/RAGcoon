@@ -1,12 +1,28 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
 
 class ChatRequest(BaseModel):
     workspace_id: str | None = Field(default=None, description="ID ของ Workspace/Session")
     query_text: str = Field(..., description="คำถามภาษาธรรมชาติจากผู้ใช้")
-    parent_query_id: int | None = Field(default=None, description="ID ของคำถามก่อนหน้าเพื่อดึงบริบทแชท")
-    llm_provider: str | None = Field(default=None, description="ผู้ให้บริการ LLM (ollama, gemini, openai)")
-    llm_model: str | None = Field(default=None, description="ชื่อโมเดล LLM เช่น gemma3:4b, qwen3:4b, gemini-3.5-flash, gpt-4o-mini")
+    messages: list[ChatMessage] = Field(
+        default_factory=list,
+        description="Prior turns from the client. Capped at the latest 3 turns.",
+    )
+    parent_query_id: int | None = Field(
+        default=None,
+        description="Kept for database compatibility. The frontend does not send this.",
+    )
+
+    @field_validator("messages")
+    @classmethod
+    def cap_recent_turns(cls, value: list[ChatMessage]) -> list[ChatMessage]:
+        return value[-6:]
 
 class TimingMetrics(BaseModel):
     retrieval_seconds: float = 0.0

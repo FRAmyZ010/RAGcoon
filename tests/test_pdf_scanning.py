@@ -32,6 +32,16 @@ def test_scan_pdf_document_keeps_page_numbers_aligned_with_scan(monkeypatch, tmp
 
     monkeypatch.setattr(pdf_scanning.pdfplumber, "open", lambda path: FakePdf(fake_pages))
     monkeypatch.setattr(pdf_scanning, "extract_project_metadata", lambda text: {})
+    monkeypatch.setattr(
+        pdf_scanning,
+        "extract_project_enrichment",
+        lambda text, project_title=None, timeout=(3, 30): {
+            "summary": None,
+            "project_type": [],
+            "key_technologies": [],
+            "target_problem": None,
+        },
+    )
 
     pages = pdf_scanning.scan_pdf_document(str(pdf_path))
 

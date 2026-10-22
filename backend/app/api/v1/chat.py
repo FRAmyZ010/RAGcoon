@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from fastapi.concurrency import run_in_threadpool
@@ -20,6 +20,21 @@ from app.services.rag_services import (
 
 router = APIRouter(prefix="/chat", tags=["Chat & RAG Engine"])
 
+_recent_sends: dict[str, list[float]] = {}
+
+
+def _too_many_sends(client_key: str, limit: int = 8, window_seconds: float = 10) -> bool:
+    import time
+
+    now = time.time()
+    recent = [stamp for stamp in _recent_sends.get(client_key, []) if now - stamp < window_seconds]
+    if len(recent) >= limit:
+        _recent_sends[client_key] = recent
+        return True
+    recent.append(now)
+    _recent_sends[client_key] = recent
+    return False
+
 @router.post("/query", response_model=ChatResponse)
 async def query_rag(
     request: ChatRequest,
@@ -35,8 +50,7 @@ async def query_rag(
             query_text=request.query_text,
             workspace_id=request.workspace_id,
             parent_query_id=request.parent_query_id,
-            llm_provider=request.llm_provider,
-            llm_model=request.llm_model,
+            messages=request.messages,
         )
     except Exception as e:
         raise HTTPException(
@@ -47,26 +61,29 @@ async def query_rag(
 @router.post("/query-stream")
 def query_rag_stream(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
     SSE Endpoint สำหรับสตรีมมิ่งคำตอบแบบ Real-time (Server-Sent Events)
     """
+    client_key = http_request.client.host if http_request.client else "unknown"
+    if _too_many_sends(client_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="ส่งข้อความถี่เกินไป รอสักครู่แล้วลองใหม่",
+        )
     return StreamingResponse(
         process_rag_stream(
             db=db,
             query_text=request.query_text,
             workspace_id=request.workspace_id,
             parent_query_id=request.parent_query_id,
-            llm_provider=request.llm_provider,
-            llm_model=request.llm_model,
+            messages=request.messages,
+            background_tasks=background_tasks,
         ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
+        media_type="text/event-stream"
     )
 
 @router.get("/workspaces", response_model=list[WorkspaceSummaryResponse])
@@ -107,30 +124,22 @@ def read_chat_history(
 
 
 @router.post("/compare")
-async def compare_rag_pipelines(
-    request: ChatRequest,
-):
-    """
-    Endpoint สำหรับเปรียบเทียบผลลัพธ์ระหว่าง Legacy Pipeline (Rule-based) กับ Modern Pipeline (True Hybrid RAG) แบบ Real-time
-    """
+async def compare_rag_pipelines(request: ChatRequest):
+    """Compare the legacy pipeline with the current hybrid pipeline for one query."""
     from app.rag.evaluation.compare_pipelines import compare_query
     return await run_in_threadpool(compare_query, query=request.query_text)
 
 
 @router.get("/benchmark-suite")
 async def run_benchmark_endpoint():
-    """
-    Endpoint สำหรับรันชุดทดสอบ 6 Scenarios เปรียบเทียบ Legacy vs Modern และสรุปรายงานผล
-    """
+    """Run the legacy-vs-modern benchmark scenarios."""
     from app.rag.evaluation.compare_pipelines import run_benchmark_suite
     return await run_in_threadpool(run_benchmark_suite)
 
 
 @router.get("/llm-profiles")
 def get_available_llm_profiles():
-    """
-    Endpoint สำหรับดึงรายชื่อโมเดล LLM ที่ระบบรองรับ พร้อมระบุตัวที่กำลัง Active อยู่
-    """
+    """List LLM profiles the benchmark tools can switch between."""
     from app.rag.retrieval.llm_provider import AVAILABLE_LLM_PROFILES, get_active_llm
     active_prov, active_mod = get_active_llm()
     return {
@@ -142,14 +151,12 @@ def get_available_llm_profiles():
 
 @router.post("/set-active-llm")
 def set_active_llm_endpoint(provider: str, model: str | None = None):
-    """
-    Endpoint สำหรับสลับโมเดล LLM ที่ใช้งานอยู่ในระบบแบบ Dynamic Runtime
-    """
-    from app.rag.retrieval.llm_provider import set_active_llm, get_active_llm
+    """Switch the benchmark LLM selection at runtime."""
+    from app.rag.retrieval.llm_provider import get_active_llm, set_active_llm
     set_active_llm(provider=provider, model=model)
     active_prov, active_mod = get_active_llm()
     return {
         "message": f"Successfully switched active LLM to {active_prov} ({active_mod})",
         "active_provider": active_prov,
         "active_model": active_mod,
-    }
+    }

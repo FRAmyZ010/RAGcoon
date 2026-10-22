@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Check,
@@ -8,15 +8,25 @@ import {
   FileText,
   FolderClosed,
   Menu,
+  MessageSquare,
   MessageSquarePlus,
   PanelLeftClose,
+  RefreshCw,
   Search,
   SendHorizontal,
   ThumbsDown,
   ThumbsUp,
   X,
 } from "lucide-react";
+import {
+  loadChatThreads,
+  removeChatThread,
+  threadTitleFromMessages,
+  toApiMessages,
+  upsertChatThread,
+} from "./services/chatHistory";
 import { openDocumentPreview } from "./services/documentsApi";
+import { submitFeedback } from "./services/feedbackApi";
 
 const SUGGESTIONS = [
   "What senior projects used IoT or Bluetooth?",
@@ -24,24 +34,58 @@ const SUGGESTIONS = [
   "Summarize projects about web applications",
 ];
 
+function formatSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toFixed(2);
+}
+
+/** Works on LAN http://IP hosts where crypto.randomUUID() is unavailable. */
+function createWorkspaceId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `ws-${crypto.randomUUID().slice(0, 12)}`;
+    }
+  } catch {
+    /* insecure context (http://LAN-IP) */
+  }
+  return `ws-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [workspaces, setWorkspaces] = useState([]);
+  const [threads, setThreads] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
   const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New chat");
   const [showCitationsIndex, setShowCitationsIndex] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [feedback, setFeedback] = useState({});
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
 
+  const resizeComposer = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxPx = 160; // ~ max-h-40
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  };
+
   useEffect(() => {
-    fetchWorkspaces();
+    const stored = loadChatThreads();
+    setThreads(stored);
+    const latest = stored[0];
+    if (latest) {
+      setActiveWorkspaceId(latest.id);
+      setActiveWorkspaceTitle(latest.title);
+      setMessages(latest.messages);
+    }
     if (window.innerWidth >= 1024) {
       setSidebarOpen(true);
     }
@@ -51,74 +95,82 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const fetchWorkspaces = async () => {
-    try {
-      const res = await fetch("/api/v1/chat/workspaces");
-      if (res.ok) {
-        setWorkspaces(await res.json());
-      }
-    } catch (err) {
-      console.error("Failed to load workspaces:", err);
-    }
-  };
+  useEffect(() => {
+    resizeComposer();
+  }, [input]);
 
-  const handleNewWorkspace = () => {
-    const newWorkspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
-    setActiveWorkspaceId(newWorkspaceId);
+  const openDraftChat = () => {
+    setActiveWorkspaceId(null);
     setActiveWorkspaceTitle("New chat");
     setMessages([]);
     setShowCitationsIndex(null);
     setFeedback({});
+    setPendingDeleteId(null);
     inputRef.current?.focus();
   };
 
-  const handleSelectWorkspace = async (ws) => {
-    setActiveWorkspaceId(ws.workspace_id);
-    setActiveWorkspaceTitle(ws.title);
-    setLoading(true);
+  const handleSelectThread = (thread) => {
+    setActiveWorkspaceId(thread.id);
+    setActiveWorkspaceTitle(thread.title);
+    setMessages(thread.messages);
     setShowCitationsIndex(null);
-
+    setFeedback({});
+    setPendingDeleteId(null);
     if (window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
+  };
 
-    try {
-      const res = await fetch(`/api/v1/chat/workspaces/${ws.workspace_id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const formattedMessages = [];
-
-        data.queries.forEach((q) => {
-          formattedMessages.push({ role: "user", text: q.query_text });
-          formattedMessages.push({
-            role: "bot",
-            text: q.response_text,
-            citations: q.retrieved_docs?.citations || [],
-            meta: q.retrieved_docs?.timing
-              ? `Total ${q.retrieved_docs.timing.total_seconds}s`
-              : "",
-          });
-        });
-
-        setMessages(formattedMessages);
-      }
-    } catch (err) {
-      console.error("Failed to load workspace detail:", err);
-    } finally {
-      setLoading(false);
+  const handleDeleteThread = (threadId) => {
+    setThreads((prev) => removeChatThread(prev, threadId));
+    setPendingDeleteId(null);
+    if (activeWorkspaceId === threadId) {
+      openDraftChat();
     }
   };
 
-  const streamQuery = async (userQuery, workspaceId = activeWorkspaceId) => {
+  const persistSuccessfulThread = (workspaceId, nextMessages) => {
+    const savedBot = nextMessages.some(
+      (message) => message.role === "bot" && message.text.trim() && message.meta !== "Error"
+    );
+    if (!workspaceId || !savedBot) return;
+
+    const thread = {
+      id: workspaceId,
+      title: threadTitleFromMessages(nextMessages),
+      updatedAt: Date.now(),
+      messages: nextMessages,
+    };
+    setThreads((prev) => upsertChatThread(prev, thread));
+    setActiveWorkspaceTitle(thread.title);
+  };
+
+  const streamQuery = async (userQuery, workspaceId = activeWorkspaceId, options = {}) => {
+    const { replaceBotIndex = null, priorMessages = messages } = options;
     setLoading(true);
 
-    const botMsgIndex = messages.length + 1;
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: userQuery },
-      { role: "bot", text: "", citations: [], meta: "Searching..." },
-    ]);
+    let snapshot;
+    let botMsgIndex;
+    if (replaceBotIndex != null) {
+      botMsgIndex = replaceBotIndex;
+      snapshot = priorMessages.map((message, index) =>
+        index === botMsgIndex
+          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null }
+          : message
+      );
+    } else {
+      botMsgIndex = priorMessages.length + 1;
+      snapshot = [
+        ...priorMessages,
+        { role: "user", text: userQuery },
+        { role: "bot", text: "", citations: [], meta: "Searching..." },
+      ];
+    }
+    setMessages(snapshot);
 
+    let saved = false;
+    const historyForApi =
+      replaceBotIndex != null ? priorMessages.slice(0, Math.max(replaceBotIndex - 1, 0)) : priorMessages;
     try {
       const response = await fetch("/api/v1/chat/query-stream", {
         method: "POST",
@@ -126,105 +178,128 @@ export default function App() {
         body: JSON.stringify({
           query_text: userQuery,
           workspace_id: workspaceId,
+          messages: toApiMessages(historyForApi),
         }),
       });
 
+      if (!response.ok) {
+        let message = `Chat stream failed (${response.status})`;
+        try {
+          const data = await response.json();
+          if (typeof data?.detail === "string") message = data.detail;
+        } catch {
+          /* keep status message */
+        }
+        throw new Error(message);
+      }
       if (!response.body) throw new Error("ReadableStream not supported");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let currentText = "";
-      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        // Keep the last potentially incomplete chunk in the buffer
-        buffer = parts.pop() || "";
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n\n");
 
-        for (const part of parts) {
-          if (!part.trim()) continue;
+        for (const line of lines) {
+          if (!line.trim()) continue;
 
-          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+          const dataLine = line.split("\n").find((l) => l.startsWith("data: "));
           if (!dataLine) continue;
 
           const jsonString = dataLine.replace(/^data:\s*/, "");
           try {
             const data = JSON.parse(jsonString);
 
-            if (data.type === "init") {
-              if (data.workspace_id && !workspaceId) {
-                setActiveWorkspaceId(data.workspace_id);
-              }
-            } else if (data.type === "retrieval_status") {
-              const count = data.retrieved_count || (data.citations ? data.citations.length : 0);
-              const rSec = data.timing?.retrieval_seconds ? Number(data.timing.retrieval_seconds).toFixed(2) : "0.5";
-              setMessages((prev) => {
-                if (prev.length === 0) return prev;
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  citations: data.citations || [],
-                  meta: `Found ${count} documents (${rSec}s) · Generating answer...`,
-                };
-                return updated;
-              });
-            } else if (data.type === "answer_chunk") {
+            if (data.type === "answer_chunk") {
               currentText += data.content;
               if (data.workspace_id && !workspaceId) {
+                workspaceId = data.workspace_id;
                 setActiveWorkspaceId(data.workspace_id);
               }
 
-              setMessages((prev) => {
-                if (prev.length === 0) return prev;
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  text: currentText,
-                  meta: "Generating...",
-                };
-                return updated;
-              });
-            } else if (data.type === "metadata") {
-              setMessages((prev) => {
-                if (prev.length === 0) return prev;
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                const tTotal = data.timing?.total_seconds ? Number(data.timing.total_seconds).toFixed(2) : "0";
-                const tRetr = data.timing?.retrieval_seconds ? Number(data.timing.retrieval_seconds).toFixed(2) : "0";
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  citations: data.citations || updated[lastIdx]?.citations || [],
-                  meta: `Total ${tTotal}s · Retrieval ${tRetr}s`,
-                };
-                return updated;
-              });
-              fetchWorkspaces();
+              snapshot = snapshot.map((message, index) =>
+                index === botMsgIndex
+                  ? {
+                      ...message,
+                      text: currentText,
+                      meta: "Generating...",
+                      queryId: data.query_id ?? message.queryId ?? null,
+                    }
+                  : message
+              );
+              setMessages(snapshot);
+            }
+
+            if (data.type === "metadata") {
+              snapshot = snapshot.map((message, index) =>
+                index === botMsgIndex
+                  ? {
+                      ...message,
+                      citations: data.citations || [],
+                      queryId: data.query_id ?? message.queryId ?? null,
+                      model: data.model || message?.model || null,
+                      meta: data.timing
+                        ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
+                        : "Completed",
+                    }
+                  : message
+              );
+              setMessages(snapshot);
+              saved = true;
             }
           } catch (err) {
             console.error("JSON Stream Parse Error:", err);
           }
         }
       }
+      if (saved || (currentText.trim() && response.ok)) {
+        persistSuccessfulThread(workspaceId, snapshot);
+      }
     } catch (error) {
       console.error("Streaming error:", error);
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[botMsgIndex] = {
-          ...updated[botMsgIndex],
-          text: "Failed to connect to the RAG engine. Please try again.",
-          meta: "Error",
-        };
-        return updated;
-      });
+      snapshot = snapshot.map((message, index) =>
+        index === botMsgIndex
+          ? {
+              ...message,
+              text: error?.message || "Failed to connect to the RAG engine. Please try again.",
+              meta: "Error",
+            }
+          : message
+      );
+      setMessages(snapshot);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRegenerate = async () => {
+    if (loading || messages.length < 2) return;
+
+    let botIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "bot") {
+        botIndex = i;
+        break;
+      }
+    }
+    if (botIndex < 1 || messages[botIndex - 1]?.role !== "user") return;
+
+    const userQuery = messages[botIndex - 1].text;
+    let workspaceId = activeWorkspaceId;
+    if (!workspaceId) {
+      workspaceId = createWorkspaceId();
+      setActiveWorkspaceId(workspaceId);
+    }
+
+    await streamQuery(userQuery, workspaceId, {
+      replaceBotIndex: botIndex,
+      priorMessages: messages,
+    });
   };
 
   const handleSend = async (e) => {
@@ -232,28 +307,42 @@ export default function App() {
     if (!input.trim() || loading) return;
 
     const userQuery = input.trim();
-    setInput("");
-
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
-      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
-      setActiveWorkspaceTitle("New chat");
     }
 
-    await streamQuery(userQuery, workspaceId);
+    setInput("");
+    await streamQuery(userQuery, workspaceId, { priorMessages: messages });
   };
 
   const handleSuggestion = async (text) => {
     if (loading) return;
-    setInput("");
     let workspaceId = activeWorkspaceId;
     if (!workspaceId) {
-      workspaceId = `ws-${crypto.randomUUID().slice(0, 12)}`;
+      workspaceId = createWorkspaceId();
       setActiveWorkspaceId(workspaceId);
-      setActiveWorkspaceTitle("New chat");
     }
-    await streamQuery(text, workspaceId);
+    setInput("");
+    await streamQuery(text, workspaceId, { priorMessages: messages });
+  };
+
+  const rateAnswer = async (index, kind) => {
+    setFeedback({ ...feedback, [index]: kind });
+    const queryId = messages[index]?.queryId;
+    if (!queryId) return;
+    try {
+      await submitFeedback({
+        name: "Anonymous",
+        rating: kind === "like" ? 5 : 1,
+        feedbackType: "Others",
+        comment: kind,
+        queryId,
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleCopy = async (text, idx) => {
@@ -266,11 +355,19 @@ export default function App() {
     }
   };
 
-  const filteredWorkspaces = workspaces.filter((item) =>
+  const filteredThreads = threads.filter((item) =>
     item.title.toLowerCase().includes(search.toLowerCase())
   );
 
   const showEmptyState = messages.length === 0 && !loading;
+
+  let lastBotIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "bot") {
+      lastBotIndex = i;
+      break;
+    }
+  }
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-base text-gray-800 sm:text-lg">
@@ -303,7 +400,7 @@ export default function App() {
         </div>
 
         <button
-          onClick={handleNewWorkspace}
+          onClick={openDraftChat}
           className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 bg-white/10 px-3 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-white/20 hover:text-white md:text-base"
         >
           <MessageSquarePlus className="h-4 w-4" />
@@ -324,22 +421,57 @@ export default function App() {
           <div className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-gray-400">
             Recents
           </div>
-          {filteredWorkspaces.map((ws) => (
-            <button
-              key={ws.workspace_id}
-              onClick={() => handleSelectWorkspace(ws)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition md:text-base ${
-                activeWorkspaceId === ws.workspace_id
-                  ? "bg-white/20 font-semibold text-white"
-                  : "text-gray-300 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-              <span className="truncate">{ws.title}</span>
-            </button>
+          {filteredThreads.map((thread) => (
+            <div key={thread.id}>
+              <div
+                className={`flex w-full items-center gap-1 rounded-lg pr-1 text-sm transition md:text-base ${
+                  activeWorkspaceId === thread.id
+                    ? "bg-white/20 font-semibold text-white"
+                    : "text-gray-300 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSelectThread(thread)}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                  <span className="truncate">{thread.title}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingDeleteId(thread.id)}
+                  className="shrink-0 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-white"
+                  aria-label={`Delete ${thread.title}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {pendingDeleteId === thread.id && (
+                <div className="mb-1 mt-1 flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-gray-200">
+                  <span>ลบแชทนี้?</span>
+                  <span className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteId(null)}
+                      className="rounded px-2 py-1 hover:bg-white/10"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteThread(thread.id)}
+                      className="rounded px-2 py-1 text-red-300 hover:bg-white/10"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              )}
+            </div>
           ))}
 
-          {filteredWorkspaces.length === 0 && (
+          {filteredThreads.length === 0 && (
             <div className="px-2 py-6 text-center text-sm text-gray-500">
               No chats yet. Start a new conversation.
             </div>
@@ -353,6 +485,13 @@ export default function App() {
           >
             <FolderClosed className="h-4 w-4" />
             <span>Documents</span>
+          </Link>
+          <Link
+            to="/feedback"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span>Feedback</span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -384,11 +523,20 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-600">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
-              G
-            </span>
-            <span className="hidden sm:inline">Guest</span>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/feedback"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span>Feedback</span>
+            </Link>
+            <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2.5 py-1 text-sm font-semibold text-gray-600">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#800000] text-[10px] font-bold text-white">
+                G
+              </span>
+              <span className="hidden sm:inline">Guest</span>
+            </div>
           </div>
         </header>
 
@@ -453,21 +601,28 @@ export default function App() {
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleCopy(msg.text, index)}
-                                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-gray-100 hover:text-gray-700"
+                                  className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
                                   title="Copy message"
+                                  aria-label="Copy message"
                                 >
                                   {copiedIndex === index ? (
-                                    <>
-                                      <Check className="h-3.5 w-3.5 text-green-600" />
-                                      Copied
-                                    </>
+                                    <Check className="h-3.5 w-3.5 text-green-600" />
                                   ) : (
-                                    <>
-                                      <Copy className="h-3.5 w-3.5" />
-                                      Copy
-                                    </>
+                                    <Copy className="h-3.5 w-3.5" />
                                   )}
                                 </button>
+
+                                {index === lastBotIndex && !loading && (
+                                  <button
+                                    type="button"
+                                    onClick={handleRegenerate}
+                                    className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
+                                    title="Regenerate answer"
+                                    aria-label="Regenerate answer"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
 
                                 {msg.citations && msg.citations.length > 0 && (
                                   <button
@@ -477,6 +632,7 @@ export default function App() {
                                       )
                                     }
                                     className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-gray-100 hover:text-gray-700"
+                                    title={`Sources (${msg.citations.length})`}
                                   >
                                     <FileText className="h-3.5 w-3.5" />
                                     Sources ({msg.citations.length})
@@ -484,7 +640,7 @@ export default function App() {
                                 )}
 
                                 <button
-                                  onClick={() => setFeedback({ ...feedback, [index]: "like" })}
+                                  onClick={() => rateAnswer(index, "like")}
                                   className={`rounded-md p-1.5 hover:bg-gray-100 ${
                                     feedback[index] === "like" ? "text-green-600" : ""
                                   }`}
@@ -493,7 +649,7 @@ export default function App() {
                                   <ThumbsUp className="h-3.5 w-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => setFeedback({ ...feedback, [index]: "dislike" })}
+                                  onClick={() => rateAnswer(index, "dislike")}
                                   className={`rounded-md p-1.5 hover:bg-gray-100 ${
                                     feedback[index] === "dislike" ? "text-red-600" : ""
                                   }`}
@@ -502,9 +658,16 @@ export default function App() {
                                   <ThumbsDown className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              {msg.meta && (
-                                <span className="text-xs text-gray-400">{msg.meta}</span>
-                              )}
+                              <div className="flex flex-col items-end gap-0.5 text-right">
+                                {msg.model && (
+                                  <span className="text-xs text-gray-400">
+                                    Model: {msg.model}
+                                  </span>
+                                )}
+                                {msg.meta && (
+                                  <span className="text-xs text-gray-400">{msg.meta}</span>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -591,19 +754,28 @@ export default function App() {
             onSubmit={handleSend}
             className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm transition focus-within:border-gray-400 focus-within:bg-white"
           >
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!loading && input.trim()) {
+                    handleSend(e);
+                  }
+                }
+              }}
               disabled={loading}
               placeholder="Ask about a senior project..."
-              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-gray-800 outline-none placeholder:text-gray-400 sm:text-base"
+              className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-6 text-gray-800 outline-none placeholder:text-gray-400 sm:text-base"
+              style={{ height: "2.5rem" }}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
+              className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
                 loading || !input.trim()
                   ? "cursor-not-allowed bg-gray-200 text-gray-400"
                   : "bg-[#2d2d2d] text-white hover:bg-black active:scale-95"
