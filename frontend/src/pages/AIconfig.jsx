@@ -5,12 +5,13 @@ import { clearAuth } from "../services/authApi";
 import {
   applyPreset,
   fetchIntents,
+  runBenchmark,
   fetchLlms,
   fetchRag,
   pingLlm,
   resetIntents,
   saveIntent,
-  setActiveLlm,
+  setActiveLlm as activateLlm,
 } from "../services/aiConfigApi";
 
 const TABS = ["Intent Tuning", "RAG Presets", "Multi-LLM", "Benchmark"];
@@ -66,6 +67,9 @@ export default function AIconfig() {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [baselineName, setBaselineName] = useState("precision_hybrid");
+  const [candidateName, setCandidateName] = useState("fast_mode");
+  const [benchmark, setBenchmark] = useState(null);
 
   const notify = (message) => {
     setToast(message);
@@ -159,7 +163,7 @@ export default function AIconfig() {
   const onSelectModel = async (profile) => {
     setBusy(true);
     try {
-      const data = await setActiveLlm(profile.provider, profile.model);
+      const data = await activateLlm(profile.provider, profile.model);
       setActiveLlm(data.active);
       notify(`คำถามถัดไปใช้ ${profile.model}`);
     } catch (err) {
@@ -292,6 +296,7 @@ export default function AIconfig() {
                   {active && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">ACTIVE</span>}
                 </div>
                 <p className="mt-1 text-xs text-gray-600">{preset.description}</p>
+                {active && <p className="mt-1 text-[11px] text-green-700">คำถามถัดไปใช้ top_k โควตา และตัวกรองของโหมดนี้</p>}
                 <button
                   type="button"
                   disabled={busy || active}
@@ -343,6 +348,48 @@ export default function AIconfig() {
 
         {tab === "Benchmark" && (
           <div className="space-y-4">
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs font-semibold">
+                  Baseline
+                  <select className="mt-1 block rounded-lg border px-2 py-1.5" value={baselineName} onChange={(event) => setBaselineName(event.target.value)}>
+                    {Object.keys(presets).map((name) => <option key={name}>{name}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold">
+                  Candidate
+                  <select className="mt-1 block rounded-lg border px-2 py-1.5" value={candidateName} onChange={(event) => setCandidateName(event.target.value)}>
+                    {Object.keys(presets).map((name) => <option key={name}>{name}</option>)}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      setBenchmark(await runBenchmark(baselineName, candidateName));
+                    } catch (err) {
+                      setError(err.message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+                >
+                  {busy ? "กำลังทดสอบ..." : "เริ่มการทดสอบ Benchmark"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-500">รัน 2 ข้อจากชุดทดสอบในสเปก เทียบว่า candidate เจอเอกสารถูกกว่าและเร็วกว่า baseline แค่ไหน</p>
+              {benchmark && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg bg-gray-50 p-3"><div className="text-[11px] text-gray-500">Delta score</div><div className="text-lg font-bold">{benchmark.summary.delta_score}</div></div>
+                  <div className="rounded-lg bg-gray-50 p-3"><div className="text-[11px] text-gray-500">Speedup</div><div className="text-lg font-bold">{benchmark.summary.speedup}x</div></div>
+                  <div className="rounded-lg bg-gray-50 p-3"><div className="text-[11px] text-gray-500">Cases</div><div className="text-lg font-bold">{benchmark.summary.cases}</div></div>
+                </div>
+              )}
+            </div>
             <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-gray-50">

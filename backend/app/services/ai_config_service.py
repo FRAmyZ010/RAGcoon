@@ -56,6 +56,18 @@ def save_intents(db: Session) -> None:
     _write_json(db, INTENT_KEY, get_all_intent_configs(), "Per-intent chat settings")
 
 
+def load_saved_rag_config(db: Session) -> RAGConfig | None:
+    """Return the preset an administrator applied, or None when chat should use intent settings."""
+    try:
+        raw = _read_json(db, RAG_KEY)
+    except Exception:
+        logger.exception("Failed to read the active RAG preset")
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return RAGConfig.from_dict(raw)
+
+
 def save_rag(db: Session, config: RAGConfig) -> None:
     _write_json(db, RAG_KEY, config.to_dict(), "Active RAG preset")
 

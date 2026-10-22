@@ -40,3 +40,8 @@ export const setActiveLlm = (provider, model) =>
   request("/llms/set-active", { method: "POST", body: JSON.stringify({ provider, model }) });
 export const pingLlm = (provider, model) =>
   request("/llms/test-connectivity", { method: "POST", body: JSON.stringify({ provider, model }) });
+export const runBenchmark = (baseline, candidate) =>
+  request("/benchmark/run", {
+    method: "POST",
+    body: JSON.stringify({ baseline, candidate, limit: 2 }),
+  });

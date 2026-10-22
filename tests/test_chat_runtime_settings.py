@@ -22,6 +22,7 @@ from app.rag.retrieval.runtime_settings import (
     resolve_system_prompt,
     restore_chat_settings,
 )
+from app.rag.evaluation.benchmark_run import load_handoff_cases
 from app.rag.retrieval.intent_config import get_intent_config, reset_intent_configs
 from app.rag.retrieval.system_prompt import DEFAULT_SYSTEM_PROMPT
 
@@ -70,6 +71,14 @@ class HandoffIntentMatrixTests(unittest.TestCase):
         self.assertEqual(get_intent_config("COMPARISON").top_k, 20)
         self.assertEqual(get_intent_config("EXPLORATORY").rerank_top_n, 10)
         self.assertEqual(get_intent_config("CODE").max_context_chunks, 4)
+
+    def test_handoff_cases_follow_the_sheet_questions(self):
+        cases = load_handoff_cases(limit=2)
+        self.assertEqual(len(cases), 2)
+        self.assertIn(cases[0]["query"], {
+            "อาจารสุรพลดูแลเรื่องไรบ้าง",
+            "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
+        })
 
 
 if __name__ == "__main__":

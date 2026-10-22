@@ -19,6 +19,7 @@ from app.schemas.chat import (
 from app.rag.retrieval import answer_question, stream_answer_question
 from app.rag.retrieval.prescreen import prescreen_reply
 from app.rag.retrieval.session_manager import session_manager
+from app.services.ai_config_service import load_saved_rag_config
 from app.services.document_service import enrich_citations_with_document_ids
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,11 @@ def process_rag_query(
             rag_output = (
                 {"answer": canned, "citations": [], "timing": {}}
                 if canned
-                else answer_question(query_text, session_id=active_workspace_id)
+                else answer_question(
+                    query_text,
+                    session_id=active_workspace_id,
+                    config=load_saved_rag_config(db),
+                )
             )
             answer_text = rag_output.get("answer", "")
             citations_data = rag_output.get("citations", [])
@@ -220,7 +225,11 @@ def process_rag_stream(
                 {"event": "done", "data": {"answer": canned, "citations": [], "sources": [], "timing": {}}},
             )
             if canned
-            else stream_answer_question(question=query_text, session_id=active_workspace_id)
+            else stream_answer_question(
+                question=query_text,
+                session_id=active_workspace_id,
+                config=load_saved_rag_config(db),
+            )
         )
         for item in events:
             event_type = item.get("event", "message")

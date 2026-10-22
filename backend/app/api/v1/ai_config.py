@@ -147,6 +147,24 @@ def activate_llm(payload: dict, db: Session = Depends(_admin)):
     return {"status": "success", "active": {"provider": active_provider, "model": active_model}}
 
 
+@router.post("/benchmark/run")
+def run_benchmark(payload: dict, _db: Session = Depends(_admin)):
+    from app.rag.evaluation.benchmark_run import run_preset_benchmark
+
+    baseline = str(payload.get("baseline") or "precision_hybrid")
+    candidate = str(payload.get("candidate") or "fast_mode")
+    if baseline == candidate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="baseline กับ candidate ต้องคนละโหมด")
+    try:
+        limit = int(payload.get("limit") or 2)
+    except (TypeError, ValueError):
+        limit = 2
+    try:
+        return run_preset_benchmark(baseline, candidate, min(max(limit, 1), 6))
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.post("/llms/test-connectivity")
 def ping_llm(payload: dict, _db: Session = Depends(_admin)):
     provider = str(payload.get("provider") or "").strip()
