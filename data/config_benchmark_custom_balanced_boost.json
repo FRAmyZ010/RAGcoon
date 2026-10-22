@@ -1,0 +1,417 @@
+{
+  "timestamp": "2026-10-22 16:56:13",
+  "baseline_config": {
+    "top_k": 15,
+    "rerank_top_n": 5,
+    "collection_name": "embedding_evaluation",
+    "enable_hybrid": true,
+    "enable_reranker": true,
+    "enable_boilerplate_filter": true,
+    "enable_fast_path": true,
+    "max_context_chunks": 5,
+    "max_chunks_per_project": 2,
+    "min_score": 0.0001,
+    "llm_provider": "ollama",
+    "llm_model": "gemma3:4b",
+    "temperature": 0.0,
+    "num_predict": 512,
+    "prompt_preset": "balanced",
+    "system_prompt_override": null,
+    "profile_name": "precision_hybrid",
+    "description": "ค่ามาตรฐานสมดุล (Baseline): Hybrid RRF, Top-K=15, Top-N=5, Chunk=5, Balanced Prompt"
+  },
+  "candidate_config": {
+    "top_k": 20,
+    "rerank_top_n": 6,
+    "collection_name": "embedding_evaluation",
+    "enable_hybrid": true,
+    "enable_reranker": true,
+    "enable_boilerplate_filter": true,
+    "enable_fast_path": true,
+    "max_context_chunks": 4,
+    "max_chunks_per_project": 2,
+    "min_score": 0.0001,
+    "llm_provider": "ollama",
+    "llm_model": "gemma3:4b",
+    "temperature": 0.0,
+    "num_predict": 512,
+    "prompt_preset": "balanced",
+    "system_prompt_override": null,
+    "profile_name": "custom_balanced_boost",
+    "description": "การปรับแต่งอิสระ (Custom Tuned Optimization): Top-K=20, Top-N=6, Max Chunks=4, Quota=2, Filter=On, Fast-Path=On"
+  },
+  "total_test_cases": 4,
+  "aggregates": {
+    "baseline": {
+      "avg_quality_score": 90.0,
+      "avg_total_latency_sec": 12.673,
+      "hit_rate_pct": 100.0,
+      "key_phrase_recall_pct": 91.7,
+      "gen_speed_tps": 7.7
+    },
+    "candidate": {
+      "avg_quality_score": 91.25,
+      "avg_total_latency_sec": 5.494,
+      "hit_rate_pct": 100.0,
+      "key_phrase_recall_pct": 91.7,
+      "gen_speed_tps": 6.4
+    },
+    "delta": {
+      "score_delta": 1.25,
+      "latency_delta_sec": -7.179,
+      "speedup_ratio": 2.31,
+      "hit_rate_delta_pct": 0.0,
+      "recall_delta_pct": 0.0
+    }
+  },
+  "comparisons": [
+    {
+      "test_id": "GT-01",
+      "category": "Exact Hardware",
+      "query": "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
+      "baseline": {
+        "test_id": "GT-01",
+        "category": "Exact Hardware",
+        "query": "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
+        "config_profile": "precision_hybrid",
+        "success": true,
+        "answer": "1. **The LoRaWAN** (2020) - โครงงานนี้ใช้โมดูล SX1276 เพื่อสร้างระบบสื่อสารแบบไร้สายความถี่ 920-925MHz โดยใช้บอร์ด TTGO และ ESP32 [Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18].",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 80.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 5.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 2,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": false,
+        "timing": {
+          "query_proc_seconds": 12.2138,
+          "retrieval_seconds": 11.755,
+          "rerank_seconds": 8.524,
+          "llm_seconds": 11.937,
+          "ttft_seconds": 11.932,
+          "total_seconds": 44.445
+        },
+        "throughput": {
+          "gen_speed_tps": 13.6,
+          "input_tokens": 1442,
+          "output_tokens": 95
+        }
+      },
+      "candidate": {
+        "test_id": "GT-01",
+        "category": "Exact Hardware",
+        "query": "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
+        "config_profile": "custom_balanced_boost",
+        "success": true,
+        "answer": "1. **The LoRaWAN** (2020) - โครงงานนี้ใช้โมดูล SX1276 เพื่อสร้างระบบสื่อสารแบบไร้สายความถี่ 920-925MHz โดยใช้บอร์ด TTGO และ ESP32 [Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18].",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 80.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 5.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 2,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": false,
+        "timing": {
+          "query_proc_seconds": 6.7847,
+          "retrieval_seconds": 0.845,
+          "rerank_seconds": 0.069,
+          "llm_seconds": 10.559,
+          "ttft_seconds": 10.558,
+          "total_seconds": 18.26
+        },
+        "throughput": {
+          "gen_speed_tps": 12.6,
+          "input_tokens": 1442,
+          "output_tokens": 95
+        }
+      },
+      "delta": {
+        "score": 0.0,
+        "latency_seconds": -26.185,
+        "speedup_ratio": 2.43,
+        "hit_rate_diff": 0,
+        "recall_diff": 0.0
+      }
+    },
+    {
+      "test_id": "GT-02",
+      "category": "Advisor Typo Lookup",
+      "query": "อาจารสุรพลดูแลเรื่องไรบ้าง",
+      "baseline": {
+        "test_id": "GT-02",
+        "category": "Advisor Typo Lookup",
+        "query": "อาจารสุรพลดูแลเรื่องไรบ้าง",
+        "config_profile": "precision_hybrid",
+        "success": true,
+        "answer": "### 📋 รายชื่อโครงงานที่มี **Aj. Surapol Vorapatratorn** เป็นอาจารย์ที่ปรึกษา (ทั้งหมด 3 โครงงาน)\n\n| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | สาขาวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n| :---: | :--- | :---: | :---: | :--- | :--- |\n| 1 | **ONLINE VEHICLE ACCESS MONITORING** | 2020 | Computer Engineering | PHUMPHOL CHANRUNGSRICHAY, NUTCHANON THAMAVUTICHAI | 📄 `13_Online-Vehicle-access-management-system-proposol3_compressed.pdf` |\n| 2 | **ONLINE MFU-LECTURER APPOINTMENT SYSTEM** | 2020 | Computer Engineering | KALLAYANEE THONGKONG, SUWEE ROTSASANASATHIAN | 📄 `6_COMPUTER_ENGINEERING__ONLINE_MFU_LECTURER__APPOINTMENT_SYSTEM.pdf` |\n| 3 | **Gem car tracking application** | 2023 | Computer Engineering | NOTCHANON SRISANSAKUL, SETTHAKIAT TUNGKITAUNGKANA, SUWIJAK WICHIENCHAICHARN ALONGKOD | 📄 `15_Pre-Project_Gem_Car2_edit2_V2.pdf` |\n\n> 💡 *ท่านสามารถพิมพ์สอบถามรายละเอียดเชิงลึก เช่น \"อธิบายสถาปัตยกรรมของโครงงาน ONLINE VEHICLE ACCESS MONITORING\" หรือ \"ใช้เซนเซอร์อะไรบ้าง\" ได้ครับ*",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 100.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 25.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 3,
+        "sources": [
+          "13_Online-Vehicle-access-management-system-proposol3_compressed.pdf",
+          "6_COMPUTER_ENGINEERING__ONLINE_MFU_LECTURER__APPOINTMENT_SYSTEM.pdf",
+          "15_Pre-Project_Gem_Car2_edit2_V2.pdf"
+        ],
+        "citations_count": 3,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0007,
+          "retrieval_seconds": 0.87,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 0.871
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "candidate": {
+        "test_id": "GT-02",
+        "category": "Advisor Typo Lookup",
+        "query": "อาจารสุรพลดูแลเรื่องไรบ้าง",
+        "config_profile": "custom_balanced_boost",
+        "success": true,
+        "answer": "### 📋 รายชื่อโครงงานที่มี **Aj. Surapol Vorapatratorn** เป็นอาจารย์ที่ปรึกษา (ทั้งหมด 3 โครงงาน)\n\n| ลำดับ | ชื่อโครงงาน | ปีการศึกษา | สาขาวิชา | ผู้จัดทำ | เอกสารอ้างอิง |\n| :---: | :--- | :---: | :---: | :--- | :--- |\n| 1 | **ONLINE VEHICLE ACCESS MONITORING** | 2020 | Computer Engineering | PHUMPHOL CHANRUNGSRICHAY, NUTCHANON THAMAVUTICHAI | 📄 `13_Online-Vehicle-access-management-system-proposol3_compressed.pdf` |\n| 2 | **ONLINE MFU-LECTURER APPOINTMENT SYSTEM** | 2020 | Computer Engineering | KALLAYANEE THONGKONG, SUWEE ROTSASANASATHIAN | 📄 `6_COMPUTER_ENGINEERING__ONLINE_MFU_LECTURER__APPOINTMENT_SYSTEM.pdf` |\n| 3 | **Gem car tracking application** | 2023 | Computer Engineering | NOTCHANON SRISANSAKUL, SETTHAKIAT TUNGKITAUNGKANA, SUWIJAK WICHIENCHAICHARN ALONGKOD | 📄 `15_Pre-Project_Gem_Car2_edit2_V2.pdf` |\n\n> 💡 *ท่านสามารถพิมพ์สอบถามรายละเอียดเชิงลึก เช่น \"อธิบายสถาปัตยกรรมของโครงงาน ONLINE VEHICLE ACCESS MONITORING\" หรือ \"ใช้เซนเซอร์อะไรบ้าง\" ได้ครับ*",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 100.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 25.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 3,
+        "sources": [
+          "13_Online-Vehicle-access-management-system-proposol3_compressed.pdf",
+          "6_COMPUTER_ENGINEERING__ONLINE_MFU_LECTURER__APPOINTMENT_SYSTEM.pdf",
+          "15_Pre-Project_Gem_Car2_edit2_V2.pdf"
+        ],
+        "citations_count": 3,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0002,
+          "retrieval_seconds": 0.198,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 0.199
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "delta": {
+        "score": 0.0,
+        "latency_seconds": -0.672,
+        "speedup_ratio": 4.38,
+        "hit_rate_diff": 0,
+        "recall_diff": 0.0
+      }
+    },
+    {
+      "test_id": "GT-04",
+      "category": "Fast-Path Metadata",
+      "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+      "baseline": {
+        "test_id": "GT-04",
+        "category": "Fast-Path Metadata",
+        "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+        "config_profile": "precision_hybrid",
+        "success": true,
+        "answer": "อาจารย์ที่ปรึกษาของโครงงาน **The LoRaWAN** คือ **Asst. Prof. Dr. Suppakarn Chansareewittaya** ครับ\n\n- **คณะกรรมการตรวจโครงงาน (Committee)**: Dr. Mahamah Sebakor, Dr. Surapong Uttama\n- **ปีการศึกษา**: 2020 (พ.ศ. 2563)\n- **เอกสารอ้างอิง**: 📄 `1_6031501044_6031501061_FinalProject.pdf`",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 100.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 25.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0001,
+          "retrieval_seconds": 0.208,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 0.208
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "candidate": {
+        "test_id": "GT-04",
+        "category": "Fast-Path Metadata",
+        "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+        "config_profile": "custom_balanced_boost",
+        "success": true,
+        "answer": "อาจารย์ที่ปรึกษาของโครงงาน **The LoRaWAN** คือ **Asst. Prof. Dr. Suppakarn Chansareewittaya** ครับ\n\n- **คณะกรรมการตรวจโครงงาน (Committee)**: Dr. Mahamah Sebakor, Dr. Surapong Uttama\n- **ปีการศึกษา**: 2020 (พ.ศ. 2563)\n- **เอกสารอ้างอิง**: 📄 `1_6031501044_6031501061_FinalProject.pdf`",
+        "hit_rate": 1.0,
+        "phrase_recall": 100.0,
+        "guard_passed": true,
+        "quality_score": 100.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 25.0,
+          "length_score": 20.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0001,
+          "retrieval_seconds": 0.201,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 0.0,
+          "ttft_seconds": 0.0,
+          "total_seconds": 0.201
+        },
+        "throughput": {
+          "gen_speed_tps": 0.0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "delta": {
+        "score": 0.0,
+        "latency_seconds": -0.007,
+        "speedup_ratio": 1.03,
+        "hit_rate_diff": 0,
+        "recall_diff": 0.0
+      }
+    },
+    {
+      "test_id": "GT-06",
+      "category": "Anti-Hallucination Negative",
+      "query": "โครงงาน The LoRaWAN มีการเชื่อมต่อกับ Line Notify หรือไม่",
+      "baseline": {
+        "test_id": "GT-06",
+        "category": "Anti-Hallucination Negative",
+        "query": "โครงงาน The LoRaWAN มีการเชื่อมต่อกับ Line Notify หรือไม่",
+        "config_profile": "precision_hybrid",
+        "success": true,
+        "answer": "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร",
+        "hit_rate": 1.0,
+        "phrase_recall": 66.7,
+        "guard_passed": true,
+        "quality_score": 80.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 15.0,
+          "length_score": 10.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0001,
+          "retrieval_seconds": 0.424,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 4.742,
+          "ttft_seconds": 4.742,
+          "total_seconds": 5.167
+        },
+        "throughput": {
+          "gen_speed_tps": 17.1,
+          "input_tokens": 1332,
+          "output_tokens": 9
+        }
+      },
+      "candidate": {
+        "test_id": "GT-06",
+        "category": "Anti-Hallucination Negative",
+        "query": "โครงงาน The LoRaWAN มีการเชื่อมต่อกับ Line Notify หรือไม่",
+        "config_profile": "custom_balanced_boost",
+        "success": true,
+        "answer": "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร",
+        "hit_rate": 1.0,
+        "phrase_recall": 66.7,
+        "guard_passed": true,
+        "quality_score": 85.0,
+        "score_breakdown": {
+          "citation_score": 30.0,
+          "cleanliness_score": 25.0,
+          "latency_score": 20.0,
+          "length_score": 10.0
+        },
+        "retrieved_count": 1,
+        "sources": [
+          "1_6031501044_6031501061_FinalProject.pdf"
+        ],
+        "citations_count": 1,
+        "fast_path_used": true,
+        "timing": {
+          "query_proc_seconds": 0.0001,
+          "retrieval_seconds": 0.4,
+          "rerank_seconds": 0.0,
+          "llm_seconds": 2.913,
+          "ttft_seconds": 2.913,
+          "total_seconds": 3.314
+        },
+        "throughput": {
+          "gen_speed_tps": 13.1,
+          "input_tokens": 1332,
+          "output_tokens": 9
+        }
+      },
+      "delta": {
+        "score": 5.0,
+        "latency_seconds": -1.853,
+        "speedup_ratio": 1.56,
+        "hit_rate_diff": 0,
+        "recall_diff": 0.0
+      }
+    }
+  ]
+}

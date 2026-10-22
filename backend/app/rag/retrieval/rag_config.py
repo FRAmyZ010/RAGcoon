@@ -235,6 +235,26 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
         temperature=0.0,
         prompt_preset="balanced",
     ),
+
+    # 10. Custom Tuned Profile: "custom_balanced_boost" (การปรับแต่งอิสระที่บันทึกไว้ทดสอบ)
+    "custom_balanced_boost": RAGConfig(
+        profile_name="custom_balanced_boost",
+        description="การปรับแต่งอิสระ (Custom Tuned Optimization): Top-K=20, Top-N=6, Max Chunks=4, Quota=2, Filter=On, Fast-Path=On",
+        top_k=20,
+        rerank_top_n=6,
+        enable_hybrid=True,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=4,
+        max_chunks_per_project=2,
+        min_score=0.0001,
+        llm_provider="ollama",
+        llm_model="gemma3:4b",
+        temperature=0.0,
+        num_predict=512,
+        prompt_preset="balanced",
+    ),
 }
 
 
