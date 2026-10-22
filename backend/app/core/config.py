@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # PostgreSQL Config
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
-    POSTGRES_HOST:str = "postgres"
+    POSTGRES_USER: str = "ragcoonadmin"
+    POSTGRES_PASSWORD: str = "ragcoon1501"
+    POSTGRES_DB: str = "ragcoon_db"
+    POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
     DATABASE_URL: Optional[str] = None
 
@@ -37,8 +37,10 @@ class Settings(BaseSettings):
 
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
+            if self.DATABASE_URL.startswith("postgresql://"):
+                return self.DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
             return self.DATABASE_URL
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 
 settings = Settings()   # สร้าง Instance เพื่อนำไปใช้

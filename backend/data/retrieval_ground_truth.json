@@ -1,0 +1,338 @@
+[
+  {
+    "query_id": 1,
+    "category": "Exact Technical Models",
+    "query": "Arduino Mega 2560",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 2,
+    "category": "Exact Technical Models",
+    "query": "Analog pH sensor PE HOSE",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 3,
+    "category": "Exact Technical Models",
+    "query": "Electrical Conductive Sensor EC sensor",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 4,
+    "category": "Exact Technical Models",
+    "query": "Bluetooth Low Energy BLE Cisco WLAN",
+    "relevant_titles": [
+      "THE DEVELOPMENT OF BLUETOOTH LOW ENERGY IN CISCO WLAN"
+    ],
+    "relevant_sources": [
+      "SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf"
+    ]
+  },
+  {
+    "query_id": 5,
+    "category": "Exact Technical Models",
+    "query": "Aironet Access Point AP power saving",
+    "relevant_titles": [
+      "THE DEVELOPMENT OF BLUETOOTH LOW ENERGY IN CISCO WLAN"
+    ],
+    "relevant_sources": [
+      "SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf"
+    ]
+  },
+  {
+    "query_id": 6,
+    "category": "Exact Technical Models",
+    "query": "snubber circuit surge suppressor diode opto-isolated relay",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 7,
+    "category": "Titles & Identifiers",
+    "query": "INTELLIGENT WATERING SYSTEM",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 8,
+    "category": "Titles & Identifiers",
+    "query": "QUALITY DISCHARGE PLANNING PROJECT",
+    "relevant_titles": [
+      "QUALITY DISCHARGE PLANNING PROJECT"
+    ],
+    "relevant_sources": [
+      "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
+    ]
+  },
+  {
+    "query_id": 9,
+    "category": "Titles & Identifiers",
+    "query": "3D WALLPAPER STOCK MANAGEMENT SYSTEM",
+    "relevant_titles": [
+      "3D WALLPAPER STOCK MANAGEMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "Proposal Document.docx.pdf"
+    ]
+  },
+  {
+    "query_id": 10,
+    "category": "Titles & Identifiers",
+    "query": "ONLINE MFU-LECTURER APPOINTMENT SYSTEM",
+    "relevant_titles": [
+      "ONLINE MFU-LECTURER APPOINTMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf"
+    ]
+  },
+  {
+    "query_id": 11,
+    "category": "Titles & Identifiers",
+    "query": "Gem car tracking application",
+    "relevant_titles": [
+      "Gem car tracking application"
+    ],
+    "relevant_sources": [
+      "Pre-Project_Gem_Car2_edit2_V2.pdf"
+    ]
+  },
+  {
+    "query_id": 12,
+    "category": "Titles & Identifiers",
+    "query": "Cisco Mobility Express controller",
+    "relevant_titles": [
+      "THE DEVELOPMENT OF BLUETOOTH LOW ENERGY IN CISCO WLAN"
+    ],
+    "relevant_sources": [
+      "SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf"
+    ]
+  },
+  {
+    "query_id": 13,
+    "category": "Code & Technical Implementation",
+    "query": "pH adjustment system automatic mixing system NPK",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 14,
+    "category": "Code & Technical Implementation",
+    "query": "Modbus 4-20mA analog signal to digital",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 15,
+    "category": "Code & Technical Implementation",
+    "query": "Bootstrap Twitter open-source frontend framework",
+    "relevant_titles": [
+      "ONLINE MFU-LECTURER APPOINTMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf"
+    ]
+  },
+  {
+    "query_id": 16,
+    "category": "Code & Technical Implementation",
+    "query": "inventory stock deduct sold quantity workflow diagram",
+    "relevant_titles": [
+      "3D WALLPAPER STOCK MANAGEMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "Proposal Document.docx.pdf"
+    ]
+  },
+  {
+    "query_id": 17,
+    "category": "Code & Technical Implementation",
+    "query": "GPS tracking module vehicle location",
+    "relevant_titles": [
+      "Gem car tracking application"
+    ],
+    "relevant_sources": [
+      "Pre-Project_Gem_Car2_edit2_V2.pdf"
+    ]
+  },
+  {
+    "query_id": 18,
+    "category": "Code & Technical Implementation",
+    "query": "patient discharge statistical data medical plan",
+    "relevant_titles": [
+      "QUALITY DISCHARGE PLANNING PROJECT"
+    ],
+    "relevant_sources": [
+      "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
+    ]
+  },
+  {
+    "query_id": 19,
+    "category": "Semantic Natural Language",
+    "query": "ระบบรดน้ำอัตโนมัติสำหรับแปลงผักที่ใช้ขุยมะพร้าวแทนดิน",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 20,
+    "category": "Semantic Natural Language",
+    "query": "การวางแผนดูแลคนไข้เมื่อต้องออกจากโรงพยาบาล",
+    "relevant_titles": [
+      "QUALITY DISCHARGE PLANNING PROJECT"
+    ],
+    "relevant_sources": [
+      "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
+    ]
+  },
+  {
+    "query_id": 21,
+    "category": "Semantic Natural Language",
+    "query": "ระบบนัดหมายอาจารย์มหาวิทยาลัยออนไลน์",
+    "relevant_titles": [
+      "ONLINE MFU-LECTURER APPOINTMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf"
+    ]
+  },
+  {
+    "query_id": 22,
+    "category": "Semantic Natural Language",
+    "query": "แอปพลิเคชันสำหรับติดตามตำแหน่งและเส้นทางของรถกอล์ฟ",
+    "relevant_titles": [
+      "Gem car tracking application"
+    ],
+    "relevant_sources": [
+      "Pre-Project_Gem_Car2_edit2_V2.pdf"
+    ]
+  },
+  {
+    "query_id": 23,
+    "category": "Semantic Natural Language",
+    "query": "ระบบจัดการคลังสินค้าและคำนวณยอดขายวอลเปเปอร์ 3 มิติ",
+    "relevant_titles": [
+      "3D WALLPAPER STOCK MANAGEMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "Proposal Document.docx.pdf"
+    ]
+  },
+  {
+    "query_id": 24,
+    "category": "Semantic Natural Language",
+    "query": "energy saving mechanisms in wireless access points using BLE",
+    "relevant_titles": [
+      "THE DEVELOPMENT OF BLUETOOTH LOW ENERGY IN CISCO WLAN"
+    ],
+    "relevant_sources": [
+      "SENIOR-THE-DEVELOPMENT-OF-BLUETOOTH-LOW-ENERGY-IN-CISCO-WLAN.pdf"
+    ]
+  },
+  {
+    "query_id": 25,
+    "category": "Advisors & Authors Metadata",
+    "query": "Assoc.Prof.Wg.Cdr.Dr.Tossapon Boongoen",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM",
+      "QUALITY DISCHARGE PLANNING PROJECT"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf",
+      "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
+    ]
+  },
+  {
+    "query_id": 26,
+    "category": "Advisors & Authors Metadata",
+    "query": "Aj.Dr. Surapol Vorapatratorn",
+    "relevant_titles": [
+      "ONLINE MFU-LECTURER APPOINTMENT SYSTEM",
+      "Gem car tracking application",
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "COMPUTER ENGINEERING  ONLINE MFU LECTURER  APPOINTMENT SYSTEM.pdf",
+      "Pre-Project_Gem_Car2_edit2_V2.pdf",
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 27,
+    "category": "Advisors & Authors Metadata",
+    "query": "Assoc.Prof. Nattapol Aunsri",
+    "relevant_titles": [
+      "3D WALLPAPER STOCK MANAGEMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "Proposal Document.docx.pdf"
+    ]
+  },
+  {
+    "query_id": 28,
+    "category": "Advisors & Authors Metadata",
+    "query": "Simon Yosboon Tonkla Maneerat",
+    "relevant_titles": [
+      "INTELLIGENT WATERING SYSTEM"
+    ],
+    "relevant_sources": [
+      "Final document(8).pdf"
+    ]
+  },
+  {
+    "query_id": 29,
+    "category": "Advisors & Authors Metadata",
+    "query": "Teerapat Puangkankham Witchapon Proadpranee",
+    "relevant_titles": [
+      "QUALITY DISCHARGE PLANNING PROJECT"
+    ],
+    "relevant_sources": [
+      "QUALITY-DISCHARGE-PLANNING-PROJECT.pdf"
+    ]
+  },
+  {
+    "query_id": 30,
+    "category": "Advisors & Authors Metadata",
+    "query": "Bek Shung Zhen Noraphit Pornjaruskunwathana Supawish Kodyee",
+    "relevant_titles": [
+      "3D WALLPAPER STOCK MANAGEMENT SYSTEM"
+    ],
+    "relevant_sources": [
+      "Proposal Document.docx.pdf"
+    ]
+  }
+]

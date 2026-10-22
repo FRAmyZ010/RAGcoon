@@ -1,3 +1,4 @@
+import math
 from .config import get_reranker
 
 
@@ -14,20 +15,46 @@ def normalize_scores(scores: list[float]) -> list[float]:
     return [(score - min_s) / (max_s - min_s) for score in scores]
 
 
-def rerank(query: str, docs_with_payload: list[dict], top_n: int) -> list[dict]:
+def rerank(query: str, docs_with_payload: list[dict], top_n: int, max_candidates: int = 15) -> list[dict]:
     if not docs_with_payload:
         return []
 
-    docs = [doc["text"] for doc in docs_with_payload]
+    # Optimize Candidate Pool: Evaluating top 15 candidates is optimal for Cross-Encoder recall
+    # while preventing excessive CPU matrix multiplication latency.
+    candidates = docs_with_payload[:max_candidates]
+    docs = [doc["text"] for doc in candidates]
     pairs = [[query, doc] for doc in docs]
-    scores = get_reranker().predict(pairs, show_progress_bar=False, batch_size=32)
+    scores = get_reranker().predict(pairs, show_progress_bar=False, batch_size=16)
 
-    scored = list(zip(docs_with_payload, scores))
+    scored = list(zip(candidates, scores))
     ranked = sorted(scored, key=lambda item: item[1], reverse=True)
     top_ranked = ranked[:top_n]
+
+    best_raw = float(top_ranked[0][1]) if top_ranked else -99.0
+
+    # If the absolute best chunk has a deeply negative cross-encoder score (< -3.5),
+    # the documents are genuinely irrelevant to the query (less than 3% semantic probability).
+    # Use calibrated sigmoid probability instead of boosting the highest irrelevant chunk to 1.0.
+    if best_raw < -3.5:
+        return [
+            {
+                "text": item["text"],
+                "score": float(1.0 / (1.0 + math.exp(-float(score)))),
+                "raw_score": float(score),
+                "payload": item["payload"],
+            }
+            for (item, score) in top_ranked
+        ]
+
     norm_scores = normalize_scores([float(score) for _, score in top_ranked])
 
     return [
-        {"text": item["text"], "score": float(norm), "payload": item["payload"]}
-        for (item, _), norm in zip(top_ranked, norm_scores)
+        {
+            "text": item["text"],
+            "score": float(norm),
+            "raw_score": float(score),
+            "payload": item["payload"],
+        }
+        for (item, score), norm in zip(top_ranked, norm_scores)
     ]
+

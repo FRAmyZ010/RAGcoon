@@ -1,0 +1,209 @@
+[
+  {
+    "id": "GT-01",
+    "category": "Exact Hardware",
+    "query": "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
+    "intent": "EXPLORATORY",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [17, 18],
+    "key_phrases": ["The LoRaWAN", "SX1276", "LoRa"],
+    "forbidden_phrases": ["Beacon Signal", "Line Notify"],
+    "should_reject": false,
+    "description": "ทดสอบการค้นหาชิปเซตเฉพาะทาง (SX1276) ด้วย Sparse BM25 + Hybrid RRF"
+  },
+  {
+    "id": "GT-02",
+    "category": "Advisor Typo Lookup",
+    "query": "อาจารสุรพลดูแลเรื่องไรบ้าง",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "13_Online-Vehicle-access-management-system-proposol3_compressed.pdf"
+    ],
+    "expected_pages": [1, 2],
+    "key_phrases": ["Surapol", "ONLINE VEHICLE ACCESS"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการสกัดชื่ออาจารย์ที่มีคำสะกดผิด (อาจารสุรพล -> Aj. Surapol Vorapatratorn)"
+  },
+  {
+    "id": "GT-03",
+    "category": "Deep Dive Methodology",
+    "query": "ขั้นตอนการทำงานและการทดลองของ The LoRaWAN",
+    "intent": "DEEP_DIVE",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [17, 18],
+    "key_phrases": ["LoRa", "ESP32", "ทดลอง"],
+    "forbidden_phrases": ["### 🔔 บริการภายนอก / การแจ้งเตือนภายนอก\nไม่มีข้อมูล"],
+    "should_reject": false,
+    "description": "ทดสอบการแจกแจงโครงสร้างสถาปัตยกรรมและการกรองขยะ Boilerplate"
+  },
+  {
+    "id": "GT-04",
+    "category": "Fast-Path Metadata",
+    "query": "ใครเป็นที่ปรึกษาของ The LoRaWAN",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["Suppakarn", "Chansareewittaya"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบ Fast-Path Direct Metadata Scroll ลัดขั้นตอน LLM 0.0s"
+  },
+  {
+    "id": "GT-05",
+    "category": "Project Category",
+    "query": "The LoRaWAN เป็นระบบประเภทไหน",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["IoT", "Hardware", "Network", "LoRaWAN"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการดึง Structured Category จาก Metadata"
+  },
+  {
+    "id": "GT-06",
+    "category": "Anti-Hallucination Negative",
+    "query": "โครงงาน The LoRaWAN มีการเชื่อมต่อกับ Line Notify หรือไม่",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["ไม่", "ไม่พบข้อมูล", "Not specified"],
+    "forbidden_phrases": ["เชื่อมต่อกับ Line Notify สำเร็จ", "ส่งการแจ้งเตือนผ่าน Line Notify"],
+    "should_reject": false,
+    "description": "ทดสอบกลไกป้องกันภาพหลอน ยืนยันว่าไม่มี Line Notify ในเอกสาร"
+  },
+  {
+    "id": "GT-07",
+    "category": "Hardware BLE Beacon",
+    "query": "โครงงานไหนใช้เทคโนโลยี Bluetooth Low Energy หรือ iBeacon บ้าง",
+    "intent": "EXPLORATORY",
+    "expected_sources": [
+      "2_Final_Report_6031501047_6031501174.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["Beacon", "BSLD", "Location"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการค้นหาโครงงานที่ใช้บลูทูธและบีคอน"
+  },
+  {
+    "id": "GT-08",
+    "category": "Multi-Project Comparison",
+    "query": "เปรียบเทียบโครงงาน The LoRaWAN กับโครงงาน Beacon Signal Location Device ในด้านฮาร์ดแวร์",
+    "intent": "COMPARISON",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf",
+      "2_Final_Report_6031501047_6031501174.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["LoRa", "Beacon", "ESP32"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการแบ่งโควตา Chunks อย่างเท่าเทียมและการสร้างตาราง Markdown"
+  },
+  {
+    "id": "GT-09",
+    "category": "Traffic Control System",
+    "query": "โครงงาน SMART INTERSECTION TRAFFIC LIGHT ใครเป็นที่ปรึกษา",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "26_SMART_INTERSECTION_TRAFFIC_LIGHT_(1)_compressed.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["Thongchai", "Yooyativong"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการค้นหาที่ปรึกษาโครงงานไฟจราจรอัจฉริยะ"
+  },
+  {
+    "id": "GT-10",
+    "category": "Robotics Dust Collector",
+    "query": "โครงงาน Dust Collector Mini Robot Model ทำงานเกี่ยวกับอะไร",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "20_Project_Dust_Collector_Mini_Robot_Model.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["Dust", "Robot", "หุ่นยนต์"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการสรุปจุดประสงค์ของโครงงานหุ่นยนต์ดูดฝุ่น"
+  },
+  {
+    "id": "GT-11",
+    "category": "Student Examination System",
+    "query": "ระบบ STUDENT IDENTITY CHECKING SYSTEM FOR EXAMINATION ATTENDANCE มีจุดประสงค์อะไร",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "31_STUDENT_IDENTITY_CHECKING_SYSTEM_final.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["Examination", "Attendance", "Identity", "ตรวจสอบ"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบการสกัดจุดประสงค์โครงงานตรวจสอบตัวตนนักศึกษา"
+  },
+  {
+    "id": "GT-12",
+    "category": "Recommendation Domain",
+    "query": "แนะนำโครงงานสำหรับตรวจวัดสภาพแวดล้อมหรือ IoT Sensor",
+    "intent": "RECOMMENDATION",
+    "expected_sources": [
+      "1_6031501044_6031501061_FinalProject.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["LoRaWAN", "Sensor"],
+    "forbidden_phrases": [],
+    "should_reject": false,
+    "description": "ทดสอบ Recommendation Engine จัดโครงงานแนะนำพร้อมหลักฐาน"
+  },
+  {
+    "id": "GT-13",
+    "category": "Hallucination Rejection (Spacecraft)",
+    "query": "มีโครงงานเกี่ยวกับการสร้างจรวดหรือยานอวกาศเดินทางไปดาวอังคารหรือไม่",
+    "intent": "FACTOID",
+    "expected_sources": [],
+    "expected_pages": [],
+    "key_phrases": ["ไม่พบข้อมูล", "ขออภัย", "ไม่มีข้อมูล"],
+    "forbidden_phrases": ["ยานอวกาศมีสเปก", "จรวดใช้เครื่องยนต์"],
+    "should_reject": true,
+    "description": "ทดสอบการปฏิเสธคำถามนอกขอบเขตอย่างสุภาพ (Out-of-domain Zero Hallucination)"
+  },
+  {
+    "id": "GT-14",
+    "category": "Hallucination Rejection (Quantum Processor)",
+    "query": "โครงงานที่ใช้ชิปควอนตัม IBM Eagle 127-qubit มีอะไรบ้าง",
+    "intent": "EXPLORATORY",
+    "expected_sources": [],
+    "expected_pages": [],
+    "key_phrases": ["ไม่พบข้อมูล", "ขออภัย", "ไม่มีข้อมูล"],
+    "forbidden_phrases": ["โครงงานที่ใช้ IBM Eagle", "ควอนตัมโปรเซสเซอร์ถูกนำมาใช้"],
+    "should_reject": true,
+    "description": "ทดสอบการปฏิเสธเทคโนโลยีที่ไม่มีในเอกสารโดยเด็ดขาด"
+  },
+  {
+    "id": "GT-15",
+    "category": "Author Attribution",
+    "query": "PHUMPHOL CHANRUNGSRICHAY ทำโครงงานอะไร",
+    "intent": "FACTOID",
+    "expected_sources": [
+      "13_Online-Vehicle-access-management-system-proposol3_compressed.pdf"
+    ],
+    "expected_pages": [],
+    "key_phrases": ["ONLINE VEHICLE ACCESS"],
+    "forbidden_phrases": ["The LoRaWAN"],
+    "should_reject": false,
+    "description": "ทดสอบการสกัดผู้จัดทำและเชื่อมโยงกับโครงงานที่ถูกต้องอย่างเคร่งครัด"
+  }
+]

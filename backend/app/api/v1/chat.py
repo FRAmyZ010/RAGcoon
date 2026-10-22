@@ -121,3 +121,42 @@ def read_chat_history(
     Endpoint สำหรับดึงรายการประวัติการค้นหาย้อนหลัง
     """
     return get_chat_history(db=db, skip=skip, limit=limit)
+
+
+@router.post("/compare")
+async def compare_rag_pipelines(request: ChatRequest):
+    """Compare the legacy pipeline with the current hybrid pipeline for one query."""
+    from app.rag.evaluation.compare_pipelines import compare_query
+    return await run_in_threadpool(compare_query, query=request.query_text)
+
+
+@router.get("/benchmark-suite")
+async def run_benchmark_endpoint():
+    """Run the legacy-vs-modern benchmark scenarios."""
+    from app.rag.evaluation.compare_pipelines import run_benchmark_suite
+    return await run_in_threadpool(run_benchmark_suite)
+
+
+@router.get("/llm-profiles")
+def get_available_llm_profiles():
+    """List LLM profiles the benchmark tools can switch between."""
+    from app.rag.retrieval.llm_provider import AVAILABLE_LLM_PROFILES, get_active_llm
+    active_prov, active_mod = get_active_llm()
+    return {
+        "active_provider": active_prov,
+        "active_model": active_mod,
+        "profiles": AVAILABLE_LLM_PROFILES,
+    }
+
+
+@router.post("/set-active-llm")
+def set_active_llm_endpoint(provider: str, model: str | None = None):
+    """Switch the benchmark LLM selection at runtime."""
+    from app.rag.retrieval.llm_provider import get_active_llm, set_active_llm
+    set_active_llm(provider=provider, model=model)
+    active_prov, active_mod = get_active_llm()
+    return {
+        "message": f"Successfully switched active LLM to {active_prov} ({active_mod})",
+        "active_provider": active_prov,
+        "active_model": active_mod,
+    }

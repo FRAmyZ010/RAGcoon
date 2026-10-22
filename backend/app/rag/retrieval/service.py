@@ -1,6 +1,7 @@
 import re
 import sys
 import time
+from typing import Any
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -175,9 +176,22 @@ def _filter_recommendation_candidates(results: list[dict], target_domains: list[
     return matched if matched else results
 
 
-def search_with_details(query: str, chat_history: str | None = None) -> dict:
+def _benchmark_config(config: Any):
+    """Use a benchmark RAGConfig only when the caller passes one."""
+    if config is None:
+        return None
+    from .rag_config import RAGConfig
+    return config if isinstance(config, RAGConfig) else None
+
+
+def search_with_details(
+    query: str,
+    chat_history: str | None = None,
+    config: Any = None,
+) -> dict:
     """Search and return detailed results with scores, timing, and dynamic routing intent."""
     total_start = time.perf_counter()
+    rag_cfg = _benchmark_config(config)
     try:
         print("\n" + "=" * 60)
         print("ORIGINAL QUERY:", query)
@@ -187,7 +201,19 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
         normalized_query, filters, intent = process_query_with_llm(query, chat_history=chat_history)
         query_proc_seconds = time.perf_counter() - query_proc_start
         clean_query = normalized_query
-        top_k, top_n = _get_routing_params(intent)
+        if rag_cfg is not None:
+            top_k = rag_cfg.top_k
+            top_n = rag_cfg.rerank_top_n
+            enable_hybrid = rag_cfg.enable_hybrid
+            enable_reranker = rag_cfg.enable_reranker
+            enable_boilerplate_filter = rag_cfg.enable_boilerplate_filter
+            enable_fast_path = rag_cfg.enable_fast_path
+        else:
+            top_k, top_n = _get_routing_params(intent)
+            enable_hybrid = True
+            enable_reranker = True
+            enable_boilerplate_filter = True
+            enable_fast_path = True
         print("NORMALIZED / CLEAN QUERY:", clean_query)
         print("INTENT:", intent)
         print("FILTERS:", filters)
@@ -226,7 +252,7 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 if is_year_list_or_count and not is_content:
                     is_pure_metadata = True
 
-        if is_pure_metadata:
+        if is_pure_metadata and enable_fast_path:
             fast_start = time.perf_counter()
             qdrant_filter = build_qdrant_filter(filters)
             records, _ = client.scroll(
@@ -276,7 +302,14 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                     "intent": intent,
                     "query_variants": [],
                     "retrieved_count": len(fast_results),
+                    "fast_path_used": True,
+                    **({"config": rag_cfg.to_dict()} if rag_cfg is not None else {}),
                 }
+
+        def _retrieve(text: str, k: int, metadata_filters: dict | None = None):
+            if enable_hybrid:
+                return hybrid_search(text, k, metadata_filters=metadata_filters)
+            return semantic_search(text, k, metadata_filters=metadata_filters)
 
         retrieval_start = time.perf_counter()
         if intent == "COMPARISON":
@@ -287,15 +320,15 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 seen_texts = set()
                 for p_title in compared:
                     p_filters = {"project_title": p_title}
-                    p_res = hybrid_search(f"{p_title} overview methodology architecture features technology limitations", per_proj_k, metadata_filters=p_filters)
+                    p_res = _retrieve(f"{p_title} overview methodology architecture features technology limitations", per_proj_k, metadata_filters=p_filters)
                     if not p_res:
-                        p_res = hybrid_search(p_title, per_proj_k, metadata_filters=p_filters)
+                        p_res = _retrieve(p_title, per_proj_k, metadata_filters=p_filters)
                     for item in p_res:
                         txt = item.get("text")
                         if txt not in seen_texts:
                             seen_texts.add(txt)
                             all_results.append(item)
-                results = all_results if all_results else hybrid_search(clean_query, top_k)
+                results = all_results if all_results else _retrieve(clean_query, top_k)
             else:
                 sub_queries = [p.strip() for p in re.split(r"\s+(?:vs|versus|กับ|and)\s+", clean_query, flags=re.IGNORECASE) if p.strip()]
                 if len(sub_queries) >= 2:
@@ -303,20 +336,21 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                     all_results = []
                     seen_texts = set()
                     for sq in sub_queries:
-                        sq_res = hybrid_search(sq, split_k)
+                        sq_res = _retrieve(sq, split_k)
                         for item in sq_res:
                             txt = item.get("text")
                             if txt not in seen_texts:
                                 seen_texts.add(txt)
                                 all_results.append(item)
-                    results = all_results if all_results else hybrid_search(clean_query, top_k)
+                    results = all_results if all_results else _retrieve(clean_query, top_k)
                 else:
-                    results = hybrid_search(clean_query, top_k)
+                    results = _retrieve(clean_query, top_k)
         else:
-            results = hybrid_search(clean_query, top_k, metadata_filters=filters)
+            results = _retrieve(clean_query, top_k, metadata_filters=filters)
         retrieval_seconds = time.perf_counter() - retrieval_start
 
-        results = _filter_boilerplate_candidates(results)
+        if enable_boilerplate_filter:
+            results = _filter_boilerplate_candidates(results)
 
         if intent == "RECOMMENDATION":
             target_domains = filters.get("target_domains", [])
@@ -346,36 +380,42 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
                 "intent": intent,
                 "query_variants": [],
                 "retrieved_count": 0,
+                "fast_path_used": False,
+                **({"config": rag_cfg.to_dict()} if rag_cfg is not None else {}),
             }
 
-        try:
-            rerank_start = time.perf_counter()
-            reranked = rerank(clean_query, results, top_n)
-            rerank_seconds = time.perf_counter() - rerank_start
-            print(f"\n🎯 [RERANK] Top {len(reranked)} Results (Full Chunks):")
-            print("=" * 70)
-            for i, result in enumerate(reranked, 1):
-                payload = result.get("payload", {})
-                score = result.get("score", 0.0)
-                source = payload.get("source", "Unknown")
-                page = payload.get("page_number", "?")
-                title = payload.get("project_title") or payload.get("title", "-")
-                advisor = payload.get("advisor", "-")
-                author = payload.get("author", "-")
+        if enable_reranker:
+            try:
+                rerank_start = time.perf_counter()
+                reranked = rerank(clean_query, results, top_n)
+                rerank_seconds = time.perf_counter() - rerank_start
+                print(f"\n🎯 [RERANK] Top {len(reranked)} Results (Full Chunks):")
+                print("=" * 70)
+                for i, result in enumerate(reranked, 1):
+                    payload = result.get("payload", {})
+                    score = result.get("score", 0.0)
+                    source = payload.get("source", "Unknown")
+                    page = payload.get("page_number", "?")
+                    title = payload.get("project_title") or payload.get("title", "-")
+                    advisor = payload.get("advisor", "-")
+                    author = payload.get("author", "-")
 
-                print(f"📄 Chunk #{i} | Rerank Score: {score:.4f}")
-                print(f"   ├─ Source: {source} (Page {page})")
-                print(f"   ├─ Title: {title}")
-                print(f"   ├─ Author: {author} | Advisor: {advisor}")
-                print("   └─ Content:")
-                clean_text = result["text"].replace("\r\n", "\n").replace("\r", "\n")
-                for line in clean_text.strip().split("\n"):
-                    print(f"      {line}")
-                print("-" * 70)
-        except (TypeError, ValueError, RuntimeError, AttributeError) as e:
-            print(f"Error during reranking: {e}")
+                    print(f"📄 Chunk #{i} | Rerank Score: {score:.4f}")
+                    print(f"   ├─ Source: {source} (Page {page})")
+                    print(f"   ├─ Title: {title}")
+                    print(f"   ├─ Author: {author} | Advisor: {advisor}")
+                    print("   └─ Content:")
+                    clean_text = result["text"].replace("\r\n", "\n").replace("\r", "\n")
+                    for line in clean_text.strip().split("\n"):
+                        print(f"      {line}")
+                    print("-" * 70)
+            except (TypeError, ValueError, RuntimeError, AttributeError) as e:
+                print(f"Error during reranking: {e}")
+                rerank_seconds = 0.0
+                reranked = results[:top_n]  # Fallback to top semantic results
+        else:
             rerank_seconds = 0.0
-            reranked = results[:top_n]  # Fallback to top semantic results
+            reranked = results[:top_n]
 
         total_seconds = time.perf_counter() - total_start
         return {
@@ -392,6 +432,8 @@ def search_with_details(query: str, chat_history: str | None = None) -> dict:
             "normalized_query": normalized_query,
             "query_variants": [],
             "retrieved_count": len(results),
+            "fast_path_used": False,
+            **({"config": rag_cfg.to_dict()} if rag_cfg is not None else {}),
         }
     except (TypeError, ValueError, RuntimeError, AttributeError) as exc:
         error_msg = str(exc)

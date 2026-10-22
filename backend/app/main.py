@@ -49,6 +49,12 @@ app.add_middleware(
 # ลงทะเบียน Central Router (/api/v1)
 app.include_router(api_router)
 
+@app.on_event("startup")
+def startup_prewarm():
+    """Warm retrieval models in the background. Does not change the chat path."""
+    from app.rag.retrieval.prewarm import start_background_prewarm
+    start_background_prewarm()
+
 @app.get("/", tags=["System"])
 def root():
     return {"message": f"Welcome to {settings.APP_NAME} API"}

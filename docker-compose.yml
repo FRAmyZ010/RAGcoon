@@ -1,0 +1,104 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Database Service: PostgreSQL with pgvector extension
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ragcoon-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-ragcoon_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raguser} -d ${POSTGRES_DB:-ragcoon_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ragcoon-network
+
+  # ---------------------------------------------------------------------------
+  # 2. Database GUI: pgAdmin 4
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: ragcoon-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - ragcoon-network
+
+  # ---------------------------------------------------------------------------
+  # 3. LLM Inference Service: Ollama
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ragcoon-ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: >
+      /bin/sh -c "
+      ollama serve &
+      PID=$$!;
+      echo '⏳ Waiting for Ollama service to start...';
+      sleep 5;
+      echo '📥 Pulling models qwen2.5:7b and qwen:4b / gemma:4b...';
+      ollama pull qwen2.5:7b || true;
+      echo '✅ Ollama models ready!';
+      wait $$PID
+      "
+    networks:
+      - ragcoon-network
+
+  # ---------------------------------------------------------------------------
+  # 4. Backend Service: FastAPI + RAG Engine
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ragcoon-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragcoon_db}
+      - POSTGRES_HOST=postgres
+      - OLLAMA_BASE_URL=http://ollama:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/storage:/app/storage
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - ragcoon-network
+
+networks:
+  ragcoon-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_data:
+  huggingface_cache:

@@ -300,11 +300,48 @@ def _calculate_token_breakdown(
     }
 
 
+def _rag_config(config: Any):
+    """Return a benchmark RAGConfig only when the caller passed one."""
+    if config is None:
+        return None
+    from .rag_config import RAGConfig
+    return config if isinstance(config, RAGConfig) else None
+
+
+def _preset_style(preset: str, is_thai: bool) -> str:
+    if preset == "concise":
+        return (
+            "ตอบกระชับสูงสุด สั้นตรงประเด็น เอาเฉพาะเนื้อหาหลัก ไม่เกิน 2-3 บรรทัด ห้ามเกริ่นนำ ห้ามร่ายน้ำเด็ดขาด"
+            if is_thai
+            else "Be ultra-concise and direct. Output ONLY the core essential fact in 1-2 lines. Zero fluff, zero filler."
+        )
+    if preset == "deep_academic":
+        return (
+            "วิเคราะห์เชิงลึกตามหลักวิศวกรรมคอมพิวเตอร์อย่างเป็นระบบ แจกแจงรายละเอียดและหลักฐานพร้อมอ้างอิงชัดเจนทุกจุด"
+            if is_thai
+            else "Provide an in-depth, structured academic analysis. Deconstruct components systematically with comprehensive citations."
+        )
+    if preset == "code_focused":
+        return (
+            "เน้นการสกัดและแสดงโค้ด ชิ้นส่วนคำสั่ง และสคีมาทางเทคนิค โดยคงรูปแบบและไวยากรณ์ตามเอกสารต้นทางอย่างเคร่งครัด"
+            if is_thai
+            else "Focus on extracting and formatting technical code snippets and schema definitions strictly matching document evidence."
+        )
+    if preset == "comparative_table":
+        return (
+            "เน้นการจัดโครงสร้างเปรียบเทียบในรูปแบบตาราง Markdown และแจกแจงความแตกต่างทีละมิติอย่างเป็นระบบ"
+            if is_thai
+            else "Structure comparisons into a clear, aligned Markdown table followed by key differences by dimension."
+        )
+    return ""
+
+
 def _build_full_prompt(
     question: str,
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
+    config: Any = None,
 ) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
     """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
     is_thai = _is_thai_query(question)
@@ -344,6 +381,14 @@ CORE PRODUCTION RULES:
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""
 
+    rag_cfg = _rag_config(config)
+    if rag_cfg is not None and rag_cfg.system_prompt_override:
+        system_content = rag_cfg.system_prompt_override
+    elif rag_cfg is not None:
+        style_rule = _preset_style(rag_cfg.prompt_preset, is_thai)
+        if style_rule:
+            system_content = f"{system_content}\n{style_rule}"
+
     history_block = (
         f"Recent Conversation History:\n{chat_history.strip()}\n\n"
         if chat_history and chat_history.strip()
@@ -358,6 +403,8 @@ Question:
 
     intent_cfg = _get_intent_config(intent)
     num_predict = intent_cfg.get("num_predict", 512)
+    if rag_cfg is not None and rag_cfg.num_predict:
+        num_predict = rag_cfg.num_predict
     thinking_enabled = intent_cfg.get("thinking", False)
 
     think_block = "" if thinking_enabled else "<think>\n</think>\n"
@@ -391,20 +438,116 @@ Question:
     return prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens
 
 
+def _generate_with_provider(
+    prompt: str,
+    is_thai: bool,
+    num_predict: int,
+    thinking_enabled: bool,
+    prefill: str,
+    prompt_meta: dict[str, str],
+    stop_tokens: list[str],
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    config: Any,
+    stats_out: Optional[dict[str, Any]],
+    intent: str,
+) -> str:
+    from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
+
+    rag_cfg = _rag_config(config)
+    provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
+    model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
+    provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
+    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
+    user_content = (
+        f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\n"
+        f"Question:\n{prompt_meta['question_text']}"
+    )
+    if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
+        user_content += (
+            "\n\n(Instruction: Please format your response starting directly as relevant "
+            f"to the requested structure: {prefill.strip()})"
+        )
+
+    start_t = time.perf_counter()
+    if isinstance(provider, OllamaProvider):
+        raw_res, stats = provider.generate(
+            prompt=prompt,
+            system_prompt="",
+            temperature=temperature,
+            num_predict=num_predict,
+            stop_tokens=stop_tokens,
+            thinking=thinking_enabled,
+        )
+    else:
+        raw_res, stats = provider.generate(
+            prompt=user_content,
+            system_prompt=prompt_meta["system_text"],
+            temperature=temperature,
+            num_predict=num_predict,
+            stop_tokens=stop_tokens,
+            thinking=thinking_enabled,
+        )
+    duration = time.perf_counter() - start_t
+    raw_answer = (prefill + raw_res) if prefill else raw_res
+    if stats_out is not None:
+        p_eval = int(stats.get("prompt_eval_count", 0) or 0)
+        e_count = int(stats.get("eval_count", 0) or 0)
+        breakdown = _calculate_token_breakdown(
+            prompt_meta["system_text"],
+            prompt_meta["history_text"],
+            prompt_meta["context_text"],
+            prompt_meta["question_text"],
+            p_eval,
+            e_count,
+        )
+        stats_out.update({
+            "prompt_eval_count": p_eval,
+            "eval_count": e_count,
+            "eval_duration_ns": stats.get("eval_duration_ns", int(duration * 1e9)),
+            "gen_speed_tps": stats.get("gen_speed_tps", 0.0),
+            "ttft_seconds": stats.get("ttft_seconds", duration),
+            "llm_seconds": duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+            "token_breakdown": breakdown,
+        })
+    return clean_answer(raw_answer, is_thai=is_thai)
+
+
 def get_llm_response(
     question: str,
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
     stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
 ) -> str:
     """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history
+        question, context_list, intent=intent, chat_history=chat_history, config=config
     )
 
     if not context_list:
         return fallback_text
+
+    if llm_provider or llm_model or _rag_config(config) is not None:
+        return _generate_with_provider(
+            prompt,
+            is_thai,
+            num_predict,
+            thinking_enabled,
+            prefill,
+            prompt_meta,
+            stop_tokens,
+            llm_provider,
+            llm_model,
+            config,
+            stats_out,
+            intent,
+        )
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     start_t = time.perf_counter()
@@ -463,20 +606,113 @@ def get_llm_response(
     return clean_answer(raw_answer, is_thai=is_thai)
 
 
+def _stream_with_provider(
+    prompt: str,
+    num_predict: int,
+    thinking_enabled: bool,
+    prefill: str,
+    prompt_meta: dict[str, str],
+    stop_tokens: list[str],
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    config: Any,
+    stats_out: Optional[dict[str, Any]],
+    intent: str,
+) -> Generator[str, None, None]:
+    from .llm_provider import GeminiProvider, OllamaProvider, OpenAIProvider, get_llm_provider
+
+    rag_cfg = _rag_config(config)
+    provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
+    model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
+    provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
+    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
+    stream_start = time.perf_counter()
+    ttft: Optional[float] = None
+    if prefill:
+        ttft = time.perf_counter() - stream_start
+        yield prefill
+
+    user_content = (
+        f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\n"
+        f"Question:\n{prompt_meta['question_text']}"
+    )
+    if prefill and isinstance(provider, (GeminiProvider, OpenAIProvider)):
+        user_content += (
+            "\n\n(Instruction: Please format your response starting directly as relevant "
+            f"to the requested structure: {prefill.strip()})"
+        )
+
+    tokens_generated = 0
+    for token in provider.stream(
+        prompt=prompt if isinstance(provider, OllamaProvider) else user_content,
+        system_prompt="" if isinstance(provider, OllamaProvider) else prompt_meta["system_text"],
+        temperature=temperature,
+        num_predict=num_predict,
+        stop_tokens=stop_tokens,
+        thinking=thinking_enabled,
+    ):
+        if token:
+            if ttft is None:
+                ttft = time.perf_counter() - stream_start
+            tokens_generated += 1
+            yield token
+
+    duration = time.perf_counter() - stream_start
+    if stats_out is not None:
+        p_eval = len(prompt) // 4
+        breakdown = _calculate_token_breakdown(
+            prompt_meta["system_text"],
+            prompt_meta["history_text"],
+            prompt_meta["context_text"],
+            prompt_meta["question_text"],
+            p_eval,
+            tokens_generated,
+        )
+        stats_out.update({
+            "prompt_eval_count": p_eval,
+            "eval_count": tokens_generated,
+            "eval_duration_ns": int(duration * 1e9),
+            "gen_speed_tps": (tokens_generated / duration) if duration > 0 else 0.0,
+            "ttft_seconds": ttft or duration,
+            "thinking_enabled": thinking_enabled,
+            "intent": intent,
+            "token_breakdown": breakdown,
+        })
+
+
 def stream_llm_response(
     question: str,
     context_list: list[str],
     intent: str = "FACTOID",
     chat_history: str = "",
     stats_out: Optional[dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
 ) -> Generator[str, None, None]:
     """Streaming LLM generator that yields text tokens in real time from Ollama."""
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history
+        question, context_list, intent=intent, chat_history=chat_history, config=config
     )
 
     if not context_list:
         yield fallback_text
+        return
+
+    if llm_provider or llm_model or _rag_config(config) is not None:
+        yield from _stream_with_provider(
+            prompt,
+            num_predict,
+            thinking_enabled,
+            prefill,
+            prompt_meta,
+            stop_tokens,
+            llm_provider,
+            llm_model,
+            config,
+            stats_out,
+            intent,
+        )
         return
 
     ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "180"))
@@ -554,14 +790,16 @@ def _is_boilerplate_chunk(text: str) -> bool:
 
 
 def _prepare_rag_context(
-    question: str, session_id: Optional[str] = None
+    question: str,
+    session_id: Optional[str] = None,
+    config: Any = None,
 ) -> dict[str, Any]:
     """Unified context retrieval and document assembly for both streaming and non-streaming."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
     chat_history_str = session_manager.format_history_for_prompt(session_id)
-    retrieval_details = search_with_details(question, chat_history=chat_history_str)
+    retrieval_details = search_with_details(question, chat_history=chat_history_str, config=config)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})
@@ -597,6 +835,12 @@ def _prepare_rag_context(
         max_chunks_per_project = max_context_chunks
         max_total_projects = 3
         min_score = 0.0001
+
+    rag_cfg = _rag_config(config)
+    if rag_cfg is not None:
+        max_context_chunks = rag_cfg.max_context_chunks
+        max_chunks_per_project = rag_cfg.max_chunks_per_project
+        min_score = rag_cfg.min_score
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -784,9 +1028,15 @@ def _prepare_rag_context(
     }
 
 
-def answer_question(question: str, session_id: Optional[str] = None) -> dict[str, object]:
+def answer_question(
+    question: str,
+    session_id: Optional[str] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
+) -> dict[str, object]:
     """Synchronous Question Answering with In-Memory Session Memory."""
-    prep = _prepare_rag_context(question, session_id=session_id)
+    prep = _prepare_rag_context(question, session_id=session_id, config=config)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -867,7 +1117,14 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         llm_start = time.perf_counter()
         stats_out = {}
         answer = get_llm_response(
-            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+            question,
+            contexts,
+            intent=intent,
+            chat_history=chat_history_str,
+            stats_out=stats_out,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            config=config,
         )
         llm_seconds = time.perf_counter() - llm_start
 
@@ -923,6 +1180,7 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
         "filters": prep["filters"],
         "query_variants": retrieval_details.get("query_variants", []),
         "retrieved_count": retrieval_details.get("retrieved_count", len(scored_contexts)),
+        "fast_path_used": bool(retrieval_details.get("fast_path_used")),
         "errors": retrieval_errors,
         "timing": {
             "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
@@ -936,7 +1194,11 @@ def answer_question(question: str, session_id: Optional[str] = None) -> dict[str
 
 
 def stream_answer_question(
-    question: str, session_id: Optional[str] = None
+    question: str,
+    session_id: Optional[str] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    config: Any = None,
 ) -> Generator[dict[str, Any], None, None]:
     """
     Streaming Generator for Real-Time SSE Tokens + Citations & Timing.
@@ -947,7 +1209,7 @@ def stream_answer_question(
       - {"event": "done", "data": {...}} : Final complete answer, timing summary, citations, performance metrics
       - {"event": "error", "data": {"error": "..."}} : If error occurs
     """
-    prep = _prepare_rag_context(question, session_id=session_id)
+    prep = _prepare_rag_context(question, session_id=session_id, config=config)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
@@ -1050,7 +1312,14 @@ def stream_answer_question(
         llm_start = time.perf_counter()
 
         for token in stream_llm_response(
-            question, contexts, intent=intent, chat_history=chat_history_str, stats_out=stats_out
+            question,
+            contexts,
+            intent=intent,
+            chat_history=chat_history_str,
+            stats_out=stats_out,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            config=config,
         ):
             full_tokens.append(token)
             yield {"event": "token", "data": {"token": token}}

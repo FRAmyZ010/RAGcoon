@@ -51,6 +51,10 @@ _EXPORTS = {
     "client": (".config", "client"),
     "get_embed_model": (".config", "get_embed_model"),
     "get_reranker": (".config", "get_reranker"),
+    "get_llm_provider": (".llm_provider", "get_llm_provider"),
+    "set_active_llm": (".llm_provider", "set_active_llm"),
+    "get_active_llm": (".llm_provider", "get_active_llm"),
+    "AVAILABLE_LLM_PROFILES": (".llm_provider", "AVAILABLE_LLM_PROFILES"),
 }
 
 __all__ = (
@@ -77,6 +81,10 @@ __all__ = (
     "semantic_search",
     "session_manager",
     "SessionChatManager",
+    "get_llm_provider",
+    "set_active_llm",
+    "get_active_llm",
+    "AVAILABLE_LLM_PROFILES",
 )
 
 
