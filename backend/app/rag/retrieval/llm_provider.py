@@ -556,6 +556,14 @@ AVAILABLE_LLM_PROFILES = [
         "is_cloud": False,
     },
     {
+        "id": "ollama_qwen25",
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "label": "Ollama Qwen 2.5 (7B) [Local Accuracy]",
+        "description": "โมเดล local ที่เหมาะกับตารางและโค้ดที่ซับซ้อน",
+        "is_cloud": False,
+    },
+    {
         "id": "gemini_flash",
         "provider": "gemini",
         "model": "gemini-3.5-flash",
@@ -577,6 +585,14 @@ AVAILABLE_LLM_PROFILES = [
         "model": "gpt-4o-mini",
         "label": "OpenAI ChatGPT (GPT-4o Mini) [Cloud SOTA]",
         "description": "โมเดลเรือธงขนาดกะทัดรัดของ OpenAI สังเคราะห์ภาษาได้สละสลวย",
+        "is_cloud": True,
+    },
+    {
+        "id": "openai_gpt4o",
+        "provider": "openai",
+        "model": "gpt-4o",
+        "label": "OpenAI GPT-4o [Cloud Flagship]",
+        "description": "ใช้เมื่อต้องการคำตอบเชิงวิเคราะห์ที่ละเอียด",
         "is_cloud": True,
     },
 ]

@@ -128,59 +128,62 @@ def process_rag_query(
     """
     active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
     sync_client_messages(active_workspace_id, messages)
-    canned = prescreen_reply(query_text)
     try:
-        rag_output = (
-            {"answer": canned, "citations": [], "timing": {}}
-            if canned
-            else answer_question(query_text, session_id=active_workspace_id)
+        canned = prescreen_reply(query_text)
+        try:
+            rag_output = (
+                {"answer": canned, "citations": [], "timing": {}}
+                if canned
+                else answer_question(query_text, session_id=active_workspace_id)
+            )
+            answer_text = rag_output.get("answer", "")
+            citations_data = rag_output.get("citations", [])
+            timing_data = rag_output.get("timing", {})
+        except ImportError:
+            answer_text = f"ระบบได้รับคำถาม: '{query_text}' เรียบร้อยแล้ว"
+            citations_data = [{
+                "project_title": "RAGcoon System",
+                "source": "Senior_Project_Archive.pdf",
+                "page": 1,
+                "content_snippet": "เนื้อหาตัวอย่างจากเอกสารอ้างอิง"
+            }]
+            timing_data = {"retrieval_seconds": 0.1, "llm_seconds": 1.2, "total_seconds": 1.3}
+
+        citations_data = enrich_citations_with_document_ids(db, citations_data)
+        citations = [DocumentCitation(**c) if isinstance(c, dict) else c for c in citations_data]
+        if isinstance(timing_data, dict):
+            timing = TimingMetrics(
+                retrieval_seconds=float(timing_data.get("retrieval_seconds", 0.0) or 0.0),
+                rerank_seconds=float(timing_data.get("rerank_seconds", 0.0) or 0.0),
+                llm_seconds=float(timing_data.get("llm_seconds", 0.0) or 0.0),
+                total_seconds=float(timing_data.get("total_seconds", 0.0) or 0.0),
+            )
+        else:
+            timing = timing_data
+
+        db_entry = SearchQuery(
+            workspace_id=active_workspace_id,
+            query_text=query_text,
+            parent_query_id=parent_query_id,
+            answer_text=answer_text,
+            citations=[c.model_dump() for c in citations],
+            execution_time=timing.model_dump() if timing else None
         )
-        answer_text = rag_output.get("answer", "")
-        citations_data = rag_output.get("citations", [])
-        timing_data = rag_output.get("timing", {})
-    except ImportError:
-        answer_text = f"ระบบได้รับคำถาม: '{query_text}' เรียบร้อยแล้ว"
-        citations_data = [{
-            "project_title": "RAGcoon System",
-            "source": "Senior_Project_Archive.pdf",
-            "page": 1,
-            "content_snippet": "เนื้อหาตัวอย่างจากเอกสารอ้างอิง"
-        }]
-        timing_data = {"retrieval_seconds": 0.1, "llm_seconds": 1.2, "total_seconds": 1.3}
+        db.add(db_entry)
+        db.commit()
+        db.refresh(db_entry)
 
-    citations_data = enrich_citations_with_document_ids(db, citations_data)
-    citations = [DocumentCitation(**c) if isinstance(c, dict) else c for c in citations_data]
-    if isinstance(timing_data, dict):
-        timing = TimingMetrics(
-            retrieval_seconds=float(timing_data.get("retrieval_seconds", 0.0) or 0.0),
-            rerank_seconds=float(timing_data.get("rerank_seconds", 0.0) or 0.0),
-            llm_seconds=float(timing_data.get("llm_seconds", 0.0) or 0.0),
-            total_seconds=float(timing_data.get("total_seconds", 0.0) or 0.0),
+        return ChatResponse(
+            query_id=db_entry.id,
+            workspace_id=active_workspace_id,
+            answer=answer_text,
+            sources=[c.source for c in citations],
+            citations=citations,
+            contexts_count=len(citations),
+            timing=timing
         )
-    else:
-        timing = timing_data
-
-    db_entry = SearchQuery(
-        workspace_id=active_workspace_id,
-        query_text=query_text,
-        parent_query_id=parent_query_id,
-        answer_text=answer_text,
-        citations=[c.model_dump() for c in citations],
-        execution_time=timing.model_dump() if timing else None
-    )
-    db.add(db_entry)
-    db.commit()
-    db.refresh(db_entry)
-
-    return ChatResponse(
-        query_id=db_entry.id,
-        workspace_id=active_workspace_id,
-        answer=answer_text,
-        sources=[c.source for c in citations],
-        citations=citations,
-        contexts_count=len(citations),
-        timing=timing
-    )
+    finally:
+        pass
 
 def process_rag_stream(
     db: Session,

@@ -6,6 +6,7 @@ import {
   LogOut,
   MessageSquare,
   Bell,
+  Sliders,
 } from "lucide-react";
 import { clearAuth } from "../services/authApi";
 import {
@@ -112,6 +113,10 @@ export default function FeedbackAdmin() {
             <Link to="/feedback-admin" className="flex items-center gap-2.5 rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900">
               <MessageSquare className="h-3.5 w-3.5" />
               <span>Feedback</span>
+            </Link>
+            <Link to="/ai-config" className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10">
+              <Sliders className="h-3.5 w-3.5" />
+              <span>AI Configuration</span>
             </Link>
             <Link to="/chat" className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10">
               <MessageSquare className="h-3.5 w-3.5" />

@@ -22,6 +22,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Sliders,
 } from "lucide-react";
 import {
   deleteDocument,
@@ -498,6 +499,13 @@ export default function DocumentsManagement() {
             >
               <MessageSquare className="h-3.5 w-3.5" />
               <span>Feedback</span>
+            </Link>
+            <Link
+              to="/ai-config"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              <span>AI Configuration</span>
             </Link>
             <Link
               to="/chat"

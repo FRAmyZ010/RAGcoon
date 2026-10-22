@@ -16,6 +16,17 @@ load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+
+
+def _active_model() -> str:
+    from .llm_provider import get_active_llm
+    _provider, model = get_active_llm()
+    return model or OLLAMA_MODEL
+
+
+def _intent_temperature(intent: str) -> float:
+    from .intent_config import get_intent_config
+    return float(get_intent_config(intent).temperature)
 NO_ANSWER_TEXT_EN = "No relevant information found in the documents."
 NO_ANSWER_TEXT_TH = "ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร"
 NO_ANSWER_TEXT = NO_ANSWER_TEXT_EN
@@ -362,24 +373,19 @@ def _build_full_prompt(
         else "Be strictly concise, direct, and factual. Give ONLY the essential substance and evidence. ZERO conversational filler, ZERO preamble, and NEVER output internal reasoning, thinking steps, or planning monologue."
     )
 
-    system_content = f"""You are RAGcoon, a document-grounded Senior Project Analysis Agent.
-Your primary objective is: MAXIMIZE FACTUAL ACCURACY, EVIDENCE GROUNDING, PROJECT ISOLATION, AND CITATION CORRECTNESS.
-You answer questions using ONLY the retrieved document context below. Accuracy > completeness. Evidence > inference.
+    from .runtime_settings import resolve_system_prompt
+    from .system_prompt import DEFAULT_SYSTEM_PROMPT
 
-CORE PRODUCTION RULES:
-1. ABSOLUTE SOURCE-GROUNDING: The retrieved context is the ONLY authoritative source. Never invent facts, technologies, databases, code, or endpoints. Never infer tech stacks (Web app ≠ React, Mobile app ≠ Flutter, ER diagram ≠ MySQL, Database ≠ PostgreSQL). If evidence is insufficient, state: 'Not specified in the retrieved document.'
-2. CURRENT QUERY & FILTER ISOLATION: Never inherit project, advisor, author, or year filters from previous turns unless explicitly referenced. No explicit constraint in current query = NO FILTER.
-3. PROJECT ISOLATION: Every project is an independent evidence scope. Never transfer technologies, hardware, features, authors, or advisors between projects. For comparisons, evaluate each project on its own evidence.
-4. INLINE CITATION GROUNDING & EXACT PAGE NUMBERS: Every factual claim must have an inline citation: [Source: <source_file>, Page: <page_number>]. You MUST cite the EXACT page number from the excerpt header where the fact is written. For example, if "NodeMCU ESP8266" is inside an excerpt marked "PAGE: 36", you MUST cite "Page: 36". NEVER cite a title/abstract page (e.g. Page 5) for a technical component that appears on another page. Never fabricate page numbers.
-5. CODE, FIGURE & DATABASE RULES: A schema is NOT SQL. Figure title ≠ complete figure content. If actual code/SQL is not present in retrieved context, state: 'The retrieved document contains database/schema information, but does not provide the actual SQL commands.'
-6. RECOMMENDATION VS AI EXTENSION: Recommendations search across projects by default. Any model-generated extension must be explicitly labeled: 'AI Suggestion:' and never presented as a documented feature.
-7. AGGREGATION & COUNT INTEGRITY: Top-K retrieval results do not prove repository-wide totals. If not exhaustive, state: 'I found X matching projects in the retrieved results, but this does not establish the total number of projects in the repository.'
-8. NO INTERNAL REASONING: Zero preamble, zero filler, zero chain-of-thought monologue (never output 'Let me check...', 'I need to...', 'First, I will...'). Start directly with the answer.
-9. NO UNSUPPORTED NUMBERS OR RATINGS: Never invent accuracy, performance metrics, percentages, or subjective ratings (never assign Easy/Medium/Hard or Low/High without explicit document proof).
-10. GOLDEN RULE: When in doubt, DO NOT guess. When deciding between a useful answer that might be wrong and a limited answer that is definitely supported, ALWAYS choose the limited, evidence-grounded answer.
+    system_content = resolve_system_prompt(
+        f"""{DEFAULT_SYSTEM_PROMPT}
 {intent_instruction}
 {lang_instruction}
 If the context contains no relevant information, reply exactly: {insufficient_reply}"""
+    )
+    from .intent_config import get_intent_config
+    extra_instruction = get_intent_config(intent).custom_system_instruction
+    if extra_instruction:
+        system_content = f"{system_content}\n{extra_instruction}"
 
     rag_cfg = _rag_config(config)
     if rag_cfg is not None and rag_cfg.system_prompt_override:
@@ -419,7 +425,7 @@ Question:
     elif intent == "EXPLORATORY":
         prefill = "1. **"
 
-    model_name = OLLAMA_MODEL.lower()
+    model_name = _active_model().lower()
     if "gemma" in model_name:
         full_user = f"{system_content}\n\n{user_content}"
         prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
@@ -458,7 +464,7 @@ def _generate_with_provider(
     provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
     model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
     provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
-    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
+    temperature = rag_cfg.temperature if rag_cfg is not None else _intent_temperature(intent)
     user_content = (
         f"{prompt_meta['history_text']}Context:\n{prompt_meta['context_text']}\n\n"
         f"Question:\n{prompt_meta['question_text']}"
@@ -533,7 +539,9 @@ def get_llm_response(
     if not context_list:
         return fallback_text
 
-    if llm_provider or llm_model or _rag_config(config) is not None:
+    from .llm_provider import get_active_llm
+    active_provider, active_model = get_active_llm()
+    if llm_provider or llm_model or _rag_config(config) is not None or active_provider != "ollama":
         return _generate_with_provider(
             prompt,
             is_thai,
@@ -542,8 +550,8 @@ def get_llm_response(
             prefill,
             prompt_meta,
             stop_tokens,
-            llm_provider,
-            llm_model,
+            llm_provider or active_provider,
+            llm_model or active_model,
             config,
             stats_out,
             intent,
@@ -555,14 +563,14 @@ def get_llm_response(
         response = _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
-                "model": OLLAMA_MODEL,
+                "model": _active_model(),
                 "prompt": prompt,
                 "raw": True,
                 "stream": False,
                 "think": thinking_enabled,
                 "keep_alive": "30m",
                 "options": {
-                    "temperature": 0.0,
+                    "temperature": _intent_temperature(intent),
                     "num_predict": num_predict,
                     "num_ctx": DEFAULT_NUM_CTX,
                     "stop": stop_tokens,
@@ -625,7 +633,7 @@ def _stream_with_provider(
     provider_to_use = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
     model_to_use = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
     provider = get_llm_provider(provider_name=provider_to_use, model_name=model_to_use)
-    temperature = rag_cfg.temperature if rag_cfg is not None else 0.0
+    temperature = rag_cfg.temperature if rag_cfg is not None else _intent_temperature(intent)
     stream_start = time.perf_counter()
     ttft: Optional[float] = None
     if prefill:
@@ -699,7 +707,9 @@ def stream_llm_response(
         yield fallback_text
         return
 
-    if llm_provider or llm_model or _rag_config(config) is not None:
+    from .llm_provider import get_active_llm
+    active_provider, active_model = get_active_llm()
+    if llm_provider or llm_model or _rag_config(config) is not None or active_provider != "ollama":
         yield from _stream_with_provider(
             prompt,
             num_predict,
@@ -707,8 +717,8 @@ def stream_llm_response(
             prefill,
             prompt_meta,
             stop_tokens,
-            llm_provider,
-            llm_model,
+            llm_provider or active_provider,
+            llm_model or active_model,
             config,
             stats_out,
             intent,
@@ -727,14 +737,14 @@ def stream_llm_response(
         with _http_session.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
-                "model": OLLAMA_MODEL,
+                "model": _active_model(),
                 "prompt": prompt,
                 "raw": True,
                 "stream": True,
                 "think": thinking_enabled,
                 "keep_alive": "30m",
                 "options": {
-                    "temperature": 0.0,
+                    "temperature": _intent_temperature(intent),
                     "num_predict": num_predict,
                     "num_ctx": DEFAULT_NUM_CTX,
                     "stop": stop_tokens,
@@ -841,6 +851,13 @@ def _prepare_rag_context(
         max_context_chunks = rag_cfg.max_context_chunks
         max_chunks_per_project = rag_cfg.max_chunks_per_project
         min_score = rag_cfg.min_score
+    else:
+        from .intent_config import get_intent_config
+        intent_limits = get_intent_config(intent)
+        max_context_chunks = intent_limits.max_context_chunks
+        max_chunks_per_project = intent_limits.max_chunks_per_project
+        max_total_projects = intent_limits.max_total_projects
+        min_score = intent_limits.min_score
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
@@ -1228,7 +1245,7 @@ def stream_answer_question(
         "question": question,
         "session_id": session_id,
         "intent": intent,
-        "model": OLLAMA_MODEL,
+        "model": _active_model(),
         "normalized_query": retrieval_details.get("normalized_query", question),
         "filters": prep["filters"],
         "sources": sources,
@@ -1254,7 +1271,7 @@ def stream_answer_question(
             "data": {
                 "answer": error_msg,
                 "session_id": session_id,
-                "model": OLLAMA_MODEL,
+                "model": _active_model(),
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1357,7 +1374,7 @@ def stream_answer_question(
             "answer": cleaned_answer,
             "session_id": session_id,
             "intent": intent,
-            "model": OLLAMA_MODEL,
+            "model": _active_model(),
             "sources": sources,
             "citations": citations,
             "timing": {

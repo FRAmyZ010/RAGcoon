@@ -8,6 +8,7 @@ import FeedbackPage from "./pages/Feedback.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import FeedbackAdmin from "./pages/FeedbackAdmin.jsx";
 import LoginPage from "./pages/Login.jsx";
+import AIconfigPage from "./pages/AIconfig.jsx";
 import "./index.css";
 
 let visitSent = false;
@@ -70,6 +71,14 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           element={
             <RequireAuth>
               <Dashboard />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/ai-config"
+          element={
+            <RequireAuth>
+              <AIconfigPage />
             </RequireAuth>
           }
         />

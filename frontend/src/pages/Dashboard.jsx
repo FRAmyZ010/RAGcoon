@@ -9,6 +9,7 @@ import {
   LogOut,
   MessageSquare,
   Search,
+  Sliders,
 } from "lucide-react";
 import { clearAuth } from "../services/authApi";
 import { fetchOverview } from "../services/dashboardApi";
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/documents", label: "Documents", icon: FolderClosed },
   { to: "/feedback-admin", label: "Feedback", icon: MessageSquare },
+  { to: "/ai-config", label: "AI Configuration", icon: Sliders },
   { to: "/chat", label: "Chat Workspace", icon: MessageSquare },
 ];
 
