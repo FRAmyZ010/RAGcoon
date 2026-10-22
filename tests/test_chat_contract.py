@@ -82,7 +82,7 @@ class ChatContractTests(unittest.TestCase):
         ):
             generator = process_rag_stream(
                 db=None,
-                query_text="current question",
+                query_text="current question 2",
                 workspace_id=workspace_id,
                 messages=[],
                 background_tasks=background_tasks,
@@ -94,7 +94,7 @@ class ChatContractTests(unittest.TestCase):
         logged = background_tasks.tasks[0].kwargs
         self.assertEqual(logged["query_id"], 42)
         self.assertEqual(logged["workspace_id"], workspace_id)
-        self.assertEqual(logged["query_text"], "current question")
+        self.assertEqual(logged["query_text"], "current question 2")
         self.assertEqual(logged["answer_text"], "hello world")
         session_manager.clear_session(workspace_id)
 
