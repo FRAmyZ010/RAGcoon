@@ -6,7 +6,6 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  FolderClosed,
   Menu,
   MessageSquare,
   MessageSquarePlus,
@@ -480,13 +479,6 @@ export default function App() {
         </div>
 
         <div className="mt-4 space-y-1 border-t border-gray-700 pt-3">
-          <Link
-            to="/documents"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
-          >
-            <FolderClosed className="h-4 w-4" />
-            <span>Documents</span>
-          </Link>
           <Link
             to="/feedback"
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white md:text-base"
