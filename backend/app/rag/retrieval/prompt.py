@@ -342,6 +342,7 @@ def _build_full_prompt(
     intent: str = "FACTOID",
     chat_history: str = "",
     config: Any = None,
+    llm_model: Optional[str] = None,
 ) -> tuple[str, bool, str, int, bool, str, dict[str, str], list[str]]:
     """Construct prompt in ChatML format and return (prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens)."""
     is_thai = _is_thai_query(question)
@@ -419,11 +420,22 @@ Question:
     elif intent == "EXPLORATORY":
         prefill = "1. **"
 
-    model_name = OLLAMA_MODEL.lower()
+    effective_model = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None) or OLLAMA_MODEL
+    model_name = str(effective_model).lower()
     if "gemma" in model_name:
         full_user = f"{system_content}\n\n{user_content}"
         prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
         stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
+    elif "llama" in model_name:
+        prompt = (
+            f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
+            f"<|start_header_id|>user<|end_header_id|>\n\n{user_content}<|eot_id|>"
+            f"<|start_header_id|>assistant<|end_header_id|>\n\n{prefill}"
+        )
+        stop_tokens = ["<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>"]
+    elif "qwen2" in model_name:
+        prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{prefill}"
+        stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>"]
     else:
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n{think_block}{prefill}"
         stop_tokens = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "</think>"]
@@ -527,7 +539,7 @@ def get_llm_response(
 ) -> str:
     """Synchronous (non-streaming) LLM call with timing & performance stats extraction."""
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history, config=config
+        question, context_list, intent=intent, chat_history=chat_history, config=config, llm_model=llm_model
     )
 
     if not context_list:
@@ -692,7 +704,7 @@ def stream_llm_response(
 ) -> Generator[str, None, None]:
     """Streaming LLM generator that yields text tokens in real time from Ollama."""
     prompt, is_thai, fallback_text, num_predict, thinking_enabled, prefill, prompt_meta, stop_tokens = _build_full_prompt(
-        question, context_list, intent=intent, chat_history=chat_history, config=config
+        question, context_list, intent=intent, chat_history=chat_history, config=config, llm_model=llm_model
     )
 
     if not context_list:

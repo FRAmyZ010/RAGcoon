@@ -88,8 +88,8 @@ class OllamaProvider(BaseLLMProvider):
         extra_stops = ["\n## Sources", "\n## Source", "\n## แหล่งที่มา", "\n### ⚠️", "\n### 🔔"]
 
         # Check if already templated
-        if "<start_of_turn>" in prompt or "<|im_start|>" in prompt:
-            stops = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "<end_of_turn>"] + extra_stops
+        if "<start_of_turn>" in prompt or "<|im_start|>" in prompt or "<|begin_of_text|>" in prompt:
+            stops = ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>", "<|end_of_text|>"] + extra_stops
             return prompt, stops
 
         if "gemma" in m_lower:
@@ -551,8 +551,48 @@ AVAILABLE_LLM_PROFILES = [
         "id": "ollama_qwen3",
         "provider": "ollama",
         "model": "qwen3:4b",
-        "label": "Ollama Qwen 3 (4B) [Local Reasoning]",
+        "label": "Ollama Qwen 3 (4B) [Local Reasoning - 2.5GB]",
         "description": "โมเดล Qwen 3 ขนาด 4B สำหรับงานวิเคราะห์และการตอบเชิงเหตุผล",
+        "is_cloud": False,
+    },
+    {
+        "id": "ollama_qwen25_3b",
+        "provider": "ollama",
+        "model": "qwen2.5:3b",
+        "label": "Ollama Qwen 2.5 (3B) [Local Ultra-Fast - 1.9GB]",
+        "description": "โมเดลขนาดกะทัดรัด 3B เร็วสูง ประหยัด VRAM 4GB ตอบภาษาไทยแม่นยำ",
+        "is_cloud": False,
+    },
+    {
+        "id": "ollama_llama32_3b",
+        "provider": "ollama",
+        "model": "llama3.2:3b",
+        "label": "Ollama Llama 3.2 (3B) [Meta Compact - 2.0GB]",
+        "description": "โมเดลขนาด 3B จาก Meta ออกแบบสำหรับ Laptop GPU 4GB โดยเฉพาะ",
+        "is_cloud": False,
+    },
+    {
+        "id": "ollama_gemma3_1b",
+        "provider": "ollama",
+        "model": "gemma3:1b",
+        "label": "Ollama Gemma 3 (1B) [Ultra-Lightweight - 815MB]",
+        "description": "โมเดลจิ๋วขนาด 1B กินแรมไม่ถึง 1GB เน้นความเร็วสูงสุด",
+        "is_cloud": False,
+    },
+    {
+        "id": "ollama_qwen25_7b",
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "label": "Ollama Qwen 2.5 (7B) [Local High-Capacity - 4.7GB]",
+        "description": "โมเดลขนาดกลาง 7B ความละเอียดสูง (Hybrid GPU+CPU Offload)",
+        "is_cloud": False,
+    },
+    {
+        "id": "ollama_llama31_8b",
+        "provider": "ollama",
+        "model": "llama3.1:8b",
+        "label": "Ollama Llama 3.1 (8B) [Meta Standard - 4.9GB]",
+        "description": "โมเดลมาตรฐาน 8B จาก Meta",
         "is_cloud": False,
     },
     {

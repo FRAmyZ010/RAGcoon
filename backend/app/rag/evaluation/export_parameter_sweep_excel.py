@@ -1,21 +1,27 @@
 """
 Module: export_parameter_sweep_excel.py
 Description:
-    Exports all Stage 1 (Retrieval Sweep) and Stage 2 (LLM Generation Sweep with gemma3:4b)
-    empirical results into 9 ultra-detailed sheets in:
+    Exports all Stage 1 (Retrieval Sweep), Stage 2 (LLM Generation Sweep), and Multi-LLM Model
+    Benchmark results into ultra-detailed sheets in:
       1) data/RAGcoon_Parameter_Tuning_Experiments.xlsx
       2) backend/data/RAGcoon_Parameter_Tuning_Experiments.xlsx
       3) Updates data/RAGcoon_Handoff_Specification.xlsx & backend/data/RAGcoon_Handoff_Specification.xlsx
-         with all 9 Parameter Sweep, Scoring Rules/Rubrics & Concrete Output Example sheets.
 """
 
 import json
 import os
 import re
 import shutil
+import sys
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
@@ -124,17 +130,19 @@ def auto_fit_columns(ws, max_width: int = 48):
 
 
 def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dict, prefix_num: int | None = None):
-    """Add 9 comprehensive Stage 1 & Stage 2 Parameter Sweep, Rubric & Example sheets to a Workbook."""
+    """Add comprehensive Stage 1, Stage 2, Scoring Rules, Concrete Examples, and Multi-LLM Benchmark sheets."""
     opt = payload["optimal_config"]
     s1_winners = payload["stage1_winners"]
     s2_winners = payload["stage2_winners"]
     s1_all = payload["stage1_results"]
     s2_all = payload["stage2_results"]
+    llm_bench = payload.get("llm_benchmark_results", [])
+    llm_winner = payload.get("llm_winner", {})
 
     def sheet_name(idx: int, base: str) -> str:
         if prefix_num is not None:
             return f"{prefix_num + idx:02d}_{base}"[:31]
-        return f"0{idx + 1}_{base}"[:31]
+        return f"{idx + 1:02d}_{base}"[:31]
 
     # -------------------------------------------------------------------------
     # SHEET 1: Executive Leaderboard & Optimal Config Summary
@@ -144,7 +152,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         del wb[s_name_1]
     ws1 = wb.create_sheet(title=s_name_1)
 
-    ws1["A1"] = "🏆 สรุปผลการทดลองปรับจูนพารามิเตอร์ 2 ระยะ (Two-Stage Parameter Tuning & Optimal Config)"
+    ws1["A1"] = "🏆 สรุปผลการทดลองปรับจูนพารามิเตอร์ 2 ระยะ และโมเดล LLM ที่เหมาะสมที่สุด (Optimal Config & LLM Summary)"
     ws1["A1"].font = TITLE_FONT
     ws1["A2"] = f"โมเดลหลักที่ใช้ทดสอบ: {payload['primary_model']} | วันที่ประมวลผล: {payload['generated_at']} | โปรไฟล์ผู้ชนะ: {opt['profile_name']}"
     ws1["A2"].font = BOLD_FONT
@@ -212,7 +220,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 2: ฝั่งจัดเตรียมบริบท (Context Cap)",
             "[15, 10, 6, 5, 4, 2]",
             opt["max_context_chunks"],
-            f"ชนะใน Exp 4 (Chunks={opt['max_context_chunks']}, Quality=84.7, Phrase Recall=86.7%): ให้บริบทครบถ้วนสำหรับ gemma3:4b โดยไม่เปลือง Input Tokens เกินจำเป็น",
+            f"ชนะใน Exp 4 (Chunks={opt['max_context_chunks']}, Quality=84.7, Phrase Recall=86.7%): ให้บริบทครบถ้วนสำหรับ LLM โดยไม่เปลือง Input Tokens เกินจำเป็น",
         ],
         [
             8,
@@ -225,7 +233,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         [
             9,
             "prompt_preset",
-            "Stage 2: ฝั่ง LLM Generation (gemma3:4b)",
+            "Stage 2: ฝั่ง LLM Generation",
             "['concise', 'balanced', 'deep_academic', 'step_by_step']",
             opt["prompt_preset"],
             f"ชนะใน Exp 5 (Composite = {s2_winners['best_stage2_composite']:.2f}): รูปแบบ Prompt '{opt['prompt_preset']}' และ 'balanced' ให้โครงสร้างคำตอบและการอ้างอิงครบถ้วนที่สุด",
@@ -233,12 +241,21 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         [
             10,
             "temperature",
-            "Stage 2: ฝั่ง LLM Generation (gemma3:4b)",
+            "Stage 2: ฝั่ง LLM Generation",
             "[0.0, 0.2, 0.5]",
             opt["temperature"],
             "Temperature = 0.0 รักษาความแม่นยำตามเอกสารอ้างอิง 100% (Deterministic Grounding) และเร็วกว่า Temp 0.2/0.5",
         ],
     ]
+    if llm_winner:
+        rows_opt.append([
+            11,
+            "llm_model (RTX 3050 Ti 4GB)",
+            "Stage 3: เปรียบเทียบโมเดล LLM 7 รุ่น",
+            "[gemma3:4b, qwen2.5:3b, qwen3:4b, llama3.2:3b, gemma3:1b, qwen2.5:7b, llama3.1:8b]",
+            f"{llm_winner['best_model']} (และ gemma3:4b / qwen2.5:3b)",
+            f"ชนะเลิศด้านความคุ้มค่าบน RTX 3050 Ti (4GB VRAM): Suitability Score = {llm_winner['suitability_score']:.2f}, เวลาตอบเฉลี่ย {llm_winner['avg_llm_seconds']:.2f}s ({llm_winner['avg_tps']:.1f} TPS)",
+        ])
 
     for c_idx, h in enumerate(headers_opt, start=1):
         ws1.cell(row=4, column=c_idx, value=h)
@@ -456,7 +473,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
     auto_fit_columns(ws4)
 
     # -------------------------------------------------------------------------
-    # SHEET 5: Stage 1 Per-Query Granular Breakdown (19 Configs x 13 Answerable Queries)
+    # SHEET 5: Stage 1 Per-Query Granular Breakdown
     # -------------------------------------------------------------------------
     s_name_5 = sheet_name(4, "Stage1_PerQuery_Detail")
     if s_name_5 in wb.sheetnames:
@@ -512,7 +529,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
     auto_fit_columns(ws5)
 
     # -------------------------------------------------------------------------
-    # SHEET 6: Stage 2 Per-Query Answers & Rule-by-Rule Rubric Breakdown (gemma3:4b)
+    # SHEET 6: Stage 2 Per-Query Answers & Rule-by-Rule Rubric Breakdown
     # -------------------------------------------------------------------------
     s_name_6 = sheet_name(5, "Stage2_PerQuery_Answers")
     if s_name_6 in wb.sheetnames:
@@ -586,23 +603,23 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
     auto_fit_columns(ws6, max_width=55)
 
     # -------------------------------------------------------------------------
-    # SHEET 7: Full Experiment History Log (All Runs Ranked Leaderboard)
+    # SHEET 7: Full Experiment History Log
     # -------------------------------------------------------------------------
     s_name_7 = sheet_name(6, "Full_Experiment_Log")
     if s_name_7 in wb.sheetnames:
         del wb[s_name_7]
     ws7 = wb.create_sheet(title=s_name_7)
 
-    ws7["A1"] = "📋 บันทึกประวัติการทดลองทั้งหมด (Complete Experiment Tracking Log - Stage 1 & Stage 2)"
+    ws7["A1"] = "📋 บันทึกประวัติการทดลองทั้งหมด (Complete Experiment Tracking Log - Stage 1, Stage 2 & Multi-LLM)"
     ws7["A1"].font = TITLE_FONT
-    ws7["A2"] = "รวบรวมผลการรันทุกการตั้งค่า (32 การทดลองย่อย) พร้อมรหัสการทดลอง (Run ID) และคะแนนรวม (Composite Score)"
+    ws7["A2"] = "รวบรวมผลการรันทุกการตั้งค่า พร้อมรหัสการทดลอง (Run ID) และคะแนนรวม (Composite Score)"
     ws7["A2"].font = BOLD_FONT
 
     headers_log = [
         "Run ID",
         "ระยะการทดสอบ (Stage)",
         "กลุ่มการทดลอง (Exp Group)",
-        "การตั้งค่า (Parameter Setting)",
+        "การตั้งค่า / โมเดล (Setting / Model)",
         "top_k",
         "rerank_top_n",
         "Hybrid",
@@ -613,7 +630,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         "Quota/Proj",
         "Prompt Preset",
         "Temp",
-        "Hit Rate (%)",
+        "Hit / Phrase Recall",
         "MRR / Quality",
         "Latency",
         "Composite Score",
@@ -641,7 +658,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "-",
             "-",
             "-",
-            f"{r['hit_rate_pct']:.1f}%",
+            f"Hit: {r['hit_rate_pct']:.1f}%",
             f"MRR: {r['mrr']:.4f}",
             f"{r['avg_total_search_ms']:.1f} ms",
             r["composite_score"],
@@ -668,9 +685,36 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             r["max_chunks_per_project"],
             r["prompt_preset"],
             r["temperature"],
-            f"{r['avg_hit_rate_pct']:.1f}%",
+            f"Phrase: {r['avg_phrase_recall_pct']:.1f}%",
             f"Quality: {r['avg_quality_score']:.1f}",
             f"{r['avg_llm_seconds']:.2f} s",
+            r["composite_score"],
+        ]
+        for c_idx, v in enumerate(vals, start=1):
+            ws7.cell(row=row_cursor, column=c_idx, value=v)
+        row_cursor += 1
+
+    for i, r in enumerate(llm_bench, start=1):
+        if i == 1:
+            winner_log_rows.add(row_cursor)
+        vals = [
+            f"EXP-LLM-{i:02d}",
+            "Stage 3: Multi-LLM",
+            "Exp 6: 7-Model Benchmark",
+            f"{r['model']} ({r['size_gb']} GB)",
+            15,
+            10,
+            "ON",
+            "ON",
+            "ON",
+            "ON",
+            6,
+            2,
+            "balanced",
+            0.0,
+            f"Phrase: {r['avg_phrase_recall_pct']:.1f}%",
+            f"Quality: {r['avg_quality_score']:.1f}",
+            f"{r['avg_llm_seconds']:.2f} s ({r['avg_tps']:.1f} TPS)",
             r["composite_score"],
         ]
         for c_idx, v in enumerate(vals, start=1):
@@ -690,7 +734,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
 
     ws8["A1"] = "📐 กฎการให้คะแนนและสูตรคำนวณมาตรฐาน (Deterministic Scoring Rules, Rubric Breakdown & Formulas)"
     ws8["A1"].font = TITLE_FONT
-    ws8["A2"] = "อธิบายหลักการคำนวณทุกตัวชี้วัดแบบโปร่งใส (100% Rule-Based & Reproducible) ไม่ใช้การประเมินด้วยความรู้สึก"
+    ws8["A2"] = "อธิบายหลักการคำนวณทุกตัวชี้วัดแบบโปร่งใส (100% Rule-Based & Reproducible) ทั้งฝั่งค้นหา, ฝั่งคำตอบ LLM, และความเหมาะสมของโมเดลกับ RTX 3050 Ti (4GB VRAM)"
     ws8["A2"].font = BOLD_FONT
 
     headers_rules = [
@@ -751,46 +795,46 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Full Pipeline: 0.25(100) + 0.25(92.31) + 0.20(82.5) + 0.10(96.15) + 0.10(100) + 0.05(88.82) + 0.05(62.5) = 91.64 คะแนน (อันดับ 1)",
         ],
         [
-            "Stage 2: กฎให้คะแนนคำตอบ LLM (Rubric Rule 1)",
+            "Stage 2 & 3: กฎให้คะแนนคำตอบ LLM (Rubric Rule 1)",
             "Rule 1: Citation Strictness (ความถูกต้องของการอ้างอิง)",
             "เต็ม 30 คะแนน (ใน Rubric 100)",
             "ตรวจด้วย Regex ว่าคำตอบมีการระบุแหล่งอ้างอิงตามรูปแบบบังคับ `[Source: ชื่อไฟล์.pdf, Page: X]` หรือ `📄 ชื่อไฟล์.pdf` หรือไม่:\n- มีรูปแบบอ้างอิงครบถ้วน หรือมาจาก Fast-Path Template = 30 คะแนน\n- มีคำว่า Source/หน้า แต่ผิดรูปแบบ = 15 คะแนน\n- ไม่มีการอ้างอิงเลย = 5 คะแนน",
-            "คำตอบของ gemma3:4b ระบุ `[Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18]` -> ได้เต็ม 30 / 30 คะแนน",
+            "คำตอบของ LLM ระบุ `[Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18]` -> ได้เต็ม 30 / 30 คะแนน",
         ],
         [
-            "Stage 2: กฎให้คะแนนคำตอบ LLM (Rubric Rule 2)",
+            "Stage 2 & 3: กฎให้คะแนนคำตอบ LLM (Rubric Rule 2)",
             "Rule 2: Cleanliness & Format Guard (ความสะอาดของคำตอบ)",
             "เต็ม 25 คะแนน (ใน Rubric 100)",
             "ตั้งต้น 25 คะแนน หักจุดละ 10 คะแนนหาก LLM สร้างหัวข้อขยะที่ไม่มีข้อมูล เช่น `### 🔔 บริการภายนอก /ไม่มีข้อมูล`, `### ⚠️ ข้อมูลที่ไม่ได้ระบุ`, หรือ `## Sources -`",
             "คำตอบสะอาด ไม่มีบล็อกว่างเปล่าที่ไร้ความหมาย -> ได้เต็ม 25 / 25 คะแนน",
         ],
         [
-            "Stage 2: กฎให้คะแนนคำตอบ LLM (Rubric Rule 3)",
+            "Stage 2 & 3: กฎให้คะแนนคำตอบ LLM (Rubric Rule 3)",
             "Rule 3: Response Latency Score (ความเร็วในการตอบ)",
             "เต็ม 25 คะแนน (ใน Rubric 100)",
-            "ให้คะแนนตามเวลาตอบรวม (Total Seconds):\n- <= 1.5 วินาที = 25 คะแนน (เช่น Fast-Path)\n- <= 3.5 วินาที = 20 คะแนน\n- <= 6.0 วินาที = 15 คะแนน\n- <= 10.0 วินาที = 10 คะแนน\n- > 10.0 วินาที = 5 คะแนน",
-            "ข้อ GT-04 (Fast-Path) ใช้เวลา 0.01s -> ได้ 25 / 25 คะแนน\nข้อ Deep Dive บน CPU Ollama ใช้เวลา ~15s -> ได้ 5 / 25 คะแนน",
+            "ให้คะแนนตามเวลาตอบรวม (Total Seconds):\n- <= 1.5 วินาที = 25 คะแนน\n- <= 3.5 วินาที = 20 คะแนน\n- <= 6.0 วินาที = 15 คะแนน\n- <= 10.0 วินาที = 10 คะแนน\n- > 10.0 วินาที = 5 คะแนน",
+            "โมเดลตัวเบา 1B-3B ที่ตอบภายใน 3-6 วินาทีจะได้คะแนน Latency Score สูงกว่ารุ่น 7B-8B ที่ใช้เวลา >15 วินาที",
         ],
         [
-            "Stage 2: กฎให้คะแนนคำตอบ LLM (Rubric Rule 4)",
+            "Stage 2 & 3: กฎให้คะแนนคำตอบ LLM (Rubric Rule 4)",
             "Rule 4: Substantiveness & Completeness (ความสมบูรณ์ของเนื้อหา)",
             "เต็ม 20 คะแนน (ใน Rubric 100)",
             "ตรวจความยาวและความสมบูรณ์ของคำตอบ:\n- ความยาว >= 150 ตัวอักษร = 20 คะแนน\n- ความยาว 50 - 149 ตัวอักษร = 15 คะแนน\n- ความยาว 1 - 49 ตัวอักษร = 10 คะแนน\n- คำตอบว่างเปล่า = 0 คะแนน",
-            "คำตอบอธิบายสถาปัตยกรรมและอุปกรณ์ครบถ้วน (ยาว 650 ตัวอักษร) -> ได้เต็ม 20 / 20 คะแนน",
+            "คำตอบอธิบายสถาปัตยกรรมและอุปกรณ์ครบถ้วน (ยาว >= 150 ตัวอักษร) -> ได้เต็ม 20 / 20 คะแนน",
         ],
         [
-            "Stage 2: กฎตรวจคำตอบกับเฉลย (Ground-Truth Verification)",
+            "Stage 2 & 3: กฎตรวจคำตอบกับเฉลย (Ground-Truth Verification)",
             "Rule 5: Key Phrase Recall (%) & Rule 6: Anti-Hallucination Guard (%)",
-            "ถ่วงน้ำหนักเข้า Blended Quality & Stage 2 Composite",
-            "- Key Phrase Recall (%) = (จำนวนคำสำคัญใน key_phrases ที่ปรากฏจริงในคำตอบ / จำนวน key_phrases ทั้งหมดของข้อนั้น) × 100\n- Hallucination Guard (%) = 100% เมื่อไม่ปรากฏคำต้องห้าม (forbidden_phrases เช่น มั่วว่ามี Line Notify ใน GT-06) และปฏิเสธถูกต้องในข้อคำถามหลอก\n- Blended Quality Score = 0.60×RubricScore + 0.25×KeyPhraseRecall + 0.15×HallucinationGuard",
+            "ถ่วงน้ำหนักเข้า Blended Quality & Composite",
+            "- Key Phrase Recall (%) = (จำนวนคำสำคัญใน key_phrases ที่ปรากฏจริงในคำตอบ / จำนวน key_phrases ทั้งหมดของข้อนั้น) × 100\n- Hallucination Guard (%) = 100% เมื่อไม่ปรากฏคำต้องห้าม (forbidden_phrases เช่น มั่วว่ามี Line Notify ใน GT-06)\n- Blended Quality Score = 0.60×RubricScore + 0.25×KeyPhraseRecall + 0.15×HallucinationGuard",
             "ข้อ GT-01 เฉลยกำหนด key_phrases = ['The LoRaWAN', 'SX1276', 'LoRa']: เมื่อคำตอบมีครบทั้ง 3 คำ -> Key Phrase Recall = 100.0%, Hallucination Guard = 100.0%",
         ],
         [
-            "Stage 2: ฝั่ง LLM Generation (gemma3:4b)",
-            "★ สูตรรวม Stage 2 Composite Score (0-100)",
-            "เต็ม 100 คะแนน",
-            "Composite_S2 = 0.50×BlendedQuality + 0.30×(0.65×PhraseRecall + 0.35×MultiProjectCoverage) + 0.10×QuotaBalanceBonus + 0.05×LLMSpeedScore + 0.05×TokenEfficiencyScore",
-            "Chunks=6, Quota=2 (Balanced Boost): Quality=84.7, PhraseRecall=86.7%, MultiProj=100.0% -> ได้คะแนนรวมสูงสุดในกลุ่มจัดบริบท (82.61 คะแนน)",
+            "Stage 3: กฎวัดความเหมาะสมกับฮาร์ดแวร์ (Hardware VRAM Fit Rule)",
+            "Rule 7: RTX 3050 Ti (4GB VRAM) Hardware Fit Score & Multi-LLM Suitability",
+            "เต็ม 100 คะแนน (น้ำหนัก 15% ในการคัดเลือกโมเดล)",
+            "วัดความเข้ากันได้ของขนาดโมเดลกับ VRAM 4GB ของการ์ดจอ RTX 3050 Ti Laptop:\n- ขนาด <= 1.0 GB (เช่น gemma3:1b): VRAM Fit = 100\n- ขนาด 1.5 - 2.0 GB (เช่น qwen2.5:3b, llama3.2:3b): VRAM Fit = 97-98\n- ขนาด 2.5 - 3.3 GB (เช่น qwen3:4b, gemma3:4b): VRAM Fit = 90-95\n- ขนาด > 4.0 GB (เช่น qwen2.5:7b, llama3.1:8b ล้น VRAM ต้องพึ่ง RAM): VRAM Fit = 65-70\nสูตรรวม Multi-LLM Suitability = 0.45×BlendedQuality + 0.25×(0.7×PhraseRecall + 0.3×MultiProj) + 0.15×SpeedScore + 0.15×VRAMFit",
+            "โมเดลขนาด 3B-4B (qwen2.5:3b, gemma3:4b, qwen3:4b) ได้เปรียบทั้งความเร็ว (รันบน GPU 100%) และความแม่นยำ จึงชนะรุ่น 7B-8B ที่ล้น VRAM 4GB",
         ],
     ]
 
@@ -812,7 +856,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
 
     ws9["A1"] = "🔬 ตัวอย่างผลลัพธ์จริงเปรียบเทียบเมื่อปรับค่าพารามิเตอร์ต่างๆ (Concrete Side-by-Side Output Examples)"
     ws9["A1"].font = TITLE_FONT
-    ws9["A2"] = "แสดงหลักฐานเชิงประจักษ์ว่าเมื่อเปลี่ยนค่าพารามิเตอร์แต่ละตัว ผลลัพธ์ที่ดึงมา (Chunks) หรือคำตอบของ gemma3:4b เปลี่ยนแปลงอย่างไร และถูกหัก/เพิ่มคะแนนตามกฎข้อใด"
+    ws9["A2"] = "แสดงหลักฐานเชิงประจักษ์ว่าเมื่อเปลี่ยนค่าพารามิเตอร์แต่ละตัว ผลลัพธ์ที่ดึงมา (Chunks) หรือคำตอบของ LLM เปลี่ยนแปลงอย่างไร และถูกหัก/เพิ่มคะแนนตามกฎข้อใด"
     ws9["A2"].font = BOLD_FONT
 
     headers_ex = [
@@ -860,9 +904,17 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Case 5: ผลของรูปแบบคำสั่ง Prompt Preset บนโมเดล gemma3:4b",
             "GT-03: ขั้นตอนการทำงานและการทดลองของ The LoRaWAN\n& GT-06: มีการเชื่อมต่อกับ Line Notify หรือไม่",
             "prompt_preset = 'deep_academic' / 'balanced' (Temp=0.0)\nเทียบกับ\nprompt_preset = 'concise'",
-            "[deep_academic / balanced @ Temp=0.0]: คำตอบของ `gemma3:4b` แจกแจงหัวข้อชัดเจน พร้อมแนบ `[Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18]` (ได้ Citation Rule 1 = 30/30, Completeness Rule 4 = 20/20) และในข้อ GT-06 ปฏิเสธชัดเจนว่า 'ในเอกสารที่ให้มาไม่ปรากฏข้อมูลการเชื่อมต่อกับ Line Notify' (Hallucination Guard = 100%)",
-            "[concise @ MaxTokens=256]: ตอบสั้นกระชับเร็วขึ้น (12.00s) แต่ในบางข้อตัดจบก่อนใส่ 태그 `[Source: ..., Page: ...]` ครบตามรูปแบบ ทำให้คะแนน Citation Rule 1 ลดลงในบางข้อ (Quality เฉลี่ยลดจาก 84.7 เหลือ 80.0)",
+            "[deep_academic / balanced @ Temp=0.0]: คำตอบของ `gemma3:4b` แจกแจงหัวข้อชัดเจน พร้อมแนบ `[Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18]` (ได้ Citation Rule 1 = 30/30, Completeness Rule 4 = 20/20) และในข้อ GT-06 ปฏิเสธชัดเจนว่า 'ไม่พบข้อมูลที่เกี่ยวข้องในเอกสาร' (Hallucination Guard = 100%)",
+            "[concise @ MaxTokens=256]: ตอบสั้นกระชับเร็วขึ้น (12.00s) แต่ในบางข้อตัดจบก่อนใส่แท็ก `[Source: ..., Page: ...]` ครบตามรูปแบบ ทำให้คะแนน Citation Rule 1 ลดลงในบางข้อ (Quality เฉลี่ยลดจาก 84.7 เหลือ 80.0)",
             "ตามกฎ Rubric Rule 1 (Citation 30 คะแนน) และ Rule 5 (Key Phrase Recall):\n- `deep_academic` (83.50) และ `balanced` (82.61) ที่ Temp=0.0 ชนะ `concise` (80.52) และชนะ Temp=0.5 (80.65)",
+        ],
+        [
+            "Case 6: ผลของการเลือกขนาดโมเดล LLM บน RTX 3050 Ti (4GB VRAM)",
+            "GT-01: โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง\n& GT-08: เปรียบเทียบ The LoRaWAN กับ BSLD",
+            "รุ่น 3B-4B (llama3.2:3b, qwen2.5:3b, gemma3:4b)\nเทียบกับ\nรุ่นจิ๋ว 1B (gemma3:1b) และรุ่นใหญ่ 8B (llama3.1:8b)",
+            "[llama3.2:3b (2.0GB) / gemma3:4b (3.3GB) / qwen2.5:3b (1.9GB)]: รันบน VRAM 4GB ของการ์ดจอได้ 100% ตอบข้อ GT-01 ระบุ '1. **The LoRaWAN** ... โมดูล SX1276 ... [Source: 1_6031501044_6031501061_FinalProject.pdf, Page: 18]' ได้แม่นยำ (Quality = 84.1 - 84.7, Key Phrase Recall = 86.7%, ความเร็ว 47.6 - 60.0 TPS สำหรับรุ่น 3B)",
+            "[gemma3:1b (0.8GB)]: เร็วมาก (130.7 TPS) แต่ในข้อ GT-01 เกิดอาการพูดซ้ำ 'SX1276 Ultrasonic Distance Sensor Module...' และไม่ระบุชื่อโครงงาน The LoRaWAN ทำให้ Phrase Recall ตกเหลือ 33.3%\n[llama3.1:8b (4.9GB)]: ขนาดล้น VRAM 4GB ต้องสลับไปใช้ CPU RAM ทำให้ความเร็วตกเหลือเพียง 7.3 TPS (เฉลี่ย 20.45s/ข้อ)",
+            "ตามกฎ Rule 1-7 (Multi-LLM Suitability):\n- `llama3.2:3b` ชนะเลิศความคุ้มค่ารวม (87.70 คะแนน, 5.60s)\n- `qwen2.5:3b` ชนะเลิศความเร็ว 3B (82.48 คะแนน, 60.0 TPS)\n- `gemma3:4b` ชนะเลิศคุณภาพเนื้อหาสูงสุด (Quality 84.67)",
         ],
     ]
 
@@ -874,6 +926,136 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
     style_table(ws9, 4, 4 + len(rows_ex), len(headers_ex), winner_rows=set(range(5, 5 + len(rows_ex))), left_cols=(1, 2, 3, 4, 5, 6))
     auto_fit_columns(ws9, max_width=55)
 
+    # -------------------------------------------------------------------------
+    # SHEET 10 & 11: Multi-LLM Model Comparison & Per-Query Rule Breakdown
+    # -------------------------------------------------------------------------
+    if llm_bench:
+        s_name_10 = sheet_name(9, "LLM_Model_Comparison")
+        if s_name_10 in wb.sheetnames:
+            del wb[s_name_10]
+        ws10 = wb.create_sheet(title=s_name_10)
+
+        ws10["A1"] = "🤖 Stage 3: ตารางเปรียบเทียบโมเดล LLM ทั้ง 7 รุ่น บนการ์ดจอ RTX 3050 Ti (4GB VRAM) + RAM 16GB"
+        ws10["A1"].font = TITLE_FONT
+        ws10["A2"] = "ล็อกค่าพารามิเตอร์ที่ชนะจาก Stage 1+2 (top_k=15, top_n=10, Chunks=6, Quota=2, Temp=0.0) แล้ววัดคะแนนรายกฎ (Rule 1-7), ความเร็ว และความเหมาะสมกับเครื่อง"
+        ws10["A2"].font = BOLD_FONT
+
+        headers_llm = [
+            "อันดับ (Rank)",
+            "ชื่อโมเดล (Ollama Model)",
+            "ตระกูล (Family)",
+            "ขนาดพารามิเตอร์",
+            "ขนาดไฟล์ (GB)",
+            "ความเข้ากันได้กับ RTX 3050 Ti (4GB VRAM)",
+            "Rule 1: Citation (เต็ม 30)",
+            "Rule 2: Cleanliness (เต็ม 25)",
+            "Rule 3: Speed Score (เต็ม 25)",
+            "Rule 4: Completeness (เต็ม 20)",
+            "รวมคะแนน Rubric (เต็ม 100)",
+            "Rule 5: Key Phrase Recall (%)",
+            "Rule 6: Hallucination Guard (%)",
+            "Multi-Project Coverage (%)",
+            "Blended Quality (0-100)",
+            "Rule 7: VRAM Fit Score",
+            "เวลาตอบเฉลี่ย (วินาที)",
+            "ความเร็ว (TPS)",
+            "คะแนนความเหมาะสมรวม (Suitability Score)",
+            "คำแนะนำการใช้งาน (Recommendation)",
+        ]
+        for c_idx, h in enumerate(headers_llm, start=1):
+            ws10.cell(row=4, column=c_idx, value=h)
+
+        winner_rows_llm = {5, 6}  # Top 2 recommended models highlighted
+        for rank_idx, r in enumerate(llm_bench, start=1):
+            row_num = 4 + rank_idx
+            vals = [
+                f"#{rank_idx}",
+                r["model"],
+                r["family"],
+                r["params"],
+                r["size_gb"],
+                r["vram_fit"],
+                r["avg_citation_30"],
+                r["avg_cleanliness_25"],
+                r["avg_latency_25"],
+                r["avg_completeness_20"],
+                r["avg_rubric_100"],
+                r["avg_phrase_recall_pct"],
+                r["avg_hallucination_pass_pct"],
+                r["multi_project_coverage_pct"],
+                r["avg_quality_score"],
+                r["vram_score"],
+                r["avg_llm_seconds"],
+                r["avg_tps"],
+                r["composite_score"],
+                f"🏆 แนะนำอันดับ {rank_idx}: {r['role']}" if rank_idx <= 2 else r["role"],
+            ]
+            for c_idx, v in enumerate(vals, start=1):
+                ws10.cell(row=row_num, column=c_idx, value=v)
+
+        style_table(ws10, 4, 4 + len(llm_bench), len(headers_llm), winner_rows=winner_rows_llm, left_cols=(2, 3, 6, 20))
+        auto_fit_columns(ws10, max_width=52)
+
+        # SHEET 11: Multi-LLM Per-Query Rule Breakdown & Actual Outputs
+        s_name_11 = sheet_name(10, "LLM_PerQuery_Rule_Detail")
+        if s_name_11 in wb.sheetnames:
+            del wb[s_name_11]
+        ws11 = wb.create_sheet(title=s_name_11)
+
+        ws11["A1"] = "📑 Stage 3 Per-Query Detail: คะแนนแยกตามกฎ (Rule 1-6) และตัวอย่างคำตอบจริงของโมเดล LLM ทั้ง 7 รุ่น"
+        ws11["A1"].font = TITLE_FONT
+        ws11["A2"] = "เปรียบเทียบคำตอบจริงและคะแนนรายกฎของแต่ละโมเดลในคำถามชุดเดียวกัน (GT-01, GT-03, GT-04, GT-06, GT-08)"
+        ws11["A2"].font = BOLD_FONT
+
+        headers_llmpq = [
+            "ชื่อโมเดล (Model)",
+            "ขนาด (GB)",
+            "รหัสข้อ (Query ID)",
+            "หมวดหมู่ (Category)",
+            "คำถามที่ใช้ทดสอบ (Query)",
+            "Rule 1: Citation (30)",
+            "Rule 2: Cleanliness (25)",
+            "Rule 3: Latency (25)",
+            "Rule 4: Completeness (20)",
+            "Rubric Total (100)",
+            "Rule 5: Phrase Recall (%)",
+            "Rule 6: Hallucination Guard (%)",
+            "Blended Quality (0-100)",
+            "เวลา LLM ตอบ (s)",
+            "ความเร็ว (TPS)",
+            "ตัวอย่างคำตอบจริงจากโมเดล (Actual Model Output Preview)",
+        ]
+        for c_idx, h in enumerate(headers_llmpq, start=1):
+            ws11.cell(row=4, column=c_idx, value=h)
+
+        r_cur_llm = 5
+        for r in llm_bench:
+            for pq in r.get("per_query", []):
+                vals = [
+                    r["model"],
+                    r["size_gb"],
+                    pq.get("id", ""),
+                    pq.get("category", ""),
+                    pq.get("query", ""),
+                    pq.get("citation_30", 0.0),
+                    pq.get("cleanliness_25", 0.0),
+                    pq.get("latency_25", 0.0),
+                    pq.get("completeness_20", 0.0),
+                    pq.get("rubric_total_100", 0.0),
+                    pq.get("phrase_recall_pct", 0.0),
+                    pq.get("hallucination_guard_pct", 100.0),
+                    pq.get("quality_score", 0.0),
+                    pq.get("llm_seconds", 0.0),
+                    pq.get("tps", 0.0),
+                    pq.get("answer_preview", ""),
+                ]
+                for c_idx, v in enumerate(vals, start=1):
+                    ws11.cell(row=r_cur_llm, column=c_idx, value=v)
+                r_cur_llm += 1
+
+        style_table(ws11, 4, r_cur_llm - 1, len(headers_llmpq), left_cols=(1, 4, 5, 16))
+        auto_fit_columns(ws11, max_width=56)
+
 
 def build_all_excel_files():
     with open(RESULTS_JSON, "r", encoding="utf-8") as f:
@@ -882,7 +1064,7 @@ def build_all_excel_files():
         golden_list = json.load(f)
     golden_map = {item["id"]: item for item in golden_list}
 
-    # 1. Create standalone RAGcoon_Parameter_Tuning_Experiments.xlsx (9 sheets)
+    # 1. Create standalone RAGcoon_Parameter_Tuning_Experiments.xlsx
     wb_standalone = Workbook()
     default_sheet = wb_standalone.active
     populate_parameter_sweep_sheets(wb_standalone, payload, golden_map, prefix_num=None)
@@ -893,10 +1075,10 @@ def build_all_excel_files():
     out_standalone_2 = os.path.join(BACKEND_DATA_DIR, "RAGcoon_Parameter_Tuning_Experiments.xlsx")
     wb_standalone.save(out_standalone_1)
     shutil.copyfile(out_standalone_1, out_standalone_2)
-    print(f"✅ Saved 9-Sheet Standalone Parameter Sweep Excel -> {out_standalone_1}", flush=True)
-    print(f"✅ Saved 9-Sheet Standalone Parameter Sweep Excel -> {out_standalone_2}", flush=True)
+    print(f"Saved Standalone Parameter Sweep Excel ({len(wb_standalone.sheetnames)} sheets) -> {out_standalone_1}", flush=True)
+    print(f"Saved Standalone Parameter Sweep Excel ({len(wb_standalone.sheetnames)} sheets) -> {out_standalone_2}", flush=True)
 
-    # 2. Update existing RAGcoon_Handoff_Specification.xlsx with all 9 sheets
+    # 2. Update existing RAGcoon_Handoff_Specification.xlsx
     handoff_1 = os.path.join(DATA_DIR, "RAGcoon_Handoff_Specification.xlsx")
     handoff_2 = os.path.join(BACKEND_DATA_DIR, "RAGcoon_Handoff_Specification.xlsx")
     if os.path.exists(handoff_1):
@@ -904,8 +1086,8 @@ def build_all_excel_files():
         populate_parameter_sweep_sheets(wb_handoff, payload, golden_map, prefix_num=10)
         wb_handoff.save(handoff_1)
         shutil.copyfile(handoff_1, handoff_2)
-        print(f"✅ Updated Handoff Specification Excel with 9 Parameter Sweep, Rubric & Example Sheets -> {handoff_1}", flush=True)
-        print(f"✅ Updated Handoff Specification Excel with 9 Parameter Sweep, Rubric & Example Sheets -> {handoff_2}", flush=True)
+        print(f"Updated Handoff Specification Excel ({len(wb_handoff.sheetnames)} sheets) -> {handoff_1}", flush=True)
+        print(f"Updated Handoff Specification Excel ({len(wb_handoff.sheetnames)} sheets) -> {handoff_2}", flush=True)
 
 
 if __name__ == "__main__":

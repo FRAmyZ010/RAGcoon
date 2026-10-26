@@ -56,7 +56,12 @@ services:
       PID=$$!;
       echo '⏳ Waiting for Ollama service to start...';
       sleep 5;
-      echo '📥 Pulling models qwen2.5:7b and qwen:4b / gemma:4b...';
+      echo '📥 Pulling recommended RAGcoon LLM models (gemma3:4b, qwen3:4b, qwen2.5:3b, llama3.2:3b, gemma3:1b, qwen2.5:7b)...';
+      ollama pull gemma3:4b || true;
+      ollama pull qwen3:4b || true;
+      ollama pull qwen2.5:3b || true;
+      ollama pull llama3.2:3b || true;
+      ollama pull gemma3:1b || true;
       ollama pull qwen2.5:7b || true;
       echo '✅ Ollama models ready!';
       wait $$PID
