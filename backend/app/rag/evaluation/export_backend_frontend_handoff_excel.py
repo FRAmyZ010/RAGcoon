@@ -821,25 +821,37 @@ def build_all():
     populate_handoff_workbook(wb_new)
     out_new_1 = os.path.join(DATA_DIR, "RAGcoon_Backend_Frontend_Update_Handoff.xlsx")
     out_new_2 = os.path.join(BACKEND_DATA_DIR, "RAGcoon_Backend_Frontend_Update_Handoff.xlsx")
-    wb_new.save(out_new_1)
-    shutil.copyfile(out_new_1, out_new_2)
-    print(f"Created new Handoff Excel ({len(wb_new.sheetnames)} sheets) -> {out_new_1}", flush=True)
-    print(f"Created new Handoff Excel ({len(wb_new.sheetnames)} sheets) -> {out_new_2}", flush=True)
+
+    # Try saving to out_new_1, handle case where user currently has the file open in Excel
+    try:
+        wb_new.save(out_new_1)
+        shutil.copyfile(out_new_1, out_new_2)
+        print(f"Created new Handoff Excel ({len(wb_new.sheetnames)} sheets) -> {out_new_1}", flush=True)
+        print(f"Created new Handoff Excel ({len(wb_new.sheetnames)} sheets) -> {out_new_2}", flush=True)
+    except PermissionError:
+        print(f"Notice: {out_new_1} is currently open in Excel. Saving to {out_new_2} directly.", flush=True)
+        wb_new.save(out_new_2)
 
     # 2. Also append the Action Plan sheet into existing Parameter Tuning & Handoff workbooks
     param_1 = os.path.join(DATA_DIR, "RAGcoon_Parameter_Tuning_Experiments.xlsx")
     param_2 = os.path.join(BACKEND_DATA_DIR, "RAGcoon_Parameter_Tuning_Experiments.xlsx")
-    if os.path.exists(param_1):
-        append_action_plan_to_existing_workbook(param_1, "12_Backend_Frontend_NextSteps")
-        shutil.copyfile(param_1, param_2)
-        print(f"Updated Parameter Tuning Excel with Sheet 12_Backend_Frontend_NextSteps -> {param_1}", flush=True)
+    try:
+        if os.path.exists(param_1):
+            append_action_plan_to_existing_workbook(param_1, "12_Backend_Frontend_NextSteps")
+            shutil.copyfile(param_1, param_2)
+            print(f"Updated Parameter Tuning Excel with Sheet 12_Backend_Frontend_NextSteps -> {param_1}", flush=True)
+    except PermissionError:
+        print(f"Notice: {param_1} is currently open in Excel.", flush=True)
 
     spec_1 = os.path.join(DATA_DIR, "RAGcoon_Handoff_Specification.xlsx")
     spec_2 = os.path.join(BACKEND_DATA_DIR, "RAGcoon_Handoff_Specification.xlsx")
-    if os.path.exists(spec_1):
-        append_action_plan_to_existing_workbook(spec_1, "21_Backend_Frontend_NextSteps")
-        shutil.copyfile(spec_1, spec_2)
-        print(f"Updated Handoff Specification Excel with Sheet 21_Backend_Frontend_NextSteps -> {spec_1}", flush=True)
+    try:
+        if os.path.exists(spec_1):
+            append_action_plan_to_existing_workbook(spec_1, "21_Backend_Frontend_NextSteps")
+            shutil.copyfile(spec_1, spec_2)
+            print(f"Updated Handoff Specification Excel with Sheet 21_Backend_Frontend_NextSteps -> {spec_1}", flush=True)
+    except PermissionError:
+        print(f"Notice: {spec_1} is currently open in Excel.", flush=True)
 
 
 if __name__ == "__main__":
