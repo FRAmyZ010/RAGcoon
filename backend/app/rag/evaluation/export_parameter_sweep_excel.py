@@ -159,11 +159,12 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
 
     headers_opt = [
         "ลำดับ",
-        "ชื่อพารามิเตอร์ (Parameter)",
+        "ชื่อพารามิเตอร์ / โมเดล (Parameter / Model)",
         "หมวดหมู่ (Stage)",
-        "ช่วงค่าที่ทดสอบทั้งหมด (Tested Range)",
-        "ค่าที่ดีที่สุด (Optimal Value)",
-        "เหตุผลและผลลัพธ์จากการทดลองจริง (Empirical Justification)",
+        "ช่วงค่าที่นำมาทดสอบ (Tested Range)",
+        "ค่าที่เลือกใช้ (Selected Winner)",
+        "ทำไมถึงนำมาทดสอบ (Why Tested / สมมติฐานการทดลอง)",
+        "ทำไมถึงเลือกค่านี้เป็นผู้ชนะ (Why Selected / เหตุผลเชิงประจักษ์)",
     ]
     rows_opt = [
         [
@@ -172,7 +173,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 1: ฝั่งค้นหา (Retrieval Pool)",
             "[100, 50, 30, 15, 10, 5]",
             opt["top_k"],
-            "ชนะใน Exp 1 (Composite = 88.15, Hit=92.3%, MRR=0.8718, 468.8ms): ดึง Candidate Pool กว้างพอให้ Reranker คัดเนื้อหาเทคนิคขึ้นอันดับ 1 โดยไม่ช้าเหมือน top_k=100 (1,740ms)",
+            "เพื่อหาขนาด Candidate Pool เริ่มต้นจาก Qdrant ที่สมดุลที่สุด: หากดึงน้อยเกินไป (เช่น 5) เนื้อหาเทคนิคในบทที่ 3-4 อาจตกหล่นตั้งแต่แรก แต่หากดึงมากเกินไป (เช่น 50-100) จะเกิดความหน่วงและมีเอกสารที่ไม่เกี่ยวข้องปะปนเข้ามามาก",
+            "เลือก top_k = 15 เพราะชนะเลิศใน Exp 1 (Composite = 88.15, Hit=92.3%, MRR=0.8718, ใช้เวลาเพียง 468.8ms): กว้างพอให้ Reranker ดึงเนื้อหาเทคนิคขึ้นอันดับ 1 ได้ครบถ้วน และเร็วกว่า top_k=100 (1,740.7ms) ถึง 3.7 เท่า",
         ],
         [
             2,
@@ -180,15 +182,17 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 1: ฝั่งคัดกรอง (Cross-Encoder Cutoff)",
             "[30, 15, 10, 5, 3, 1]",
             opt["rerank_top_n"],
-            f"ชนะใน Exp 2 (Best Cutoff = {s1_winners['best_rerank_top_n']}, Composite = 90.05, Hit=100%, MRR=0.8795): สมดุลระหว่าง Recall@N (96.2%) และ Precision@N (75.6%) ก่อนส่งเข้า Context Assembly",
+            "เพื่อหาจุดตัด (Cutoff) หลังผ่าน Cross-Encoder Reranker ว่าควรคัดไว้กี่ Chunks ก่อนส่งไปจัดโควตาเข้า LLM: หากคัดน้อยเกินไป (1-3) จะไม่พอสำหรับคำถามเปรียบเทียบหลายโปรเจกต์ แต่หากคัดมากเกินไป (15-30) Precision@N จะลดลง",
+            f"เลือก rerank_top_n = {s1_winners['best_rerank_top_n']} (และใช้คู่กับ Context Cap = 6) เพราะชนะเลิศใน Exp 2 (Composite = 90.05, Hit Rate = 100.0%, MRR = 0.8795, Recall@N = 96.2%) ทำให้ไม่พลาดเอกสารในคำถามเปรียบเทียบหลายโครงงาน",
         ],
         [
             3,
             "enable_hybrid",
             "Stage 1: Ablation Switch",
-            "[True (BM25+E5), False (Dense Only)]",
+            "[True (BM25+E5), False (Dense Only), BM25 Only]",
             str(opt["enable_hybrid"]),
-            "เปิด Hybrid RRF (BM25 + Multilingual-E5) ดัน Hit Rate เป็น 100% และ MRR 0.9231 (หากปิดเหลือแต่ Dense คะแนน MRR ตกเหลือ 0.7769 เพราะพลาดรหัสชิป SX1276/BLE)",
+            "เพื่อพิสูจน์ว่าการใช้เฉพาะเวกเตอร์ความหมาย (Dense E5) หรือใช้เฉพาะคำค้น (BM25) อย่างใดอย่างหนึ่ง เพียงพอต่อการค้นหารหัสชิปฮาร์ดแวร์ (SX1276, ESP32) และชื่อเฉพาะของโครงงานหรือไม่",
+            "เลือกเปิด Hybrid RRF (True) เพราะดัน Hit Rate เต็ม 100.0% และ MRR = 0.9231 ในขณะที่เมื่อปิดเหลือแต่ Dense Only คะแนน Hit Rate ตกเหลือ 84.6% และ MRR ตกเหลือ 0.7769 เพราะเวกเตอร์จับรหัสชิปเฉพาะทางพลาด",
         ],
         [
             4,
@@ -196,7 +200,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 1: Ablation Switch",
             "[True (Cross-Encoder), False (Skip)]",
             str(opt["enable_reranker"]),
-            "เปิด BGE Cross-Encoder Reranker ดัน MRR จาก 0.7436 ขึ้นเป็น 0.9231 (+18.0%) เพราะจัดลำดับย่อหน้าที่มีคำตอบจริงขึ้นเป็น Rank #1",
+            "เพื่อพิสูจน์ว่าลำดับคะแนนดิบจาก RRF (Vector+BM25) เพียงพอหรือไม่ หรือจำเป็นต้องใช้โมเดล BGE Cross-Encoder Reranker มาอ่านเทียบคู่ (Query, Chunk) ซ้ำอีกครั้ง",
+            "เลือกเปิด Reranker (True) เพราะช่วยดัน MRR จาก 0.7436 พุ่งขึ้นเป็น 0.9231 (+18.0%) โดยดันย่อหน้าที่มีคำตอบเทคนิคจริงขึ้นเป็นอันดับ 1 (Rank #1) แทนที่หน้าบทนำทั่วไป",
         ],
         [
             5,
@@ -204,7 +209,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 1: Ablation Switch",
             "[True (Filter Noise), False (Unfiltered)]",
             str(opt["enable_boilerplate_filter"]),
-            "เปิดกรองขยะเอกสาร (สารบัญ, กิตติกรรมประกาศ, บรรณานุกรม, ลายเซ็น) ลด Noise Rate จาก 25.0% เหลือ 0.0%",
+            "เพื่อทดสอบผลกระทบของหน้าขยะในเล่มปริญญานิพนธ์ (เช่น สารบัญ, กิตติกรรมประกาศ, บรรณานุกรม, ใบรับรองลายเซ็น) ที่มักมีคีย์เวิร์ดซ้ำกับคำถามและชอบแย่งพื้นที่ Top-N",
+            "เลือกเปิด Boilerplate Filter (True) เพราะขจัดขยะเอกสารออกได้ 100% (Noise Rate ลดจาก 25.0% เหลือ 0.0%) และทำให้ MRR เพิ่มจาก 0.7372 เป็น 0.9231",
         ],
         [
             6,
@@ -212,7 +218,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 1: Ablation Switch",
             "[True (Metadata Scroll), False (Off)]",
             str(opt["enable_fast_path"]),
-            "เปิดทางลัด Metadata Scroll ลดเวลาค้นหาเฉลี่ยจาก 555.8ms เหลือ 312.4ms และตอบคำถามอาจารย์/ผู้จัดทำได้ใน 0.01 วินาที",
+            "เพื่อทดสอบว่าคำถามที่ถามข้อมูลโครงสร้าง (เช่น อาจารย์ที่ปรึกษา, ผู้จัดทำ, ปีการศึกษา) ควรดึงผ่าน Metadata Scroll โดยตรงแทนการค้นหาเวกเตอร์และรอ LLM หรือไม่",
+            "เลือกเปิด Fast-Path (True) เพราะลดเวลาค้นหาเฉลี่ยทั้งระบบจาก 555.8ms เหลือ 312.4ms และตอบคำถามหมวดอาจารย์ที่ปรึกษา (GT-04) ได้ถูกต้อง 100% ในเวลาเพียง 0.24 วินาที",
         ],
         [
             7,
@@ -220,7 +227,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 2: ฝั่งจัดเตรียมบริบท (Context Cap)",
             "[15, 10, 6, 5, 4, 2]",
             opt["max_context_chunks"],
-            f"ชนะใน Exp 4 (Chunks={opt['max_context_chunks']}, Quality=84.7, Phrase Recall=86.7%): ให้บริบทครบถ้วนสำหรับ LLM โดยไม่เปลือง Input Tokens เกินจำเป็น",
+            "เพื่อหาจำนวน Chunks สูงสุดที่จะส่งเข้า Prompt ของ LLM บนการ์ดจอ VRAM 4GB: หากส่งน้อยเกินไป (2-4 Chunks) ข้อมูลจะไม่ครบ แต่หากส่งมากเกินไป (10-15 Chunks) จะเกิดอาการ Lost-in-the-Middle และกินเวลาประมวลผล Input Tokens นาน",
+            f"เลือก max_context_chunks = {opt['max_context_chunks']} เพราะทำคะแนนคุณภาพคำตอบสูงสุด (Quality = 84.67, Key Phrase Recall = 86.7%) โดยใช้ Input Tokens เฉลี่ยเพียง 1,675 tokens เร็วและแม่นยำกว่าการส่ง 10-15 Chunks (Quality 82.4-83.0)",
         ],
         [
             8,
@@ -228,7 +236,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 2: ฝั่งจัดเตรียมบริบท (Fair Quota)",
             "[5, 3, 2, 1, 6 (Uncapped)]",
             opt["max_chunks_per_project"],
-            "ล็อกโควตา 2 Chunks/โปรเจกต์ ป้องกันปัญหา Context Starvation เวลาเปรียบเทียบหลายโปรเจกต์ (Multi-Project Coverage = 100%)",
+            "เพื่อแก้ปัญหา Context Starvation ที่โปรเจกต์เดียวที่มีคะแนนเวกเตอร์สูงกว่ากินพื้นที่ Chunks ทั้งหมด จนโปรเจกต์ที่ 2 ไม่ถูกส่งเข้า LLM ในคำถามเปรียบเทียบ (GT-08)",
+            "เลือกโควตา 2 Chunks/โปรเจกต์ เพราะทำให้แบ่งพื้นที่ 6 Chunks ได้ถึง 3 โปรเจกต์อย่างยุติธรรม ส่งผลให้ Multi-Project Coverage เต็ม 100.0% และมีรายละเอียดเพียงพอต่อการสร้างตารางเปรียบเทียบ",
         ],
         [
             9,
@@ -236,7 +245,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 2: ฝั่ง LLM Generation",
             "['concise', 'balanced', 'deep_academic', 'step_by_step']",
             opt["prompt_preset"],
-            f"ชนะใน Exp 5 (Composite = {s2_winners['best_stage2_composite']:.2f}): รูปแบบ Prompt '{opt['prompt_preset']}' และ 'balanced' ให้โครงสร้างคำตอบและการอ้างอิงครบถ้วนที่สุด",
+            "เพื่อทดสอบว่ารูปแบบคำสั่ง System Prompt แบบใดช่วยให้ LLM เขียนคำตอบภาษาไทย จัดโครงสร้างหัวข้อ และแนบอ้างอิง `[Source: ..., Page: ...]` ได้ตรงตามกฎ Rubric มากที่สุด",
+            f"เลือก '{opt['prompt_preset']}' (ควบคู่กับ 'balanced') เพราะได้คะแนนรวม Stage 2 สูงสุด ({s2_winners['best_stage2_composite']:.2f}) ได้คะแนน Citation เต็มในข้อเนื้อหา และไม่ตัดจบสั้นเกินไปเหมือน 'concise'",
         ],
         [
             10,
@@ -244,7 +254,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "Stage 2: ฝั่ง LLM Generation",
             "[0.0, 0.2, 0.5]",
             opt["temperature"],
-            "Temperature = 0.0 รักษาความแม่นยำตามเอกสารอ้างอิง 100% (Deterministic Grounding) และเร็วกว่า Temp 0.2/0.5",
+            "เพื่อพิสูจน์ว่างานถาม-ตอบเอกสารวิชาการ (Academic RAG) ควรเปิดให้โมเดลสุ่มคำศัพท์ (Temp > 0) หรือควรล็อกการตัดสินใจแบบ Deterministic (Temp = 0.0) เพื่อป้องกันอาการมั่วข้อมูล (Hallucination)",
+            "เลือก temperature = 0.0 เพราะให้ผลลัพธ์เที่ยงตรง 100% (Reproducible), ผ่านกฎ Anti-Hallucination Guard 100.0% และตอบได้เร็วกว่า Temp 0.2 และ 0.5",
         ],
     ]
     if llm_winner:
@@ -253,8 +264,9 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "llm_model (RTX 3050 Ti 4GB)",
             "Stage 3: เปรียบเทียบโมเดล LLM 7 รุ่น",
             "[gemma3:4b, qwen2.5:3b, qwen3:4b, llama3.2:3b, gemma3:1b, qwen2.5:7b, llama3.1:8b]",
-            f"{llm_winner['best_model']} (และ gemma3:4b / qwen2.5:3b)",
-            f"ชนะเลิศด้านความคุ้มค่าบน RTX 3050 Ti (4GB VRAM): Suitability Score = {llm_winner['suitability_score']:.2f}, เวลาตอบเฉลี่ย {llm_winner['avg_llm_seconds']:.2f}s ({llm_winner['avg_tps']:.1f} TPS)",
+            f"{llm_winner['best_model']} (เร็วคุ้มค่า) & gemma3:4b (คุณภาพสูงสุด)",
+            "เพื่อค้นหาว่าบนข้อจำกัดฮาร์ดแวร์จริง (RTX 3050 Ti 4GB VRAM + RAM 16GB) โมเดลขนาดใด (1B vs 3B vs 4B vs 7B/8B) ให้จุดสมดุลระหว่างความแม่นยำภาษาไทย การอ้างอิง และความเร็วในการตอบดีที่สุด",
+            f"เลือกใช้งาน 2 โหมดตามจุดประสงค์: (1) llama3.2:3b (2.0GB) ชนะเลิศความคุ้มค่ารวม (Suitability = {llm_winner['suitability_score']:.2f}, ตอบไว 5.60s / 47.6 TPS, Phrase Recall 86.7%) และ qwen2.5:3b (60.0 TPS) สำหรับเน้นความเร็วสูง (2) gemma3:4b (3.3GB) ชนะเลิศคุณภาพเนื้อหาสูงสุด (Quality = 84.67) สำหรับเน้นภาษาไทยและตารางวิชาการละเอียด",
         ])
 
     for c_idx, h in enumerate(headers_opt, start=1):
@@ -262,8 +274,8 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
     for r_offset, row_vals in enumerate(rows_opt, start=5):
         for c_idx, val in enumerate(row_vals, start=1):
             ws1.cell(row=r_offset, column=c_idx, value=val)
-    style_table(ws1, 4, 4 + len(rows_opt), len(headers_opt), winner_rows=set(range(5, 5 + len(rows_opt))), left_cols=(2, 3, 6))
-    auto_fit_columns(ws1)
+    style_table(ws1, 4, 4 + len(rows_opt), len(headers_opt), winner_rows=set(range(5, 5 + len(rows_opt))), left_cols=(2, 3, 6, 7))
+    auto_fit_columns(ws1, max_width=55)
 
     # -------------------------------------------------------------------------
     # SHEET 2: Stage 1 Retrieval Sweeps (Exp 1 top_k & Exp 2 rerank_top_n)
@@ -295,7 +307,59 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         "Speed Score",
         "Composite Score (0-100)",
         "สถานะ (Status)",
+        "ทำไมถึงนำค่านี้มาทดสอบ (Why Tested)",
+        "ทำไมถึงเลือก / ไม่เลือกค่านี้ (Why Selected / Verdict)",
     ]
+    s1_rationale_map = {
+        "top_k = 100": (
+            "ทดสอบเพดานสูงสุด (Upper Bound) เมื่อดึง Candidate Pool กว้างสุด 100 ชิ้น",
+            "❌ ไม่เลือก: ใช้เวลาค้นหาพุ่งถึง 1,740.7 ms (ช้ากว่า top_k=15 ถึง 3.7 เท่า) โดยที่ความแม่นยำไม่ได้เพิ่มขึ้น",
+        ),
+        "top_k = 50": (
+            "ทดสอบ Candidate Pool ขนาดใหญ่ (50 ชิ้น) สำหรับคำถามที่คีย์เวิร์ดกระจายหลายหน้า",
+            "❌ ไม่เลือก: ใช้เวลาค้นหา 977.6 ms ช้าเกินไปเมื่อเทียบกับ top_k=15 ที่ได้ Hit Rate และ MRR เท่ากัน",
+        ),
+        "top_k = 30": (
+            "ทดสอบค่ามาตรฐานเดิมของระบบ (Baseline เดิม = 30 ชิ้น)",
+            "⚠️ รองชนะเลิศ: แม่นยำเท่ากับ top_k=15 แต่ใช้เวลาค้นหานานกว่า (675.2 ms vs 468.8 ms)",
+        ),
+        "top_k = 15": (
+            "ทดสอบจุดสมดุล (Sweet Spot = 15 ชิ้น) ระหว่างความเร็วและความครอบคลุมของเนื้อหา",
+            "🏆 เลือกเป็นผู้ชนะ (Composite 88.15): ดึงเนื้อหาเทคนิคครบ (Hit 92.3%, MRR 0.8718) และใช้เวลาเพียง 468.8 ms",
+        ),
+        "top_k = 10": (
+            "ทดสอบการลดขนาด Pool ลงเหลือ 10 ชิ้นเพื่อเน้นความเร็วในการค้นหา",
+            "⚠️ ไม่เลือก: เร็วขึ้นเล็กน้อย (371.4 ms) แต่เสี่ยงพลาด Chunk ในคำถามที่เอกสารมีหลายบท",
+        ),
+        "top_k = 5": (
+            "ทดสอบขีดจำกัดล่าง (Lower Bound = 5 ชิ้น) ดึงเฉพาะ 5 อันดับแรกจาก Qdrant",
+            "❌ ไม่เลือก: แคบเกินไป! เนื้อหาบทที่ 3-4 หลุดจาก Pool ทำให้ Hit Rate ตกเหลือ 76.9% และ MRR ตกเหลือ 0.5577",
+        ),
+        "rerank_top_n = 30": (
+            "ทดสอบการไม่ตัด Chunks ทิ้งหลัง Rerank (ส่งต่อทั้ง 30 ชิ้น)",
+            "❌ ไม่เลือก: มี Chunks ที่ไม่เกี่ยวข้องปะปนสูง ทำให้ Precision@N ตกเหลือเพียง 53.7%",
+        ),
+        "rerank_top_n = 15": (
+            "ทดสอบการเก็บ 후보 15 ชิ้นหลัง Rerank เผื่อคำถามเปรียบเทียบหลายโปรเจกต์",
+            "⚠️ ไม่เลือก: ได้ Hit Rate 100% แต่ Precision@N (67.1%) ต่ำกว่า rerank_top_n=10",
+        ),
+        "rerank_top_n = 10": (
+            "ทดสอบจุดสมดุลการคัดกรองหลัง Cross-Encoder Reranker (10 ชิ้น)",
+            "🏆 เลือกเป็นผู้ชนะ (Composite 90.05): Hit Rate เต็ม 100.0%, Recall@N สูงถึง 96.2% และ Precision@N สมดุล (75.6%)",
+        ),
+        "rerank_top_n = 5": (
+            "ทดสอบการคัดเฉพาะ Top-5 ที่คะแนน Rerank สูงสุด",
+            "⚠️ รองชนะเลิศ: แม่นยำสูงในคำถามเดี่ยว แต่ในคำถามเปรียบเทียบหลายโปรเจกต์มีโอกาสที่โปรเจกต์ที่ 2 จะหลุดขอบ",
+        ),
+        "rerank_top_n = 3": (
+            "ทดสอบการคัดแบบเข้มงวดเหลือเพียง 3 ชิ้นแรก",
+            "❌ ไม่เลือก: แคบเกินไปสำหรับคำถามเชิงลึกและคำถามเปรียบเทียบ (Composite ลดเหลือ 86.26)",
+        ),
+        "rerank_top_n = 1": (
+            "ทดสอบสุดโต่ง (Extreme Top-1) คืนเฉพาะ Chunk อันดับ 1 ชิ้นเดียว",
+            "❌ ไม่เลือก: ตอบคำถามเปรียบเทียบ 2 โครงงาน (GT-08) ไม่ได้เลย เพราะส่งได้แค่โครงงานเดียว (Recall@N ตกเหลือ 80.8%)",
+        ),
+    }
     exp12_rows = [r for r in s1_all if r["exp_group"] in ("Exp 1: top_k Sweep", "Exp 2: rerank_top_n Sweep")]
     max_exp1_score = max((r["composite_score"] for r in exp12_rows if r["exp_group"] == "Exp 1: top_k Sweep"), default=0)
     max_exp2_score = max((r["composite_score"] for r in exp12_rows if r["exp_group"] == "Exp 2: rerank_top_n Sweep"), default=0)
@@ -310,6 +374,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         )
         if is_w:
             winner_rows_s1.add(idx)
+        why_test, why_sel = s1_rationale_map.get(r["exp_label"], ("ทดสอบเปรียบเทียบค่าพารามิเตอร์", "พิจารณาตามคะแนน Composite Score"))
         row_vals = [
             r["exp_group"],
             r["exp_label"],
@@ -327,12 +392,14 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             r["speed_score"],
             r["composite_score"],
             "🏆 WINNER" if is_w else "Tested",
+            why_test,
+            why_sel,
         ]
         for c_idx, val in enumerate(row_vals, start=1):
             ws2.cell(row=idx, column=c_idx, value=val)
 
-    style_table(ws2, 4, 4 + len(exp12_rows), len(headers_s1), winner_rows=winner_rows_s1)
-    auto_fit_columns(ws2)
+    style_table(ws2, 4, 4 + len(exp12_rows), len(headers_s1), winner_rows=winner_rows_s1, left_cols=(1, 2, 17, 18))
+    auto_fit_columns(ws2, max_width=52)
 
     # -------------------------------------------------------------------------
     # SHEET 3: Stage 1 Component Ablation Matrix (Exp 3)
@@ -362,8 +429,39 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         "สัดส่วนขยะติดมา (%)",
         "เวลาค้นหาเฉลี่ย (ms)",
         "Composite Score",
-        "ข้อค้นพบจากการเปิด/ปิดโมดูล (Key Takeaway)",
+        "ทำไมถึงนำมาทดสอบ (Why Tested)",
+        "ทำไมถึงเลือก / ไม่เลือก (Why Selected & Impact)",
     ]
+    ab_rationale_map = {
+        "ablation_full_pipeline": (
+            "ทดสอบระบบ RAGcoon ที่เปิดครบทุกโมดูล (Hybrid BM25+E5 + Reranker + Filter + Fast-Path) เป็นเกณฑ์มาตรฐานสูงสุด",
+            "🏆 เลือกใช้งานจริง (Composite 91.64): Hit Rate เต็ม 100.0%, MRR สูงสุด 0.9231, ขยะเป็น 0.0% และค้นหาเร็วเพียง 312.4 ms",
+        ),
+        "ablation_dense_only": (
+            "ทดสอบปิด Sparse BM25 เหลือเฉพาะเวกเตอร์ความหมาย (Multilingual-E5) เพื่อพิสูจน์ว่าเวกเตอร์อย่างเดียวจับรหัสชิปได้หรือไม่",
+            "❌ ไม่เลือก: เมื่อขาด BM25 ระบบพลาดรหัสฮาร์ดแวร์เฉพาะทาง (SX1276) ทำให้ Hit Rate ตกเหลือ 84.6% และ MRR ตกเหลือ 0.7769",
+        ),
+        "ablation_bm25_only": (
+            "ทดสอบปิดเวกเตอร์ความหมาย เหลือเฉพาะการค้นหาคำตรงตัว (BM25 Keyword) เพื่อดูว่าค้นหาคำพ้องความหมายได้หรือไม่",
+            "❌ ไม่เลือก: แม้จับชื่อเฉพาะได้ดี แต่เมื่อคำถามใช้คำอธิบายเชิงความหมายโดยไม่ตรงคีย์เวิร์ดเป๊ะ คะแนน Composite ลดเหลือ 88.24",
+        ),
+        "ablation_no_rerank": (
+            "ทดสอบปิด BGE Cross-Encoder Reranker เพื่อดูว่าลำดับคะแนนดิบจาก Qdrant RRF แม่นยำพอสำหรับส่งเข้า LLM หรือยัง",
+            "❌ ไม่เลือก: เมื่อปิด Reranker ย่อหน้าที่มีคำตอบจริงตกไปอยู่อันดับ 2-4 ทำให้ MRR ร่วงจาก 0.9231 เหลือ 0.7436 (-18.0%)",
+        ),
+        "ablation_no_filter": (
+            "ทดสอบปิดตัวกรองขยะเอกสาร (Boilerplate Filter) เพื่อดูว่าหน้าสารบัญ/บรรณานุกรม/กิตติกรรมประกาศส่งผลเสียแค่ไหน",
+            "❌ ไม่เลือก: หน้าสารบัญและกิตติกรรมประกาศหลุดเข้ามาแย่งพื้นที่ Top-N ถึง 25.0% ทำให้ MRR ตกเหลือ 0.7372 (Composite เหลือ 76.26)",
+        ),
+        "ablation_no_fast_path": (
+            "ทดสอบปิดทางลัด Metadata Scroll เพื่อดูความแตกต่างของเวลาค้นหาและความแม่นยำในคำถามหมวดอาจารย์ที่ปรึกษา/ผู้จัดทำ",
+            "⚠️ ไม่เลือก: ความแม่นยำยังสูงแต่เวลาค้นหาเฉลี่ยช้าลงเกือบเท่าตัว (จาก 312.4 ms เพิ่มเป็น 555.8 ms)",
+        ),
+        "ablation_legacy_rag": (
+            "จำลองระบบ RAG แบบดั้งเดิม (Dense ล้วน + ไม่ใช้ Reranker + ไม่กรองขยะ + ไม่มี Fast-Path) เพื่อวัดพัฒนาการของระบบใหม่",
+            "❌ ไม่เลือก (Baseline เก่า): มีขยะปะปนถึง 57.1%, MRR ต่ำเพียง 0.6000 และได้คะแนนรวมต่ำสุดเพียง 65.87 (ระบบใหม่ดีกว่า +25.77 คะแนน)",
+        ),
+    }
     exp3_rows = [r for r in s1_all if r["exp_group"] == "Exp 3: Component Ablation"]
     max_exp3_score = max((r["composite_score"] for r in exp3_rows), default=0)
 
@@ -375,6 +473,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         is_w = r["composite_score"] == max_exp3_score
         if is_w:
             winner_rows_ab.add(idx)
+        why_t, why_s = ab_rationale_map.get(r["profile_name"], (r["description"], "พิจารณาตามคะแนน Composite"))
         row_vals = [
             r["exp_label"],
             r["profile_name"],
@@ -390,13 +489,14 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             r["boilerplate_noise_pct"],
             r["avg_total_search_ms"],
             r["composite_score"],
-            r["description"],
+            why_t,
+            why_s,
         ]
         for c_idx, val in enumerate(row_vals, start=1):
             ws3.cell(row=idx, column=c_idx, value=val)
 
-    style_table(ws3, 4, 4 + len(exp3_rows), len(headers_ab), winner_rows=winner_rows_ab, left_cols=(1, 2, 15))
-    auto_fit_columns(ws3)
+    style_table(ws3, 4, 4 + len(exp3_rows), len(headers_ab), winner_rows=winner_rows_ab, left_cols=(1, 2, 15, 16))
+    auto_fit_columns(ws3, max_width=52)
 
     # -------------------------------------------------------------------------
     # SHEET 4: Stage 2 LLM Generation Sweeps (Exp 4 Context Quota & Exp 5 Prompt/Temp)
@@ -431,7 +531,63 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         "ความเร็ว (TPS)",
         "Composite Score (0-100)",
         "สถานะ (Status)",
+        "ทำไมถึงนำค่านี้มาทดสอบ (Why Tested)",
+        "ทำไมถึงเลือก / ไม่เลือกค่านี้ (Why Selected / Verdict)",
     ]
+    s2_rationale_map = {
+        "sweep_chunks_15_quota_5": (
+            "ทดสอบเพดานบริบทกว้างสุด (15 Chunks, โควตา 5/โปรเจกต์) เพื่อดูว่ายิ่งส่งเนื้อหาเยอะ LLM ยิ่งตอบดีขึ้นหรือไม่",
+            "❌ ไม่เลือก: เกิดอาการสำลักบริบท (Context Overload) ในข้อ GT-01 ทำให้ Phrase Recall ตกเหลือ 80.0% และกิน Input Tokens สูงถึง 1,720 tokens",
+        ),
+        "sweep_chunks_10_quota_3": (
+            "ทดสอบบริบทขนาดใหญ่ (10 Chunks, โควตา 3/โปรเจกต์)",
+            "❌ ไม่เลือก: ใช้ Input Tokens เยอะเกินจำเป็น แต่ได้ Key Phrase Recall 80.0% ต่ำกว่าการส่ง 6 Chunks",
+        ),
+        "sweep_chunks_6_quota_2": (
+            "ทดสอบจุดสมดุล (6 Chunks, ล็อกโควตา 2 Chunks/โปรเจกต์) เพื่อให้รองรับการเปรียบเทียบ 3 โปรเจกต์อย่างเท่าเทียม",
+            "🏆 เลือกเป็นผู้ชนะ Exp 4 (Composite 83.75): ได้ Quality สูงสุด 84.67, Key Phrase Recall สูงสุด 86.68%, และ Multi-Project Coverage เต็ม 100%",
+        ),
+        "sweep_chunks_5_quota_2": (
+            "ทดสอบค่ามาตรฐานเดิม (5 Chunks, โควตา 2/โปรเจกต์)",
+            "⚠️ รองชนะเลิศ: ประสิทธิภาพใกล้เคียง 6 Chunks แต่ในคำถามเปรียบเทียบ 3 โปรเจกต์ โปรเจกต์ที่ 3 จะได้เพียง 1 Chunk",
+        ),
+        "sweep_chunks_4_quota_2": (
+            "ทดสอบบริบทขนาดกะทัดรัด (4 Chunks, โควตา 2/โปรเจกต์) เพื่อลดเวลาอ่าน Prompt ของการ์ดจอ",
+            "⚠️ ไม่เลือก: เร็วขึ้นเล็กน้อย (13.48s) แต่ได้คะแนน Quality (82.40) และ Phrase Recall (80.0%) ต่ำกว่า 6 Chunks",
+        ),
+        "sweep_chunks_2_quota_1": (
+            "ทดสอบขีดจำกัดล่างสุด (Minimal 2 Chunks, โควตา 1/โปรเจกต์) เพื่อเน้นความเร็วสูงสุด",
+            "❌ ไม่เลือก: บริบทน้อยเกินไปสำหรับคำถามเชิงลึกที่รายละเอียดกระจายอยู่หลายหน้า ทำให้ Phrase Recall ลดเหลือ 80.0%",
+        ),
+        "sweep_chunks_6_quota_6": (
+            "ทดสอบส่ง 6 Chunks แต่ปิดการจำกัดโควตาต่อโปรเจกต์ (Uncapped Quota=6) เพื่อพิสูจน์ความสำคัญของ Fair Quota",
+            "❌ ไม่เลือก: เมื่อไม่จำกัดโควตา โปรเจกต์เดียวกินพื้นที่ Chunks จน Input Tokens พุ่งเป็น 2,177 tokens และใช้เวลานานขึ้นเป็น 19.93s",
+        ),
+        "sweep_preset_concise_t0": (
+            "ทดสอบ Prompt แบบสั้นกระชับ (concise + Temp 0.0) เพื่อดูว่าช่วยลดเวลาตอบของโมเดลได้แค่ไหน",
+            "⚠️ ไม่เลือกเป็นค่าหลัก: ตอบไวขึ้น (12.00s) แต่บางข้อตัดจบสั้นเกินไปจนไม่ได้แนบ `[Source: ..., Page: ...]` ครบถ้วน",
+        ),
+        "sweep_preset_balanced_t0": (
+            "ทดสอบ Prompt มาตรฐานสมดุล (balanced + Temp 0.0) ที่เน้นความครบถ้วนควบคู่ความกระชับ",
+            "🏅 เลือกใช้เป็นค่าเริ่มต้นทั่วไป (Composite 82.61, Quality 84.67): สมดุลทั้งโครงสร้าง Markdown การอ้างอิง และความแม่นยำ",
+        ),
+        "sweep_preset_deep_t0": (
+            "ทดสอบ Prompt เชิงลึกวิชาการ (deep_academic + Temp 0.0) ที่บังคับแจกแจงรายละเอียดอุปกรณ์และผลการทดลอง",
+            "🏆 เลือกเป็นผู้ชนะ Exp 5 (Composite 83.50, Quality 83.47): ให้คำตอบเชิงลึกและการอ้างอิงวิชาการที่รัดกุมที่สุด",
+        ),
+        "sweep_preset_step_t0": (
+            "ทดสอบ Prompt แบบอธิบายทีละขั้นตอน (step_by_step + Temp 0.0)",
+            "⚠️ รองชนะเลิศ (Composite 83.49): เหมาะกับคำถามถามวิธีการทดลอง แต่ในคำถามทั่วไปใช้รูปแบบคล้าย deep_academic",
+        ),
+        "sweep_preset_balanced_t02": (
+            "ทดสอบเพิ่มความยืดหยุ่นของคำศัพท์ด้วย Temperature = 0.2",
+            "❌ ไม่เลือก: ไม่ได้เพิ่มความแม่นยำของคีย์เวิร์ดเมื่อเทียบกับ Temp = 0.0 และมีความแปรปรวนในการอ้างอิง",
+        ),
+        "sweep_preset_balanced_t05": (
+            "ทดสอบ Temperature = 0.5 (ระดับสร้างสรรค์ปานกลาง) เพื่อดูผลกระทบต่อความแม่นยำในงาน RAG",
+            "❌ ไม่เลือก: ใช้เวลาตอบนานขึ้น (16.38s) และคะแนนรวมลดลงเหลือ 80.65 เพราะงานเอกสารวิชาการต้องการความเป๊ะตามต้นฉบับ 100%",
+        ),
+    }
     max_exp4_score = max((r["composite_score"] for r in s2_all if r["exp_group"] == "Exp 4: Context & Quota Sweep"), default=0)
     max_exp5_score = max((r["composite_score"] for r in s2_all if r["exp_group"] == "Exp 5: Prompt & Temperature Sweep"), default=0)
 
@@ -445,6 +601,7 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
         )
         if is_w:
             winner_rows_s2.add(idx)
+        why_t2, why_s2 = s2_rationale_map.get(r["profile_name"], ("ทดสอบเปรียบเทียบพารามิเตอร์ฝั่ง LLM", "พิจารณาตามคะแนน Composite"))
         row_vals = [
             r["exp_group"],
             r["exp_label"],
@@ -465,12 +622,14 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             r["avg_tps"],
             r["composite_score"],
             "🏆 WINNER" if is_w else "Tested",
+            why_t2,
+            why_s2,
         ]
         for c_idx, val in enumerate(row_vals, start=1):
             ws4.cell(row=idx, column=c_idx, value=val)
 
-    style_table(ws4, 4, 4 + len(s2_all), len(headers_s2), winner_rows=winner_rows_s2)
-    auto_fit_columns(ws4)
+    style_table(ws4, 4, 4 + len(s2_all), len(headers_s2), winner_rows=winner_rows_s2, left_cols=(1, 2, 20, 21))
+    auto_fit_columns(ws4, max_width=52)
 
     # -------------------------------------------------------------------------
     # SHEET 5: Stage 1 Per-Query Granular Breakdown
@@ -960,14 +1119,46 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
             "เวลาตอบเฉลี่ย (วินาที)",
             "ความเร็ว (TPS)",
             "คะแนนความเหมาะสมรวม (Suitability Score)",
-            "คำแนะนำการใช้งาน (Recommendation)",
+            "ทำไมถึงนำโมเดลนี้มาทดสอบ (Why Tested / สมมติฐานการทดลอง)",
+            "ทำไมถึงเลือก / ไม่เลือกใช้งานจริง (Why Selected / สรุปความคุ้มค่า)",
         ]
+        llm_rationale_map = {
+            "llama3.2:3b": (
+                "นำมาทดสอบเป็นตัวแทนโมเดล 3B มาตรฐานสากลของ Meta ที่ถูกออกแบบมาเพื่อ Laptop GPU ขนาด 4GB โดยเฉพาะ เพื่อดูว่าสกัดรหัสฮาร์ดแวร์และชื่อโครงงานได้แม่นยำเทียบเท่าโมเดล 4B-8B หรือไม่",
+                "🏆 เลือกเป็นอันดับ 1 ด้านความคุ้มค่ารวม (Suitability = 87.70): รันบน VRAM 4GB ได้ 100% ตอบไวเฉลี่ย 5.60s (47.6 TPS เร็วกว่า gemma3:4b ถึง 3.4 เท่า) แต่ยังเก็บคำสำคัญ (Phrase Recall 86.7%) และอ้างอิง (Citation 21/30) ได้เทียบเท่ารุ่นใหญ่",
+            ),
+            "qwen2.5:3b": (
+                "นำมาทดสอบเป็นตัวแทนโมเดล 3B สายเอเชีย (Alibaba) ขนาดเบา 1.9 GB ที่ไม่ติดโหมดคิดยาว (<think>) เหมือน Qwen 3 เพื่อพิสูจน์ว่าทำสปีดสูงสุดบนการ์ดจอ 4GB โดยยังตอบภาษาไทยได้ดีหรือไม่",
+                "🥈 เลือกเป็นอันดับ 2 สายความเร็วสูง (Suitability = 82.48): ปั่น Token เร็วถึง 60.0 TPS กิน VRAM น้อยมาก (1.9 GB) และได้คะแนน Quality 81.20 เหมาะสำหรับโหมดต้องการคำตอบด่วน",
+            ),
+            "gemma3:1b": (
+                "นำมาทดสอบเป็นตัวแทน Ultra-Lightweight (1B Parameter, 0.8 GB) เพื่อเป็นขีดจำกัดล่าง (Lower-Bound Control) พิสูจน์ว่าหากลดขนาดโมเดลเหลือ 1B เพื่อเอาความเร็ว >100 TPS คุณภาพคำตอบ RAG จะดรอปลงแค่ไหน",
+                "❌ ไม่เลือกเป็นโมเดลหลัก (ใช้เฉพาะโหมดประหยัดทรัพยากรสุดขีด): แม้เร็วที่สุดถึง 130.7 TPS (6.86s) แต่ขนาด 1B เล็กเกินไปจนเกิดอาการพูดซ้ำ (Repetition) ในข้อ GT-01 และลืมระบุชื่อโครงงาน ทำให้ Phrase Recall ตกเหลือ 66.7%",
+            ),
+            "gemma3:4b": (
+                "นำมาทดสอบเป็น Baseline หลักของระบบ (ขนาด 4.3B, 3.3 GB พอดีเพดานการ์ดจอ VRAM 4GB) เนื่องจากตระกูล Gemma 3 โดดเด่นเรื่องการเรียบเรียงภาษาไทยและโครงสร้าง Markdown วิชาการ",
+                "🏅 เลือกเป็นแชมป์ด้านคุณภาพเนื้อหาสูงสุด (Quality = 84.67, Phrase Recall = 86.7%): เรียบเรียงคำตอบภาษาไทย ตารางเปรียบเทียบ และอ้างอิง `[Source: ..., Page: ...]` ได้ละเอียดและสละสลวยที่สุด (ใช้เวลาเฉลี่ย 19.23s เพราะเขียนละเอียดถึง ~199 tokens)",
+            ),
+            "qwen2.5:7b": (
+                "นำมาทดสอบเป็นตัวแทนรุ่นกลาง 7B Parameter (4.7 GB) เพื่อเป็นกลุ่มเปรียบเทียบ (Upper-Mid Control) ว่าการขยับขนาดเกิน 4GB VRAM เล็กน้อยให้ความแม่นยำเพิ่มขึ้นคุ้มกับความเร็วที่ลดลงหรือไม่",
+                "⚠️ ไม่เลือกเป็นค่าเริ่มต้นบนการ์ดจอ 4GB: แม้ได้คะแนน Citation สูงสุด (24/30, Quality 81.80) แต่ขนาด 4.7 GB ล้น VRAM 4GB ต้องสลับใช้ CPU RAM ทำให้ความเร็วลดเหลือ 8.6 TPS (16.97s) ช้ากว่ารุ่น 3B ถึง 5.5 เท่า",
+            ),
+            "qwen3:4b": (
+                "นำมาทดสอบเป็นตัวแทนโมเดลยุคใหม่ที่มีสถาปัตยกรรมคิดเชิงเหตุผล (Reasoning/Thinking) เพื่อดูว่าช่วยวิเคราะห์ตารางเปรียบเทียบโครงงานได้ดีขึ้นหรือไม่",
+                "⚠️ ไม่เลือกเป็นค่าเริ่มต้น: โมเดลชอบเขียนแจกแจงขั้นตอนการคิดวิเคราะห์คำถามก่อนเข้าสู่คำตอบจริง (เช่นใน GT-01 และ GT-06) ทำให้เสียโควตา Output Tokens และใช้เวลาตอบนาน (18.20s, Quality 77.73)",
+            ),
+            "llama3.1:8b": (
+                "นำมาทดสอบเป็นตัวแทนรุ่นใหญ่มาตรฐาน 8B Parameter (4.9 GB) เพื่อเป็นขีดจำกัดบน (Upper-Bound Control) พิสูจน์คอขวดด้านฮาร์ดแวร์เมื่อรันโมเดล 8B บนการ์ดจอ Laptop 4GB VRAM",
+                "❌ ไม่เลือกสำหรับ RTX 3050 Ti (4GB VRAM): แม้แม่นยำสูง (Phrase Recall 86.7%, Quality 80.47) แต่ขนาด 4.9 GB ล้น VRAM จนเกิดคอขวด GPU-RAM ความเร็วตกเหลือเพียง 7.3 TPS (เฉลี่ย 20.45s/ข้อ และนานถึง 43.8s ในข้อ GT-01)",
+            ),
+        }
         for c_idx, h in enumerate(headers_llm, start=1):
             ws10.cell(row=4, column=c_idx, value=h)
 
-        winner_rows_llm = {5, 6}  # Top 2 recommended models highlighted
+        winner_rows_llm = {5, 6, 8}  # Highlight llama3.2:3b (#1), qwen2.5:3b (#2), and gemma3:4b (Quality #1)
         for rank_idx, r in enumerate(llm_bench, start=1):
             row_num = 4 + rank_idx
+            why_test_m, why_sel_m = llm_rationale_map.get(r["model"], (r["role"], "พิจารณาตามคะแนนความเหมาะสมรวม"))
             vals = [
                 f"#{rank_idx}",
                 r["model"],
@@ -988,13 +1179,14 @@ def populate_parameter_sweep_sheets(wb: Workbook, payload: dict, golden_map: dic
                 r["avg_llm_seconds"],
                 r["avg_tps"],
                 r["composite_score"],
-                f"🏆 แนะนำอันดับ {rank_idx}: {r['role']}" if rank_idx <= 2 else r["role"],
+                why_test_m,
+                why_sel_m,
             ]
             for c_idx, v in enumerate(vals, start=1):
                 ws10.cell(row=row_num, column=c_idx, value=v)
 
-        style_table(ws10, 4, 4 + len(llm_bench), len(headers_llm), winner_rows=winner_rows_llm, left_cols=(2, 3, 6, 20))
-        auto_fit_columns(ws10, max_width=52)
+        style_table(ws10, 4, 4 + len(llm_bench), len(headers_llm), winner_rows=winner_rows_llm, left_cols=(2, 3, 6, 20, 21))
+        auto_fit_columns(ws10, max_width=55)
 
         # SHEET 11: Multi-LLM Per-Query Rule Breakdown & Actual Outputs
         s_name_11 = sheet_name(10, "LLM_PerQuery_Rule_Detail")
