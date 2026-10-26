@@ -27,6 +27,7 @@ class RAGConfig:
     rerank_top_n: int = 5
     collection_name: str = "embedding_evaluation"
     enable_hybrid: bool = True  # BM25 Sparse + E5 Dense (False = Dense Only)
+    enable_bm25_only: bool = False  # Pure Sparse BM25 Only (True = Skip E5 Dense Vector)
     enable_reranker: bool = True  # Cross-Encoder Reranker (False = Skip Reranking)
     enable_boilerplate_filter: bool = True  # Pre-rerank boilerplate suppression
     enable_fast_path: bool = True  # Direct deterministic metadata bypass
@@ -135,6 +136,24 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
         top_k=15,
         rerank_top_n=5,
         enable_hybrid=False,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=5,
+        max_chunks_per_project=2,
+        num_predict=512,
+        temperature=0.0,
+        prompt_preset="balanced",
+    ),
+
+    # 4b. Ablation Study 1b: BM25 Only (No Dense E5 Vector Search)
+    "ablation_bm25_only": RAGConfig(
+        profile_name="ablation_bm25_only",
+        description="[Ablation 1b] ตัด Dense Vector E5 ออก (Sparse BM25 Only) เพื่อวัดผลของคีย์เวิร์ดล้วน",
+        top_k=15,
+        rerank_top_n=5,
+        enable_hybrid=False,
+        enable_bm25_only=True,
         enable_reranker=True,
         enable_boilerplate_filter=True,
         enable_fast_path=True,
@@ -254,6 +273,27 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
         temperature=0.0,
         num_predict=512,
         prompt_preset="balanced",
+    ),
+
+    # 11. Empirical Optimal Tuned Profile (Two-Stage Parameter Sweep Winner for gemma3:4b)
+    "optimal_tuned_gemma3_4b": RAGConfig(
+        profile_name="optimal_tuned_gemma3_4b",
+        description="Optimal Empirical Config (Stage 1+2 Winner): Top-K=15, Top-N=10, Chunks=6, Quota=2, Preset=deep_academic, Temp=0.0",
+        top_k=15,
+        rerank_top_n=10,
+        enable_hybrid=True,
+        enable_bm25_only=False,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=6,
+        max_chunks_per_project=2,
+        min_score=0.0001,
+        llm_provider="ollama",
+        llm_model="gemma3:4b",
+        temperature=0.0,
+        num_predict=512,
+        prompt_preset="deep_academic",
     ),
 }
 

@@ -1,0 +1,21 @@
+{
+  "top_k": 15,
+  "rerank_top_n": 10,
+  "collection_name": "embedding_evaluation",
+  "enable_hybrid": true,
+  "enable_bm25_only": false,
+  "enable_reranker": true,
+  "enable_boilerplate_filter": true,
+  "enable_fast_path": true,
+  "max_context_chunks": 6,
+  "max_chunks_per_project": 2,
+  "min_score": 0.0001,
+  "llm_provider": "ollama",
+  "llm_model": "gemma3:4b",
+  "temperature": 0.0,
+  "num_predict": 512,
+  "prompt_preset": "deep_academic",
+  "system_prompt_override": null,
+  "profile_name": "optimal_tuned_gemma3_4b",
+  "description": "Optimal Empirical Config (Stage 1+2 Winner): top_k=15, rerank_top_n=10, max_context_chunks=6, max_chunks_per_project=2, preset=deep_academic, temp=0.0"
+}

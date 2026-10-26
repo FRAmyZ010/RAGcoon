@@ -188,6 +188,7 @@ def search_with_details(
     query: str,
     chat_history: str | None = None,
     config: Any = None,
+    precomputed_query_proc: tuple[str, dict, str, float] | None = None,
 ) -> dict:
     """Search and return detailed results with scores, timing, and dynamic routing intent."""
     total_start = time.perf_counter()
@@ -197,9 +198,12 @@ def search_with_details(
         print("ORIGINAL QUERY:", query)
 
         # 1. Use LLM Query Normalizer & Filter Extractor & Intent Classifier
-        query_proc_start = time.perf_counter()
-        normalized_query, filters, intent = process_query_with_llm(query, chat_history=chat_history)
-        query_proc_seconds = time.perf_counter() - query_proc_start
+        if precomputed_query_proc is not None:
+            normalized_query, filters, intent, query_proc_seconds = precomputed_query_proc
+        else:
+            query_proc_start = time.perf_counter()
+            normalized_query, filters, intent = process_query_with_llm(query, chat_history=chat_history)
+            query_proc_seconds = time.perf_counter() - query_proc_start
         clean_query = normalized_query
         if rag_cfg is not None:
             top_k = rag_cfg.top_k
@@ -306,7 +310,12 @@ def search_with_details(
                     **({"config": rag_cfg.to_dict()} if rag_cfg is not None else {}),
                 }
 
+        enable_bm25_only = bool(getattr(rag_cfg, "enable_bm25_only", False)) if rag_cfg is not None else False
+
         def _retrieve(text: str, k: int, metadata_filters: dict | None = None):
+            if enable_bm25_only:
+                from .bm25 import bm25_engine
+                return bm25_engine.search(text, top_k=k, metadata_filters=metadata_filters)
             if enable_hybrid:
                 return hybrid_search(text, k, metadata_filters=metadata_filters)
             return semantic_search(text, k, metadata_filters=metadata_filters)
@@ -359,7 +368,8 @@ def search_with_details(
             results = _diversify_candidates_by_project(results, max_per_project=2)
         elif intent == "EXPLORATORY" and results:
             results = _diversify_candidates_by_project(results, max_per_project=1)
-            top_n = max(top_n, len(results))
+            if rag_cfg is None:
+                top_n = max(top_n, len(results))
 
         print(f"Retrieved (before rerank): {len(results)} results")
 

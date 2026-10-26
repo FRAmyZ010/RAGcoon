@@ -793,13 +793,17 @@ def _prepare_rag_context(
     question: str,
     session_id: Optional[str] = None,
     config: Any = None,
+    precomputed_retrieval: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Unified context retrieval and document assembly for both streaming and non-streaming."""
     is_thai = _is_thai_query(question)
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
     chat_history_str = session_manager.format_history_for_prompt(session_id)
-    retrieval_details = search_with_details(question, chat_history=chat_history_str, config=config)
+    if precomputed_retrieval is not None:
+        retrieval_details = precomputed_retrieval
+    else:
+        retrieval_details = search_with_details(question, chat_history=chat_history_str, config=config)
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})
@@ -841,14 +845,18 @@ def _prepare_rag_context(
         max_context_chunks = rag_cfg.max_context_chunks
         max_chunks_per_project = rag_cfg.max_chunks_per_project
         min_score = rag_cfg.min_score
+        max_total_projects = max(max_total_projects, max_context_chunks)
 
     preserve_same_project_chunks = _is_code_query(question) or intent == "CODE"
 
     projects_ordered: list[str] = []
     projects_data: dict[str, dict] = {}
     sources: list[str] = []
+    total_snippets_added = 0
 
     for item in scored_contexts:
+        if total_snippets_added >= max_context_chunks:
+            break
         score = float(item.get("score", 0.0))
         if score < min_score and projects_data:
             continue
@@ -896,6 +904,7 @@ def _prepare_rag_context(
         if formatted_snippet not in projects_data[proj_key]["snippets"]:
             if len(projects_data[proj_key]["snippets"]) < max_chunks_per_project:
                 projects_data[proj_key]["snippets"].append(formatted_snippet)
+                total_snippets_added += 1
 
         if source not in sources:
             sources.append(source)
@@ -1034,9 +1043,10 @@ def answer_question(
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
     config: Any = None,
+    precomputed_retrieval: Optional[dict[str, Any]] = None,
 ) -> dict[str, object]:
     """Synchronous Question Answering with In-Memory Session Memory."""
-    prep = _prepare_rag_context(question, session_id=session_id, config=config)
+    prep = _prepare_rag_context(question, session_id=session_id, config=config, precomputed_retrieval=precomputed_retrieval)
 
     contexts = prep["contexts"]
     is_thai = prep["is_thai"]
