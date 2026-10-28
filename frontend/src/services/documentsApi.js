@@ -62,6 +62,14 @@ async function rejectIfNotOk(res, fallback) {
   throw await parseErrorDetail(res, fallback);
 }
 
+export async function fetchPublicCatalog() {
+  const res = await fetch(`${DOCUMENTS_BASE}/catalog`);
+  if (!res.ok) {
+    throw new Error("Could not load documents");
+  }
+  return res.json();
+}
+
 export async function listDocuments({ skip = 0, limit = 200 } = {}) {
   const params = new URLSearchParams({
     skip: String(skip),

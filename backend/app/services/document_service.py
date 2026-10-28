@@ -315,6 +315,24 @@ def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Docum
     )
 
 
+def get_public_catalog(db: Session) -> dict:
+    """Titles guests can search, plus the words that show up most often."""
+    from app.services.dashboard_service import count_keywords
+
+    rows = (
+        db.query(Document)
+        .order_by(Document.title.asc(), Document.filename.asc())
+        .all()
+    )
+    documents = []
+    keyword_values = []
+    for row in rows:
+        title = (row.title or "").strip() or row.filename
+        documents.append({"id": row.id, "title": title, "filename": row.filename})
+        keyword_values.append(row.keywords)
+    return {"documents": documents, "top_keywords": count_keywords(keyword_values)}
+
+
 def get_document_by_id(db: Session, document_id: int) -> Document | None:
     return (
         db.query(Document)
