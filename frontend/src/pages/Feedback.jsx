@@ -219,7 +219,7 @@ export default function FeedbackPage() {
       return;
     }
     if (file && file.size > MAX_ATTACHMENT_BYTES) {
-      setError("ไฟล์แนบเกิน 10MB");
+      setError("Attachment is larger than 10MB");
       return;
     }
 
@@ -235,7 +235,7 @@ export default function FeedbackPage() {
       setSubmitted(true);
     } catch (err) {
       setSubmitted(false);
-      setError(err.message || "ส่ง Feedback ไม่สำเร็จ");
+      setError(err.message || "Could not send feedback");
     } finally {
       setSending(false);
     }

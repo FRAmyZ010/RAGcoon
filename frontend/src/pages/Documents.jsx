@@ -22,6 +22,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Sliders,
 } from "lucide-react";
 import {
   deleteDocument,
@@ -138,7 +139,7 @@ export default function DocumentsManagement() {
 
   const openUploadModal = () => {
     if (backgroundUploadRef.current) {
-      setError("กำลังอัปโหลดชุดก่อนหน้าอยู่ กรุณารอสักครู่แล้วลองใหม่");
+      setError("A previous upload is still running. Wait a moment and try again.");
       return;
     }
     setUploadError("");
@@ -188,22 +189,22 @@ export default function DocumentsManagement() {
       const lower = name.toLowerCase();
 
       if (!lower.endsWith(".pdf")) {
-        warnings.push(`${name} ไม่รองรับ`);
+        warnings.push(`${name} is not supported`);
         continue;
       }
       if (file.size <= 0) {
-        warnings.push(`${name} ไฟล์ว่างเปล่า หรือไฟล์เสีย`);
+        warnings.push(`${name} is empty or damaged`);
         continue;
       }
       if (
         queueNames.has(lower) ||
         accepted.some((f) => f.name.toLowerCase() === lower)
       ) {
-        warnings.push(`${name} ชื่อไฟล์ซ้ำในคิว`);
+        warnings.push(`${name} is already in the queue`);
         continue;
       }
       if (serverNames.has(lower)) {
-        warnings.push(`${name} มีชื่อไฟล์ซ้ำในระบบแล้ว`);
+        warnings.push(`${name} is already in the library`);
         continue;
       }
       if (runningTotal + file.size > MAX_TOTAL_UPLOAD_BYTES) {
@@ -217,7 +218,7 @@ export default function DocumentsManagement() {
     }
 
     if (hitMaxTotal) {
-      warnings.push(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+      warnings.push(`Total size exceeds ${MAX_TOTAL_UPLOAD_MB}MB`);
     }
 
     const nextQueue = [
@@ -242,12 +243,12 @@ export default function DocumentsManagement() {
     const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
     if (uploading || files.length === 0 || totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
       if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
-        setUploadError(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+        setUploadError(`Total size exceeds ${MAX_TOTAL_UPLOAD_MB}MB`);
       }
       return;
     }
     if (backgroundUploadRef.current) {
-      setUploadError("กำลังอัปโหลดชุดก่อนหน้าอยู่ กรุณารอสักครู่");
+      setUploadError("A previous upload is still running. Please wait.");
       return;
     }
 
@@ -388,7 +389,7 @@ export default function DocumentsManagement() {
   const clearSelection = () => setSelectedIds(new Set());
 
   const handleRemove = async (id) => {
-    if (!window.confirm("ลบเอกสารนี้ถาวรหรือไม่?")) return;
+    if (!window.confirm("Delete this document permanently?")) return;
 
     setActionBusyId(id);
     closeActionMenu();
@@ -410,7 +411,7 @@ export default function DocumentsManagement() {
   const handleBulkDelete = async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
-    if (!window.confirm(`ลบเอกสารที่เลือก ${ids.length} รายการถาวรหรือไม่?`)) return;
+    if (!window.confirm(`Delete the ${ids.length} selected documents permanently?`)) return;
 
     setBulkBusy(true);
     closeActionMenu();
@@ -500,6 +501,13 @@ export default function DocumentsManagement() {
               <span>Feedback</span>
             </Link>
             <Link
+              to="/ai-config"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              <span>AI Configuration</span>
+            </Link>
+            <Link
               to="/chat"
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
@@ -545,7 +553,7 @@ export default function DocumentsManagement() {
           <div>
             <h1 className="text-base sm:text-lg font-bold text-gray-900">Documents Management</h1>
             <p className="text-[11px] text-gray-500 sm:text-xs">
-              จัดการและอัปโหลดไฟล์โครงงาน Senior Project เข้าสู่คลังข้อมูล RAG Engine
+              Manage and upload senior-project PDFs into the RAG library
             </p>
           </div>
 
@@ -652,7 +660,7 @@ export default function DocumentsManagement() {
                 {!loading && filesData.length === 0 && (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-gray-500">
-                      ยังไม่มีเอกสาร — กด Upload File เพื่อเพิ่ม PDF
+                      No documents yet. Choose Upload File to add a PDF.
                     </td>
                   </tr>
                 )}
@@ -660,7 +668,7 @@ export default function DocumentsManagement() {
                 {!loading && filesData.length > 0 && filteredFiles.length === 0 && (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-gray-500">
-                      ไม่พบเอกสารที่ตรงกับคำค้น
+                      No documents match this search
                     </td>
                   </tr>
                 )}
@@ -1030,9 +1038,9 @@ export default function DocumentsManagement() {
               }`}
             >
               <UploadCloud className="mb-2 h-10 w-10 text-blue-500" />
-              <p className="text-base font-bold text-gray-700">คลิกหรือลากไฟล์ PDF มาวาง</p>
+              <p className="text-base font-bold text-gray-700">Click or drop PDF files here</p>
               <p className="mt-1 text-sm text-gray-400">
-                PDF · รวมไม่เกิน {MAX_TOTAL_UPLOAD_MB}MB
+                PDF · {MAX_TOTAL_UPLOAD_MB}MB total
               </p>
               <input
                 ref={fileInputRef}
@@ -1052,7 +1060,7 @@ export default function DocumentsManagement() {
             {uploadQueue.length > 0 && (
               <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                 <div className="text-sm font-semibold text-gray-800">
-                  ไฟล์ที่เลือก {uploadQueue.length} · รวม{" "}
+                  {uploadQueue.length} selected ·{" "}
                   {(submitTotalBytes / (1024 * 1024)).toFixed(1)} / {MAX_TOTAL_UPLOAD_MB}MB
                 </div>
                 <button
@@ -1060,7 +1068,7 @@ export default function DocumentsManagement() {
                   onClick={clearUploadQueue}
                   className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                 >
-                  ล้างทั้งหมด
+                  Clear all
                 </button>
               </div>
             )}
@@ -1086,12 +1094,12 @@ export default function DocumentsManagement() {
                 disabled={!canSubmitUpload}
                 title={
                   canSubmitUpload
-                    ? "อัปโหลดไฟล์ที่เลือก"
+                    ? "Upload the selected files"
                     : queueOverTotalLimit
-                      ? `ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`
+                      ? `Total size exceeds ${MAX_TOTAL_UPLOAD_MB}MB`
                       : submitCandidates.length === 0
-                        ? "ยังไม่มีไฟล์ในคิว"
-                        : "ไม่สามารถส่งได้"
+                        ? "No files in the queue"
+                        : "Cannot submit"
                 }
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1107,10 +1115,10 @@ export default function DocumentsManagement() {
           <div className="mb-2 flex items-start justify-between gap-2">
             <div className="font-bold text-gray-900">
               {uploadToast.kind === "accepted"
-                ? "รับไฟล์แล้ว"
+                ? "Files received"
                 : uploadToast.kind === "error"
-                  ? "อัปโหลดไม่สำเร็จ"
-                  : "สรุปการอัปโหลด"}
+                  ? "Upload failed"
+                  : "Upload summary"}
             </div>
             <button
               type="button"
@@ -1123,27 +1131,27 @@ export default function DocumentsManagement() {
           </div>
           {uploadToast.kind === "accepted" && (
             <p className="text-sm text-gray-600">
-              รับไฟล์แล้ว {uploadToast.total} ไฟล์
+              Received {uploadToast.total} file{uploadToast.total === 1 ? "" : "s"}
               {uploadToast.totalMb ? ` · ${uploadToast.totalMb}MB` : ""}
               <br />
-              กำลังประมวลผลเบื้องหลัง — ดูสถานะในตารางได้เลย
+              Processing in the background. Status is shown in the table.
             </p>
           )}
           {uploadToast.kind === "done" && (
             <>
               <p className="text-sm text-gray-600">
-                รับเข้าคิว {uploadToast.succeeded} / {uploadToast.total}
-                {uploadToast.failed > 0 ? ` · ไม่ผ่าน ${uploadToast.failed}` : ""}
+                Queued {uploadToast.succeeded} / {uploadToast.total}
+                {uploadToast.failed > 0 ? ` · ${uploadToast.failed} failed` : ""}
               </p>
               <ul className="mt-2 space-y-1 text-sm text-gray-700">
                 <li className="flex items-center gap-2 text-green-700">
                   <Check className="h-4 w-4" />
-                  {uploadToast.succeeded} ไฟล์เข้าคิวแล้ว (Pending/Processing)
+                  {uploadToast.succeeded} file{uploadToast.succeeded === 1 ? "" : "s"} queued (Pending/Processing)
                 </li>
                 {uploadToast.failed > 0 && (
                   <li className="flex items-center gap-2 text-red-700">
                     <CircleAlert className="h-4 w-4" />
-                    {uploadToast.failed} ไฟล์ไม่สำเร็จ
+                    {uploadToast.failed} file{uploadToast.failed === 1 ? "" : "s"} failed
                   </li>
                 )}
               </ul>

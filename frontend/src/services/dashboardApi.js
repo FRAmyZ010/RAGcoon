@@ -16,7 +16,7 @@ export async function fetchOverview(days = 7) {
   }
 
   if (!res.ok) {
-    let detail = "โหลด Dashboard ไม่สำเร็จ";
+    let detail = "Could not load the dashboard";
     try {
       const data = await res.json();
       if (typeof data?.detail === "string") detail = data.detail;

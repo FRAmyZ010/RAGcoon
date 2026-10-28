@@ -52,7 +52,7 @@ class RAGConfig:
 
     # Metadata
     profile_name: str = "winner_rank1_llama3_2_3b"
-    description: str = "🏆 แนะนำอันดับ 1 (Suitability 87.70): Llama 3.2 (3B) + Top-K=15, Top-N=10, Chunks=6, Quota=2 (เร็ว 47.6 TPS / 5.60s)"
+    description: str = "Rank 1 default (suitability 87.70): Llama 3.2 3B, top_k 15, rerank 10, 6 context chunks, quota 2. 47.6 tokens/s, about 5.60s."
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -83,10 +83,10 @@ class RAGConfig:
 # =========================================================================
 
 CONFIG_PRESETS: dict[str, RAGConfig] = {
-    # 🥇 WINNER RANK 1: Best Overall Speed & Precision (Suitability = 87.70)
+    # 1. WINNER RANK 1: Best Overall Speed & Precision (Suitability = 87.70)
     "winner_rank1_llama3_2_3b": RAGConfig(
         profile_name="winner_rank1_llama3_2_3b",
-        description="🥇 ชนะเลิศอันดับ 1 (Suitability 87.70): Llama 3.2 (3B, 2.0GB) + Top-K=15, Top-N=10, Chunks=6, Quota=2, Balanced, Temp=0.0 (เร็ว 47.6 TPS / 5.60s, Phrase Recall 86.7%)",
+        description="Rank 1 (suitability 87.70): Llama 3.2 3B (2.0GB), top_k 15, rerank 10, 6 chunks, quota 2, balanced prompt, temperature 0. 47.6 tokens/s, about 5.60s, phrase recall 86.7%.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -105,7 +105,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 🥈 WINNER RANK 2: Ultra-Fast Speed Champion (Suitability = 82.48, Speed = 60.0 TPS)
     "winner_rank2_qwen2_5_3b": RAGConfig(
         profile_name="winner_rank2_qwen2_5_3b",
-        description="🥈 รองชนะเลิศอันดับ 2 (Suitability 82.48): Qwen 2.5 (3B, 1.9GB) + Top-K=15, Top-N=10, Chunks=6, Quota=2, Balanced, Temp=0.0 (ปั่น Token สูงสุด 60.0 TPS, ประหยัด VRAM)",
+        description="Rank 2 (suitability 82.48): Qwen 2.5 3B (1.9GB), top_k 15, rerank 10, 6 chunks, quota 2, balanced prompt, temperature 0. Highest throughput at 60.0 tokens/s and lower VRAM.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -124,7 +124,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # 🥉 WINNER RANK 3: Academic Thai Language & Depth Champion (Quality = 84.67)
     "winner_rank3_gemma3_4b_academic": RAGConfig(
         profile_name="winner_rank3_gemma3_4b_academic",
-        description="🥉 อันดับ 3 / 🏅 แชมป์คุณภาพเนื้อหาสูงสุด (Quality 84.67 | Stage 2 Winner 83.75): Gemma 3 (4B, 3.3GB) + Top-K=15, Top-N=10, Chunks=6, Quota=2, Deep-Academic, Temp=0.0 (เรียบเรียงภาษาไทยและตารางวิชาการละเอียดที่สุด)",
+        description="Rank 3, highest content quality (quality 84.67, stage 2 score 83.75): Gemma 3 4B (3.3GB), top_k 15, rerank 10, 6 chunks, quota 2, deep-academic prompt, temperature 0. Strongest Thai academic writing and tables.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -143,7 +143,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # Aliases for convenience and backward compatibility
     "optimal_llama3_2_3b": RAGConfig(
         profile_name="optimal_llama3_2_3b",
-        description="Alias สำหรับ winner_rank1_llama3_2_3b (โหมดแนะนำค่าเริ่มต้น)",
+        description="Alias for winner_rank1_llama3_2_3b, the default recommendation.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -159,7 +159,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "optimal_tuned_gemma3_4b": RAGConfig(
         profile_name="optimal_tuned_gemma3_4b",
-        description="Alias สำหรับ winner_rank3_gemma3_4b_academic (แชมป์วิชาการภาษาไทย)",
+        description="Alias for winner_rank3_gemma3_4b_academic, the Thai academic-quality winner.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -177,7 +177,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # Standard / Classical Profiles (Updated with Optimal Parameters)
     "precision_hybrid": RAGConfig(
         profile_name="precision_hybrid",
-        description="โหมดมาตรฐานสมดุล (Updated): Top-K=15, Top-N=10, Chunks=6, Quota=2, Balanced Prompt",
+        description="Balanced profile on the tuned defaults: top_k 15, rerank 10, 6 context chunks, quota 2, balanced prompt.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -192,7 +192,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "fast_mode": RAGConfig(
         profile_name="fast_mode",
-        description="เน้นความเร็วสูงสุด (Speed-Optimized): Llama 3.2 (3B), Top-K=10, Top-N=3, Chunks=3, Prompt กระชับ",
+        description="Fastest path: Llama 3.2 3B, top_k 10, rerank 3, 3 context chunks, one chunk per project, concise prompt, 256-token answers.",
         top_k=10,
         rerank_top_n=3,
         enable_hybrid=True,
@@ -209,7 +209,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "deep_academic": RAGConfig(
         profile_name="deep_academic",
-        description="เน้นความลึกเชิงวิชาการ (Deep-Academic): Gemma 3 (4B), Top-K=15, Top-N=10, Chunks=6, Quota=2, Output=1024",
+        description="Deep academic answers: Gemma 3 4B, top_k 15, rerank 10, 6 context chunks, quota 2, 1024-token answers.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -228,7 +228,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # Ultra-Lightweight Control Profile (1B Parameter / 130.7 TPS)
     "ultra_light_gemma3_1b": RAGConfig(
         profile_name="ultra_light_gemma3_1b",
-        description="โหมดน้ำหนักเบาพิเศษ (Ultra-Lightweight 1B): Gemma 3 (1B, 0.8GB) + ความเร็ว 130.7 TPS / 6.86s",
+        description="Ultra-light 1B profile: Gemma 3 1B (0.8GB), about 130.7 tokens/s and 6.86s.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -247,7 +247,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     # Ablation Study Profiles
     "ablation_dense_only": RAGConfig(
         profile_name="ablation_dense_only",
-        description="[Ablation 1] ตัด Sparse BM25 ออก (Dense Vector Only) เพื่อวัดผลของ Hybrid Search",
+        description="Ablation on the tuned defaults: dense vectors only, with BM25 keyword search turned off.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=False,
@@ -262,7 +262,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "ablation_bm25_only": RAGConfig(
         profile_name="ablation_bm25_only",
-        description="[Ablation 1b] ตัด Dense Vector E5 ออก (Sparse BM25 Only) เพื่อวัดผลของคีย์เวิร์ดล้วน",
+        description="Ablation on the tuned defaults: BM25 keyword search only, with dense E5 vector search turned off.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=False,
@@ -278,7 +278,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "ablation_no_rerank": RAGConfig(
         profile_name="ablation_no_rerank",
-        description="[Ablation 2] ตัด Cross-Encoder Reranker ออก เพื่อวัดผลของ Neural Re-ranking",
+        description="Ablation on the tuned defaults, without the cross-encoder reranker.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -293,7 +293,7 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
     ),
     "ablation_no_filter": RAGConfig(
         profile_name="ablation_no_filter",
-        description="[Ablation 3] ปิด Boilerplate Filter เพื่อวัดผลกระทบจากขยะเอกสาร (TOC, อ้างอิง, ลายมือชื่อ)",
+        description="Ablation on the tuned defaults, without dropping contents pages and reference lists.",
         top_k=15,
         rerank_top_n=10,
         enable_hybrid=True,
@@ -304,6 +304,82 @@ CONFIG_PRESETS: dict[str, RAGConfig] = {
         max_chunks_per_project=2,
         num_predict=512,
         temperature=0.0,
+        prompt_preset="balanced",
+    ),
+    # 7. LLM Model Benchmark: Ollama Qwen 3 (4B)
+    "model_qwen3": RAGConfig(
+        profile_name="model_qwen3",
+        description="Baseline retrieval, and the answer model is forced to qwen3:4b.",
+        llm_provider="ollama",
+        llm_model="qwen3:4b",
+        top_k=15,
+        rerank_top_n=5,
+        enable_hybrid=True,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=5,
+        max_chunks_per_project=2,
+        num_predict=512,
+        temperature=0.0,
+        prompt_preset="balanced",
+    ),
+
+    # 8. LLM Model Benchmark: Google Gemini (Cloud)
+    "model_gemini": RAGConfig(
+        profile_name="model_gemini",
+        description="Baseline retrieval, and the answer model is forced to gemini-3.5-flash. Needs an API key.",
+        llm_provider="gemini",
+        llm_model="gemini-3.5-flash",
+        top_k=15,
+        rerank_top_n=5,
+        enable_hybrid=True,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=5,
+        max_chunks_per_project=2,
+        num_predict=512,
+        temperature=0.0,
+        prompt_preset="balanced",
+    ),
+
+    # 9. LLM Model Benchmark: OpenAI ChatGPT (Cloud)
+    "model_openai": RAGConfig(
+        profile_name="model_openai",
+        description="Baseline retrieval, and the answer model is forced to gpt-4o-mini. Needs an API key.",
+        llm_provider="openai",
+        llm_model="gpt-4o-mini",
+        top_k=15,
+        rerank_top_n=5,
+        enable_hybrid=True,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=5,
+        max_chunks_per_project=2,
+        num_predict=512,
+        temperature=0.0,
+        prompt_preset="balanced",
+    ),
+
+    # 10. Custom Tuned Profile: custom_balanced_boost
+    "custom_balanced_boost": RAGConfig(
+        profile_name="custom_balanced_boost",
+        description="Saved custom tune: top_k 20, rerank 6, 4 context chunks, quota 2, filter and fast-path on, gemma3:4b.",
+        top_k=20,
+        rerank_top_n=6,
+        enable_hybrid=True,
+        enable_reranker=True,
+        enable_boilerplate_filter=True,
+        enable_fast_path=True,
+        max_context_chunks=4,
+        max_chunks_per_project=2,
+        min_score=0.0001,
+        llm_provider="ollama",
+        llm_model="gemma3:4b",
+        temperature=0.0,
+        num_predict=512,
         prompt_preset="balanced",
     ),
 }

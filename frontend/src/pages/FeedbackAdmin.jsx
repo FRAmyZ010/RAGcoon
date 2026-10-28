@@ -6,6 +6,7 @@ import {
   LogOut,
   MessageSquare,
   Bell,
+  Sliders,
 } from "lucide-react";
 import { clearAuth } from "../services/authApi";
 import {
@@ -51,7 +52,7 @@ export default function FeedbackAdmin() {
       const data = await listFeedback({ feedbackType, status, q });
       setRows(data);
     } catch (err) {
-      setError(err.message || "โหลด Feedback ไม่สำเร็จ");
+      setError(err.message || "Could not load feedback");
     } finally {
       setLoading(false);
     }
@@ -69,7 +70,7 @@ export default function FeedbackAdmin() {
       await updateFeedbackStatus(id, nextStatus);
       await load();
     } catch (err) {
-      setError(err.message || "อัปเดตสถานะไม่สำเร็จ");
+      setError(err.message || "Could not update the status");
     }
   };
 
@@ -113,6 +114,10 @@ export default function FeedbackAdmin() {
               <MessageSquare className="h-3.5 w-3.5" />
               <span>Feedback</span>
             </Link>
+            <Link to="/ai-config" className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10">
+              <Sliders className="h-3.5 w-3.5" />
+              <span>AI Configuration</span>
+            </Link>
             <Link to="/chat" className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10">
               <MessageSquare className="h-3.5 w-3.5" />
               <span>Chat Workspace</span>
@@ -148,7 +153,7 @@ export default function FeedbackAdmin() {
 
         <div className="mb-4">
           <h1 className="text-base font-bold text-gray-900 sm:text-lg">Feedback</h1>
-          <p className="text-[11px] text-gray-500 sm:text-xs">{rows.length} รายการ</p>
+          <p className="text-[11px] text-gray-500 sm:text-xs">{rows.length} items</p>
         </div>
 
         <div className="mb-4 flex flex-col gap-2 sm:flex-row">
@@ -209,7 +214,7 @@ export default function FeedbackAdmin() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
-                    ยังไม่มี Feedback
+                    No feedback yet
                   </td>
                 </tr>
               )}

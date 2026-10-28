@@ -1,7 +1,7 @@
 // src/services/api.js
-const API_BASE_URL = "http://localhost:8000/api/v1"; // อัปเดต Base URL เป็น /api/v1 ตาม Spec
+const API_BASE_URL = "http://localhost:8000/api/v1";
 
-// ดึง Token จาก LocalStorage
+// Read the token from localStorage
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
   return {
@@ -9,7 +9,7 @@ const getAuthHeaders = () => {
   };
 };
 
-// 🔵 1. ดึงรายการเอกสารทั้งหมด (GET /api/v1/documents)
+// GET /api/v1/documents
 export async function fetchDocumentsApi() {
   const response = await fetch(`${API_BASE_URL}/documents`, {
     method: "GET",
@@ -22,11 +22,11 @@ export async function fetchDocumentsApi() {
   return response.json();
 }
 
-// 🔵 2. อัปโหลดไฟล์เอกสาร (POST /api/v1/documents/upload)
+// POST /api/v1/documents/upload
 export async function uploadDocumentApi(file, projectDetails) {
   const formData = new FormData();
   
-  // แนบไฟล์และข้อมูล Meta ตาม Form-Data ใน API Spec
+  // Attach the file and metadata as form data
   formData.append("file", file);
   formData.append("project_title", projectDetails.project_title || "");
   formData.append("academic_year", projectDetails.academic_year || 2024);
@@ -36,7 +36,7 @@ export async function uploadDocumentApi(file, projectDetails) {
   const response = await fetch(`${API_BASE_URL}/documents/upload`, {
     method: "POST",
     headers: {
-      ...getAuthHeaders(), // ต้องใช้ Bearer JWT[cite: 1]
+      ...getAuthHeaders(),
     },
     body: formData,
   });
@@ -45,12 +45,12 @@ export async function uploadDocumentApi(file, projectDetails) {
   return response.json();
 }
 
-// 🔵 3. ลบเอกสาร (DELETE /api/v1/documents/{id})
+// DELETE /api/v1/documents/{id}
 export async function deleteDocumentApi(documentId) {
   const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
     method: "DELETE",
     headers: {
-      ...getAuthHeaders(), // ต้องใช้ Bearer JWT[cite: 1]
+      ...getAuthHeaders(),
     },
   });
 

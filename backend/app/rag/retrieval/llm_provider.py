@@ -544,7 +544,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "gemma3:4b",
         "label": "Ollama Gemma 3 (4B) [Local Default]",
-        "description": "โมเดลท้องถิ่นขนาด 4B ทำงานแบบ Offline บนเครื่อง ประหยัดทรัพยากร",
+        "description": "Small 4B local model. Runs offline on this machine.",
         "is_cloud": False,
     },
     {
@@ -552,7 +552,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "qwen3:4b",
         "label": "Ollama Qwen 3 (4B) [Local Reasoning - 2.5GB]",
-        "description": "โมเดล Qwen 3 ขนาด 4B สำหรับงานวิเคราะห์และการตอบเชิงเหตุผล",
+        "description": "Qwen 3 4B for reasoning over the project documents.",
         "is_cloud": False,
     },
     {
@@ -560,7 +560,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "qwen2.5:3b",
         "label": "Ollama Qwen 2.5 (3B) [Local Ultra-Fast - 1.9GB]",
-        "description": "โมเดลขนาดกะทัดรัด 3B เร็วสูง ประหยัด VRAM 4GB ตอบภาษาไทยแม่นยำ",
+        "description": "Compact 3B model. Fast on a 4GB GPU, and accurate for Thai answers.",
         "is_cloud": False,
     },
     {
@@ -568,7 +568,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "llama3.2:3b",
         "label": "Ollama Llama 3.2 (3B) [Meta Compact - 2.0GB]",
-        "description": "โมเดลขนาด 3B จาก Meta ออกแบบสำหรับ Laptop GPU 4GB โดยเฉพาะ",
+        "description": "Meta 3B model sized for a laptop GPU with 4GB VRAM.",
         "is_cloud": False,
     },
     {
@@ -576,7 +576,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "gemma3:1b",
         "label": "Ollama Gemma 3 (1B) [Ultra-Lightweight - 815MB]",
-        "description": "โมเดลจิ๋วขนาด 1B กินแรมไม่ถึง 1GB เน้นความเร็วสูงสุด",
+        "description": "1B model under 1GB. Built for the highest speed.",
         "is_cloud": False,
     },
     {
@@ -584,7 +584,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "qwen2.5:7b",
         "label": "Ollama Qwen 2.5 (7B) [Local High-Capacity - 4.7GB]",
-        "description": "โมเดลขนาดกลาง 7B ความละเอียดสูง (Hybrid GPU+CPU Offload)",
+        "description": "7B model for finer answers. Uses hybrid GPU and CPU offload.",
         "is_cloud": False,
     },
     {
@@ -592,7 +592,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "ollama",
         "model": "llama3.1:8b",
         "label": "Ollama Llama 3.1 (8B) [Meta Standard - 4.9GB]",
-        "description": "โมเดลมาตรฐาน 8B จาก Meta",
+        "description": "Meta 8B model.",
         "is_cloud": False,
     },
     {
@@ -600,7 +600,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "gemini",
         "model": "gemini-3.5-flash",
         "label": "Google Gemini 3.5 Flash [Cloud Ultra-Fast]",
-        "description": "โมเดลบนคลาวด์ของ Google ความเร็วสูงมากและแม่นยำสูง รองรับบริบทใหญ่",
+        "description": "Fast Google cloud model with a very large context window.",
         "is_cloud": True,
     },
     {
@@ -608,7 +608,7 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "gemini",
         "model": "gemini-3.5-flash-lite",
         "label": "Google Gemini 3.5 Flash-Lite [Cloud Cost-Effective]",
-        "description": "โมเดลตัวเบาของ Gemini เน้นความเร็วในการสร้างคำตอบและประหยัด Token",
+        "description": "Lighter Gemini model for short, fast answers.",
         "is_cloud": True,
     },
     {
@@ -616,7 +616,15 @@ AVAILABLE_LLM_PROFILES = [
         "provider": "openai",
         "model": "gpt-4o-mini",
         "label": "OpenAI ChatGPT (GPT-4o Mini) [Cloud SOTA]",
-        "description": "โมเดลเรือธงขนาดกะทัดรัดของ OpenAI สังเคราะห์ภาษาได้สละสลวย",
+        "description": "Compact OpenAI model for steady synthesis.",
+        "is_cloud": True,
+    },
+    {
+        "id": "openai_gpt4o",
+        "provider": "openai",
+        "model": "gpt-4o",
+        "label": "OpenAI GPT-4o [Cloud Flagship]",
+        "description": "Use when the answer needs detailed analysis.",
         "is_cloud": True,
     },
 ]

@@ -76,16 +76,16 @@ export async function listDocuments({ skip = 0, limit = 200 } = {}) {
 
 export async function uploadDocument(file, options = {}) {
   if (!file) {
-    throw new Error("ไม่ได้เลือกไฟล์");
+    throw new Error("No file selected");
   }
   if (!file.name?.toLowerCase().endsWith(".pdf")) {
-    throw new Error("รองรับเฉพาะไฟล์เอกสารประเภท PDF เท่านั้น");
+    throw new Error("Only PDF documents are supported");
   }
   if (file.size <= 0) {
-    throw new Error("ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้");
+    throw new Error("The file is empty and cannot be uploaded");
   }
   if (file.size > MAX_TOTAL_UPLOAD_BYTES) {
-    throw new Error(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+    throw new Error(`Total size exceeds ${MAX_TOTAL_UPLOAD_MB}MB`);
   }
 
   const formData = new FormData();
@@ -109,20 +109,20 @@ export async function uploadDocument(file, options = {}) {
 export async function uploadDocumentsBatch(files) {
   const list = Array.from(files || []);
   if (list.length === 0) {
-    throw new Error("ไม่ได้เลือกไฟล์");
+    throw new Error("No file selected");
   }
 
   const totalBytes = list.reduce((sum, file) => sum + (file.size || 0), 0);
   if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
-    throw new Error(`ขนาดไฟล์รวมเกิน ${MAX_TOTAL_UPLOAD_MB}MB`);
+    throw new Error(`Total size exceeds ${MAX_TOTAL_UPLOAD_MB}MB`);
   }
 
   for (const file of list) {
     if (!file.name?.toLowerCase().endsWith(".pdf")) {
-      throw new Error(`รองรับเฉพาะไฟล์ PDF เท่านั้น: ${file.name}`);
+      throw new Error(`Only PDF files are supported: ${file.name}`);
     }
     if (file.size <= 0) {
-      throw new Error(`ไฟล์ว่างเปล่า ไม่สามารถอัปโหลดได้: ${file.name}`);
+      throw new Error(`The file is empty and cannot be uploaded: ${file.name}`);
     }
   }
 

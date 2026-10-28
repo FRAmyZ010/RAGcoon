@@ -37,7 +37,11 @@ def prescreen_reply(question: str) -> str | None:
     if not text:
         return "I didn't catch a question. Ask me about a senior project whenever you're ready."
     compact = re.sub(r"\s+", "", text)
-    if not re.search(r"[A-Za-zก-๙0-9]", compact) or re.fullmatch(r"[a-z]{8,}", compact, re.IGNORECASE):
+    if not re.search(r"[A-Za-zก-๙0-9]", compact):
+        return "I couldn't understand that. Please ask again about a senior project."
+    # Keyboard mash is one long token. A real question has spaces, so do not
+    # join the words before this check.
+    if re.fullmatch(r"[a-z]{8,}", text.strip(), re.IGNORECASE):
         return "I couldn't understand that. Please ask again about a senior project."
     if _GREETING.fullmatch(text):
         return "Hello, I'm RAGcoon. I can help you look up Computer Engineering senior projects."

@@ -17,7 +17,7 @@ from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 from pydantic import BaseModel, Field
 
-from .metadata_cache import metadata_cache
+from .metadata_cache import metadata_cache, _NON_NAME_WORDS
 
 env_path = Path(__file__).resolve().parents[3] / ".env"
 if env_path.exists():
