@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Sliders,
 } from "lucide-react";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import {
   deleteDocument,
   listDocuments,
@@ -73,6 +74,8 @@ export default function DocumentsManagement() {
   const [uploadToast, setUploadToast] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [actionBusyId, setActionBusyId] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const [detailsRow, setDetailsRow] = useState(null);
   const fileInputRef = useRef(null);
@@ -388,9 +391,7 @@ export default function DocumentsManagement() {
 
   const clearSelection = () => setSelectedIds(new Set());
 
-  const handleRemove = async (id) => {
-    if (!window.confirm("Delete this document permanently?")) return;
-
+  const removeDocument = async (id) => {
     setActionBusyId(id);
     closeActionMenu();
     try {
@@ -408,11 +409,7 @@ export default function DocumentsManagement() {
     }
   };
 
-  const handleBulkDelete = async () => {
-    const ids = [...selectedIds];
-    if (ids.length === 0) return;
-    if (!window.confirm(`Delete the ${ids.length} selected documents permanently?`)) return;
-
+  const deleteDocuments = async (ids) => {
     setBulkBusy(true);
     closeActionMenu();
     let failed = 0;
@@ -432,6 +429,39 @@ export default function DocumentsManagement() {
     }
     setBulkBusy(false);
     if (failed === 0) clearSelection();
+  };
+
+  const handleRemove = (id) => {
+    closeActionMenu();
+    setConfirmState({
+      title: "Delete document",
+      message: "Delete this document permanently?",
+      confirmLabel: "Delete",
+      run: () => removeDocument(id),
+    });
+  };
+
+  const handleBulkDelete = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setConfirmState({
+      title: "Delete documents",
+      message: `Delete the ${ids.length} selected documents permanently?`,
+      confirmLabel: "Delete",
+      run: () => deleteDocuments(ids),
+    });
+  };
+
+  const acceptConfirm = async () => {
+    const run = confirmState?.run;
+    if (!run) return;
+    setConfirmBusy(true);
+    try {
+      await run();
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   const handlePreview = (id) => {
@@ -1109,6 +1139,17 @@ export default function DocumentsManagement() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={Boolean(confirmState)}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmLabel={confirmState?.confirmLabel || "Delete"}
+        danger
+        busy={confirmBusy}
+        onConfirm={acceptConfirm}
+        onClose={() => { if (!confirmBusy) setConfirmState(null); }}
+      />
 
       {uploadToast && (
         <div className="fixed bottom-6 right-6 z-[60] w-[min(100%-2rem,22rem)] animate-[upload-row-in_0.3s_ease-out] rounded-xl border border-gray-200 bg-white p-4 shadow-2xl">

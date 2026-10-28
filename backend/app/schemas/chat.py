@@ -18,6 +18,26 @@ class ChatRequest(BaseModel):
         default=None,
         description="Kept for database compatibility. The frontend does not send this.",
     )
+    llm_provider: str | None = Field(
+        default=None,
+        description="Provider for this question only. The three chat winners use ollama.",
+    )
+    llm_model: str | None = Field(
+        default=None,
+        description="One of llama3.2:3b, qwen2.5:3b, or gemma3:4b for this question only.",
+    )
+    profile_name: str | None = Field(
+        default=None,
+        description="Winning preset paired with llm_model. Does not change the server default.",
+    )
+
+    @field_validator("llm_provider", "llm_model", "profile_name", mode="before")
+    @classmethod
+    def blank_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = str(value).strip()
+        return stripped or None
 
     @field_validator("messages")
     @classmethod
@@ -56,6 +76,9 @@ class ChatResponse(BaseModel):
     citations: list[DocumentCitation] = []
     contexts_count: int = 0
     timing: TimingMetrics | None = None
+    model: str | None = None
+    preset: str | None = None
+    performance: dict | None = None
 
 class WorkspaceSummaryResponse(BaseModel):
     workspace_id: str

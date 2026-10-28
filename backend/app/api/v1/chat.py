@@ -11,8 +11,10 @@ from app.schemas.chat import (
     WorkspaceDetailResponse,
 )
 from app.services.rag_services import (
+    ChatModelError,
     process_rag_query,
     process_rag_stream,
+    resolve_chat_config,
     get_chat_history,
     get_all_workspaces,
     get_workspace_detail,
@@ -44,6 +46,7 @@ async def query_rag(
     Endpoint สำหรับยิงคำถาม RAG แบบ Blocking (JSON Response) และบันทึกผลลัพธ์ลง PostgreSQL
     """
     try:
+        config = resolve_chat_config(db, request.llm_model, request.profile_name)
         return await run_in_threadpool(
             process_rag_query,
             db=db,
@@ -51,7 +54,13 @@ async def query_rag(
             workspace_id=request.workspace_id,
             parent_query_id=request.parent_query_id,
             messages=request.messages,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
+            config=config,
+            config_resolved=True,
         )
+    except ChatModelError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -74,6 +83,10 @@ def query_rag_stream(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many messages. Wait a moment and try again.",
         )
+    try:
+        config = resolve_chat_config(db, request.llm_model, request.profile_name)
+    except ChatModelError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return StreamingResponse(
         process_rag_stream(
             db=db,
@@ -82,6 +95,10 @@ def query_rag_stream(
             parent_query_id=request.parent_query_id,
             messages=request.messages,
             background_tasks=background_tasks,
+            llm_provider=request.llm_provider,
+            llm_model=request.llm_model,
+            config=config,
+            config_resolved=True,
         ),
         media_type="text/event-stream"
     )

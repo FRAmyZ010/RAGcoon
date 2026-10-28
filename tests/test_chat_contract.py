@@ -22,7 +22,12 @@ from pydantic import ValidationError
 
 from app.rag.retrieval.session_manager import session_manager
 from app.schemas.chat import ChatMessage, ChatRequest
-from app.services.rag_services import process_rag_stream, sync_client_messages
+from app.services.rag_services import (
+    ChatModelError,
+    process_rag_stream,
+    resolve_chat_config,
+    sync_client_messages,
+)
 
 
 def _pairs(count: int) -> list[ChatMessage]:
@@ -47,6 +52,29 @@ class ChatContractTests(unittest.TestCase):
                 query_text="now",
                 messages=[{"role": "bot", "content": "hello"}],
             )
+
+    def test_winner_model_request_is_trimmed_and_resolved_to_its_preset(self):
+        request = ChatRequest(
+            query_text="which project uses SX1276",
+            llm_provider=" ollama ",
+            llm_model=" gemma3:4b ",
+            profile_name=" winner_rank3_gemma3_4b_academic ",
+        )
+        self.assertEqual(request.llm_provider, "ollama")
+        self.assertEqual(request.llm_model, "gemma3:4b")
+        self.assertEqual(request.profile_name, "winner_rank3_gemma3_4b_academic")
+
+        config = resolve_chat_config(None, request.llm_model, request.profile_name)
+        self.assertEqual(config.llm_model, "gemma3:4b")
+        self.assertEqual(config.prompt_preset, "deep_academic")
+        self.assertEqual(config.top_k, 15)
+        self.assertEqual(config.rerank_top_n, 10)
+        self.assertEqual(config.max_context_chunks, 6)
+
+        with self.assertRaises(ChatModelError):
+            resolve_chat_config(None, "llama3.1:8b", None)
+        with self.assertRaises(ChatModelError):
+            resolve_chat_config(None, "llama3.2:3b", "winner_rank3_gemma3_4b_academic")
 
     def test_sync_client_messages_replaces_cache_and_clears_when_omitted(self):
         workspace_id = "ws-contract-sync"

@@ -34,6 +34,30 @@ const SUGGESTIONS = [
   "Summarize projects about web applications",
 ];
 
+function displayModel(model) {
+  const text = String(model || "");
+  const wrapped = text.match(/\(([^)]+)\)/);
+  return wrapped ? wrapped[1] : text;
+}
+
+function formatAnswerMeta(timing, performance) {
+  const parts = [];
+  const tps = Number(performance?.gen_speed_tps);
+  if (tps > 0) parts.push(`${tps.toFixed(1)} tok/s`);
+  if (timing && timing.total_seconds != null) {
+    const detail = [];
+    if (timing.retrieval_seconds != null) detail.push(`search ${formatSeconds(timing.retrieval_seconds)}s`);
+    if (timing.rerank_seconds != null) detail.push(`rerank ${formatSeconds(timing.rerank_seconds)}s`);
+    if (timing.llm_seconds != null) detail.push(`answer ${formatSeconds(timing.llm_seconds)}s`);
+    const total = `${formatSeconds(timing.total_seconds)}s`;
+    parts.push(detail.length ? `${total} (${detail.join(" · ")})` : total);
+  }
+  const inputTokens = Number(performance?.input_tokens) || 0;
+  const outputTokens = Number(performance?.output_tokens) || 0;
+  if (inputTokens > 0 || outputTokens > 0) parts.push(`${inputTokens} in / ${outputTokens} out`);
+  return parts.join(" · ") || "Completed";
+}
+
 function formatSeconds(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "0.00";
@@ -155,7 +179,7 @@ export default function App() {
       botMsgIndex = replaceBotIndex;
       snapshot = priorMessages.map((message, index) =>
         index === botMsgIndex
-          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null }
+          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null, preset: null }
           : message
       );
     } else {
@@ -243,9 +267,9 @@ export default function App() {
                       citations: data.citations || [],
                       queryId: data.query_id ?? message.queryId ?? null,
                       model: data.model || message?.model || null,
-                      meta: data.timing
-                        ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
-                        : "Completed",
+                      preset: data.preset || message?.preset || null,
+                      performance: data.performance || null,
+                      meta: formatAnswerMeta(data.timing, data.performance),
                     }
                   : message
               );
@@ -651,16 +675,29 @@ export default function App() {
                                   <ThumbsDown className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              <div className="flex flex-col items-end gap-0.5 text-right">
-                                {msg.model && (
-                                  <span className="text-xs text-gray-400">
-                                    Model: {msg.model}
-                                  </span>
-                                )}
-                                {msg.meta && (
-                                  <span className="text-xs text-gray-400">{msg.meta}</span>
-                                )}
-                              </div>
+                            </div>
+                          )}
+                          {(msg.preset || msg.model || msg.meta) && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                              {msg.preset && (
+                                <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                                  msg.preset === "Fast"
+                                    ? "bg-amber-50 text-amber-800"
+                                    : msg.preset === "Academic"
+                                      ? "bg-indigo-50 text-indigo-800"
+                                      : msg.preset === "Balanced"
+                                        ? "bg-emerald-50 text-emerald-800"
+                                        : "bg-gray-100 text-gray-700"
+                                }`}>
+                                  {msg.preset}
+                                </span>
+                              )}
+                              {msg.model && (
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                                  {displayModel(msg.model)}
+                                </span>
+                              )}
+                              {msg.meta && <span className="text-gray-400">{msg.meta}</span>}
                             </div>
                           )}
 
@@ -671,6 +708,15 @@ export default function App() {
                                 <div className="font-bold text-gray-900">Sources</div>
                                 {msg.citations.map((c, i) => {
                                   const canPreview = Boolean(c.document_id);
+                                  const pageLabel =
+                                    c.pages_formatted && c.pages_formatted !== "?"
+                                      ? `pages ${c.pages_formatted}`
+                                      : c.page
+                                        ? `page ${c.page}`
+                                        : null;
+                                  const people = [c.author, c.advisor ? `Advisor: ${c.advisor}` : null, c.year]
+                                    .filter(Boolean)
+                                    .join(" · ");
                                   return (
                                     <div
                                       key={i}
@@ -680,12 +726,15 @@ export default function App() {
                                         <div className="min-w-0">
                                           <div className="font-semibold text-[#800000]">
                                             {c.project_title || c.source}
-                                            {c.page ? (
+                                            {pageLabel ? (
                                               <span className="ml-1 font-normal text-gray-500">
-                                                · page {c.page}
+                                                · {pageLabel}
                                               </span>
                                             ) : null}
                                           </div>
+                                          {people ? (
+                                            <p className="mt-1 text-xs text-gray-600">{people}</p>
+                                          ) : null}
                                           {c.content_snippet && (
                                             <p className="mt-1 line-clamp-3 text-gray-500 italic">
                                               "{c.content_snippet}"
