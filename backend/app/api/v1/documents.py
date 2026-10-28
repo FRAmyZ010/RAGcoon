@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.models.user import User
 from app.schemas.document import (
     DocumentResponse,
+    PublicCatalog,
     BatchUploadResponse,
     BatchUploadItemResult,
     BatchUploadSummary,
@@ -16,6 +17,7 @@ from app.services.document_service import (
     accept_document_upload,
     ingest_document_task,
     get_all_documents,
+    get_public_catalog,
     get_document_by_id,
     delete_document_by_id,
     resolve_document_file_path,
@@ -170,6 +172,12 @@ async def upload_documents_batch(
             failed=failed,
         ),
     )
+
+
+@router.get("/catalog", response_model=PublicCatalog)
+def read_public_catalog(db: Session = Depends(get_db)):
+    """Titles and top keywords for the chat page. No upload or delete."""
+    return get_public_catalog(db)
 
 
 @router.get("", response_model=list[DocumentResponse])

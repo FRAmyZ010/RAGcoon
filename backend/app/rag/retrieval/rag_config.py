@@ -428,6 +428,56 @@ def get_top3_winner_presets() -> dict[str, RAGConfig]:
     }
 
 
+def _showcase_file() -> str:
+    """The handoff file that names the only presets shown on the Presets tab."""
+    candidates = [
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "..", "..", "data", "top3_winning_presets.json")),
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "evaluation", "results", "top3_winning_presets.json")),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
+def load_showcase_presets() -> list[dict[str, Any]]:
+    """Cards for the Presets tab, taken only from the top-3 handoff file."""
+    path = _showcase_file()
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    medals = {1: "⚖️", 2: "⚡", 3: "🎓"}
+    plain = {
+        1: ("Balanced", "The default. A solid mix of speed and a correct answer."),
+        2: ("Fast", "Short answers, as fast as this machine can go."),
+        3: ("Academic", "Longer answers, with stronger academic writing and tables."),
+    }
+    cards = []
+    for item in payload.get("top3_presets") or []:
+        config = item.get("config") or {}
+        model = item.get("model") or {}
+        title, blurb = plain.get(item.get("rank"), (item.get("profile_name"), item.get("target_use_case") or ""))
+        cards.append({
+            "profile_name": item.get("profile_name"),
+            "emoji": medals.get(item.get("rank"), "🏆"),
+            "title": title,
+            "blurb": blurb,
+            "llm_model": model.get("name"),
+            "llm_provider": "ollama",
+            "top_k": config.get("top_k"),
+            "rerank_top_n": config.get("rerank_top_n"),
+            "max_context_chunks": config.get("max_context_chunks"),
+            "max_chunks_per_project": config.get("max_chunks_per_project"),
+            "temperature": config.get("temperature"),
+            "num_predict": config.get("num_predict"),
+            "prompt_preset": config.get("prompt_preset"),
+            "enable_hybrid": config.get("enable_hybrid"),
+            "enable_reranker": config.get("enable_reranker"),
+            "enable_boilerplate_filter": config.get("enable_boilerplate_filter"),
+            "enable_fast_path": config.get("enable_fast_path"),
+        })
+    return cards
+
+
 def load_custom_configs() -> dict[str, RAGConfig]:
     """Load custom saved profiles from disk."""
     if not os.path.exists(CUSTOM_CONFIG_FILE):

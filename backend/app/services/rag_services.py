@@ -25,6 +25,54 @@ from app.services.document_service import enrich_citations_with_document_ids
 logger = logging.getLogger(__name__)
 MAX_CONTEXT_TURNS = 3
 
+CHAT_WINNER_PRESETS = {
+    "llama3.2:3b": "winner_rank1_llama3_2_3b",
+    "qwen2.5:3b": "winner_rank2_qwen2_5_3b",
+    "gemma3:4b": "winner_rank3_gemma3_4b_academic",
+}
+PRESET_LABELS = {
+    "winner_rank1_llama3_2_3b": "Balanced",
+    "optimal_llama3_2_3b": "Balanced",
+    "winner_rank2_qwen2_5_3b": "Fast",
+    "winner_rank3_gemma3_4b_academic": "Academic",
+    "optimal_tuned_gemma3_4b": "Academic",
+}
+
+
+def chat_preset_label(db: Session | None, config) -> str:
+    """Name the preset this answer used, in the same words as the Presets tab."""
+    name = None
+    if db is not None:
+        try:
+            from app.services.ai_config_service import active_preset_name
+            name = active_preset_name(db)
+        except Exception:
+            logger.exception("Failed to read the active preset name")
+    if not name and config is not None:
+        name = getattr(config, "profile_name", None)
+    if not name:
+        return "Intent settings"
+    return PRESET_LABELS.get(name, name)
+
+
+class ChatModelError(ValueError):
+    """The chat request asked for a model outside the three benchmark winners."""
+
+
+def resolve_chat_config(db: Session | None, llm_model: str | None, profile_name: str | None):
+    """Use a winning preset for this question, or the saved admin preset when none was sent."""
+    if llm_model is not None and llm_model not in CHAT_WINNER_PRESETS:
+        raise ChatModelError("llm_model must be llama3.2:3b, qwen2.5:3b, or gemma3:4b.")
+    allowed_profiles = set(CHAT_WINNER_PRESETS.values())
+    if profile_name is not None and profile_name not in allowed_profiles:
+        raise ChatModelError("profile_name must be one of the three winning presets.")
+    if llm_model and profile_name and CHAT_WINNER_PRESETS[llm_model] != profile_name:
+        raise ChatModelError("llm_model does not match profile_name.")
+    if llm_model or profile_name:
+        from app.rag.retrieval.rag_config import get_config_by_name
+        return get_config_by_name(profile_name or CHAT_WINNER_PRESETS[llm_model])
+    return load_saved_rag_config(db)
+
 
 def sync_client_messages(workspace_id: str | None, messages: list[ChatMessage] | None) -> None:
     """Replace in-memory session history with the latest client turns."""
@@ -123,12 +171,17 @@ def process_rag_query(
     workspace_id: str | None = None,
     parent_query_id: int | None = None,
     messages: list[ChatMessage] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    config=None,
+    config_resolved: bool = False,
 ) -> ChatResponse:
     """
     ประมวลผลคำถาม RAG แบบ Blocking (Non-Streaming) และบันทึกประวัติลง PostgreSQL
     """
     active_workspace_id = workspace_id or f"ws-{uuid.uuid4().hex[:12]}"
     sync_client_messages(active_workspace_id, messages)
+    rag_output: dict = {}
     try:
         canned = prescreen_reply(query_text)
         try:
@@ -138,7 +191,9 @@ def process_rag_query(
                 else answer_question(
                     query_text,
                     session_id=active_workspace_id,
-                    config=load_saved_rag_config(db),
+                    llm_provider=llm_provider,
+                    llm_model=llm_model,
+                    config=config if config_resolved else load_saved_rag_config(db),
                 )
             )
             answer_text = rag_output.get("answer", "")
@@ -185,7 +240,10 @@ def process_rag_query(
             sources=[c.source for c in citations],
             citations=citations,
             contexts_count=len(citations),
-            timing=timing
+            timing=timing,
+            model=rag_output.get("model"),
+            preset=chat_preset_label(db, config if config_resolved else load_saved_rag_config(db)),
+            performance=rag_output.get("performance") or None,
         )
     finally:
         pass
@@ -197,6 +255,10 @@ def process_rag_stream(
     parent_query_id: int | None = None,
     messages: list[ChatMessage] | None = None,
     background_tasks: BackgroundTasks | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    config=None,
+    config_resolved: bool = False,
 ) -> Generator[str, None, None]:
     """
     Sync client history, stream SSE, and log the turn via BackgroundTasks
@@ -216,6 +278,9 @@ def process_rag_stream(
     sources: list = []
     execution_time_data: dict = {}
     model_name = None
+    performance_data = None
+    resolved_config = config if config_resolved else load_saved_rag_config(db)
+    preset_label = chat_preset_label(db, resolved_config)
 
     try:
         canned = prescreen_reply(query_text)
@@ -228,7 +293,9 @@ def process_rag_stream(
             else stream_answer_question(
                 question=query_text,
                 session_id=active_workspace_id,
-                config=load_saved_rag_config(db),
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                config=resolved_config,
             )
         )
         for item in events:
@@ -269,6 +336,8 @@ def process_rag_stream(
                 execution_time_data = event_data.get("timing", execution_time_data)
                 if event_data.get("model"):
                     model_name = event_data.get("model")
+                if event_data.get("performance") is not None:
+                    performance_data = event_data.get("performance")
 
         metadata_payload = {
             "type": "metadata",
@@ -277,6 +346,8 @@ def process_rag_stream(
             "citations": citations_data,
             "timing": execution_time_data,
             "model": model_name,
+            "preset": preset_label,
+            "performance": performance_data,
         }
         yield f"data: {json.dumps(metadata_payload, ensure_ascii=False)}\n\n"
     except Exception as exc:

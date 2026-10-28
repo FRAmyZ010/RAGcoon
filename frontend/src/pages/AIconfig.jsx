@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CircleHelp, LayoutDashboard, FolderClosed, MessageSquare, LogOut, Sliders } from "lucide-react";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { clearAuth } from "../services/authApi";
 import {
   applyPreset,
+  saveNamedPreset,
+  rankQuality,
   fetchIntents,
   runBenchmark,
   fetchLlms,
   fetchRag,
-  pingLlm,
+  deleteNamedPreset,
   resetIntents,
-  saveIntent,
-  setActiveLlm as activateLlm,
 } from "../services/aiConfigApi";
 
 function Hint({ text }) {
@@ -31,7 +32,20 @@ function Hint({ text }) {
   );
 }
 
-const TABS = ["Intent Tuning", "RAG Presets", "Multi-LLM", "Benchmark"];
+const TABS = ["Configuration", "Presets", "Benchmark"];
+
+const MODEL_CHOICES = [
+  { model: "llama3.2:3b", tone: "Balanced", emoji: "🥇", blurb: "Best mix of speed and a correct answer." },
+  { model: "qwen2.5:3b", tone: "Fast", emoji: "🥈", blurb: "Highest speed on this machine." },
+  { model: "gemma3:4b", tone: "Academic", emoji: "🥉", blurb: "Strongest academic writing and tables." },
+];
+
+function showFact(value) {
+  if (value === true) return "On";
+  if (value === false) return "Off";
+  return value === undefined || value === null || value === "" ? "—" : String(value);
+}
+
 const INTENT_ORDER = [
   "FACTOID",
   "FACTUAL_LOOKUP",
@@ -52,6 +66,177 @@ const INTENT_COPY = {
   EXPLORATORY: ["Corpus survey", "Broad questions across the whole archive."],
   CODE: ["Code", "Example code or algorithms."],
 };
+const INTENT_EMOJI = {
+  FACTOID: "📌",
+  FACTUAL_LOOKUP: "🔎",
+  DEEP_DIVE: "🔬",
+  EXPLANATION: "💡",
+  COMPARISON: "⚖️",
+  RECOMMENDATION: "✨",
+  EXPLORATORY: "🗺️",
+  CODE: "💻",
+};
+
+const PRESET_TONE = {
+  Balanced: "border-emerald-200 bg-emerald-50/60",
+  Fast: "border-amber-200 bg-amber-50/70",
+  Academic: "border-indigo-200 bg-indigo-50/70",
+};
+const PRESET_EMOJI = {
+  Balanced: "⚖️",
+  Fast: "⚡",
+  Academic: "🎓",
+};
+const DETAIL_ROWS = [
+  ["llm_model", "Model"],
+  ["top_k", "Top K"],
+  ["rerank_top_n", "Rerank"],
+  ["max_context_chunks", "Context"],
+  ["max_chunks_per_project", "Per project"],
+  ["temperature", "Temperature"],
+  ["prompt_preset", "Prompt"],
+];
+const DETAIL_SWITCHES = [
+  ["enable_hybrid", "Hybrid"],
+  ["enable_reranker", "Reranker"],
+  ["enable_boilerplate_filter", "Filter"],
+  ["enable_fast_path", "Fast path"],
+];
+
+function PresetCard({ preset, active, open, busy, onUse, onToggle, onEdit, onDelete, showIntents = false }) {
+  const tone = PRESET_TONE[preset.title] || "border-gray-200 bg-white";
+  const emoji = PRESET_EMOJI[preset.title] || preset.emoji;
+  const rows = DETAIL_ROWS.filter(([key]) => preset[key] !== undefined && preset[key] !== null && preset[key] !== "");
+  const switches = DETAIL_SWITCHES.filter(([key]) => preset[key] === true || preset[key] === false);
+  const onSwitches = switches.filter(([key]) => preset[key] === true).map(([, label]) => label);
+  const offSwitches = switches.filter(([key]) => preset[key] === false).map(([, label]) => label);
+  return (
+    <article className={`self-start rounded-xl border p-3 ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}>
+      <div className={`flex flex-col justify-between ${onEdit ? "h-[6.75rem]" : "h-[5.75rem]"}`}>
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{emoji}</span>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-bold leading-5">{preset.title}</h3>
+            <p className="truncate text-[11px] text-gray-500">{preset.llm_model || "Saved settings"}</p>
+          </div>
+        </div>
+        <p className="truncate text-[11px] leading-4 text-gray-600" title={preset.blurb}>{preset.blurb}</p>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            disabled={busy || active}
+            onClick={() => onUse(preset.profile_name)}
+            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${active ? "bg-emerald-600 text-white" : "bg-gray-900 text-white"} disabled:opacity-100`}
+          >
+            {active ? "In use" : "Use"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggle(open ? "" : preset.profile_name)}
+            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold"
+          >
+            {open ? "Hide" : "Details"}
+          </button>
+          {onEdit && (
+            <button type="button" disabled={busy} onClick={() => onEdit(preset)} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold">
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" disabled={busy} onClick={() => onDelete(preset)} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700">
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+      {open && (
+        <dl className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px]">
+          {rows.map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <dt className="text-gray-500">{label}</dt>
+              <dd className="truncate font-semibold text-gray-900">{showFact(preset[key])}</dd>
+            </div>
+          ))}
+          {onSwitches.length > 0 && (
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-500">On</dt>
+              <dd className="text-right font-semibold text-gray-900">{onSwitches.join(", ")}</dd>
+            </div>
+          )}
+          {offSwitches.length > 0 && (
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-500">Off</dt>
+              <dd className="text-right font-semibold text-gray-900">{offSwitches.join(", ")}</dd>
+            </div>
+          )}
+          {showIntents && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-gray-500">Intents</dt>
+              <dd className="font-semibold text-gray-900">{Object.keys(preset.intents || {}).length} saved</dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </article>
+  );
+}
+
+function CompareCard({ preset, open, onToggle }) {
+  const title = preset.title || preset.profile_name;
+  const tone = PRESET_TONE[title] || "border-gray-200 bg-white";
+  const emoji = PRESET_EMOJI[title] || preset.emoji || "🏷️";
+  const blurb = preset.blurb || "";
+  const rows = DETAIL_ROWS.filter(([key]) => preset[key] !== undefined && preset[key] !== null && preset[key] !== "");
+  const switches = DETAIL_SWITCHES.filter(([key]) => preset[key] === true || preset[key] === false);
+  const onSwitches = switches.filter(([key]) => preset[key] === true).map(([, label]) => label);
+  const offSwitches = switches.filter(([key]) => preset[key] === false).map(([, label]) => label);
+  return (
+    <article className={`self-start rounded-xl border p-3 ${tone}`}>
+      <div className="flex h-[5.75rem] flex-col justify-between">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{emoji}</span>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-bold leading-5">{title}</h3>
+            <p className="truncate text-[11px] text-gray-500">{preset.llm_model || "Saved settings"}</p>
+          </div>
+        </div>
+        <p className="truncate text-[11px] leading-4 text-gray-600" title={blurb}>{blurb}</p>
+        <button type="button" onClick={() => onToggle(open ? "" : preset.profile_name)} className="w-fit rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold">
+          {open ? "Hide" : "Details"}
+        </button>
+      </div>
+      {open && (
+      <dl className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px]">
+        {rows.map(([key, label]) => (
+          <div key={key} className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">{label}</dt>
+            <dd className="truncate font-semibold text-gray-900">{showFact(preset[key])}</dd>
+          </div>
+        ))}
+        {onSwitches.length > 0 && (
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-gray-500">On</dt>
+            <dd className="text-right font-semibold text-gray-900">{onSwitches.join(", ")}</dd>
+          </div>
+        )}
+        {offSwitches.length > 0 && (
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-gray-500">Off</dt>
+            <dd className="text-right font-semibold text-gray-900">{offSwitches.join(", ")}</dd>
+          </div>
+        )}
+        {preset.kind === "intent_bundle" && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Intents</dt>
+            <dd className="font-semibold text-gray-900">{Object.keys(preset.intents || {}).length} saved</dd>
+          </div>
+        )}
+      </dl>
+      )}
+    </article>
+  );
+}
+
 const NUMBER_FIELDS = [
   ["top_k", "Top K", "How many chunks are retrieved before reranking. Higher finds more and is slower."],
   ["rerank_top_n", "Rerank top N", "How many of those chunks the second-pass ranker keeps. This pass is slower and more precise."],
@@ -66,13 +251,6 @@ const TOGGLES = [
   ["enable_boilerplate_filter", "Boilerplate filter", "Drop tables of contents, reference lists, and signature lines before the model writes."],
   ["enable_fast_path", "Fast path", "Answer pure metadata questions, such as advisor or year, from document metadata without a vector search."],
   ["preserve_raw_code", "Preserve raw code", "Saved with this intent. The answer path does not read this switch yet. CODE questions already keep chunks from the same project."],
-];
-const RUBRIC = [
-  ["5", "Complete", "The answer is complete and the numbers are right", "Cites the project name or page"],
-  ["4", "Mostly correct", "The substance is there, with a small gap", "No false information"],
-  ["3", "Partial", "Answers only part of the question", "Does not contradict the documents, but evidence is thin"],
-  ["2", "Off topic", "Retrieves an unrelated project", "Cites the wrong document"],
-  ["1", "Failed", "Wrong answer or invented facts", "Hallucination or a system error"],
 ];
 const CASES = [
   ["What does Ajarn Surapol supervise?", "FACTUAL_LOOKUP", "The model fixes the typo, then finds the advisor."],
@@ -92,16 +270,26 @@ export default function AIconfig() {
   const [selected, setSelected] = useState("FACTOID");
   const [draft, setDraft] = useState(null);
   const [presets, setPresets] = useState({});
+  const [showcase, setShowcase] = useState([]);
   const [activePreset, setActivePreset] = useState("");
   const [profiles, setProfiles] = useState([]);
   const [activeLlm, setActiveLlm] = useState(null);
-  const [pings, setPings] = useState({});
+  const [chosenModel, setChosenModel] = useState(null);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [baselineName, setBaselineName] = useState("precision_hybrid");
-  const [candidateName, setCandidateName] = useState("fast_mode");
+  const [baselineName, setBaselineName] = useState("winner_rank1_llama3_2_3b");
+  const [candidateName, setCandidateName] = useState("winner_rank2_qwen2_5_3b");
   const [benchmark, setBenchmark] = useState(null);
+  const [quality, setQuality] = useState(null);
+  const [presetName, setPresetName] = useState("");
+  const [askName, setAskName] = useState(false);
+  const [openPreset, setOpenPreset] = useState("");
+  const [openQuestion, setOpenQuestion] = useState("");
+  const [openCompare, setOpenCompare] = useState("");
+  const [openRank, setOpenRank] = useState("");
+  const [confirmState, setConfirmState] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const notify = (message) => {
     setToast(message);
@@ -118,46 +306,61 @@ export default function AIconfig() {
     fetchRag()
       .then((data) => {
         setPresets(data.available_presets || {});
-        setActivePreset(data.active_config?.profile_name || "");
+        setShowcase(data.showcase_presets || []);
+        setActivePreset(data.active_preset || data.active_config?.profile_name || "");
       })
       .catch(() => {});
     fetchLlms()
       .then((data) => {
         setProfiles(data.profiles || []);
         setActiveLlm(data.active || null);
+        setChosenModel(data.active || null);
       })
       .catch(() => {});
   }, []);
 
   const chooseIntent = (key) => {
+    const next = { ...intents, [selected]: { ...(intents[selected] || {}), ...draft } };
+    setIntents(next);
     setSelected(key);
-    setDraft(intents[key] ? { ...intents[key] } : null);
+    setDraft(next[key] ? { ...next[key] } : null);
   };
 
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
-  const onSaveIntent = async () => {
+  const onSavePreset = async () => {
+    const name = presetName.trim();
+    if (!name) {
+      setAskName(true);
+      setError("Name this preset before saving.");
+      return;
+    }
+    const model = chosenModel || activeLlm;
+    if (!model?.model) {
+      setError("Select a model before saving a preset.");
+      return;
+    }
+    const nextIntents = { ...intents, [selected]: { ...(intents[selected] || {}), ...draft } };
     setBusy(true);
     setError("");
     try {
-      const payload = {
-        top_k: Number(draft.top_k),
-        rerank_top_n: Number(draft.rerank_top_n),
-        min_score: Number(draft.min_score),
-        max_context_chunks: Number(draft.max_context_chunks),
-        max_chunks_per_project: Number(draft.max_chunks_per_project),
-        max_total_projects: Number(draft.max_total_projects),
-        temperature: Number(draft.temperature),
-        enable_fast_path: Boolean(draft.enable_fast_path),
-        enable_hybrid: Boolean(draft.enable_hybrid),
-        enable_boilerplate_filter: Boolean(draft.enable_boilerplate_filter),
-        preserve_raw_code: Boolean(draft.preserve_raw_code),
-        custom_system_instruction: draft.custom_system_instruction || null,
-      };
-      const saved = await saveIntent(selected, payload);
-      setIntents((current) => ({ ...current, [selected]: saved.config }));
-      setDraft(saved.config);
-      notify(`Saved ${selected}. The next question of this intent uses these values.`);
+      const data = await saveNamedPreset({
+        profile_name: name,
+        llm_provider: model.provider || "ollama",
+        llm_model: model.model,
+        preview_intent: selected,
+        intents: nextIntents,
+      });
+      setIntents(nextIntents);
+      setActivePreset(data.active_preset);
+      const refreshed = await fetchRag();
+      setPresets(refreshed.available_presets || {});
+      setShowcase(refreshed.showcase_presets || []);
+      setAskName(false);
+      setActiveLlm(model);
+      setTab("Presets");
+      setOpenPreset(data.active_preset);
+      notify(`Saved ${data.active_preset}. It is under Custom. Chat uses these settings and ${model.model}.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -184,6 +387,14 @@ export default function AIconfig() {
     try {
       const data = await applyPreset(name);
       setActivePreset(data.active_preset);
+      if (data.kind === "intent_bundle") {
+        const fresh = await fetchIntents();
+        setIntents(fresh.intents || {});
+        setDraft(fresh.intents?.[selected] || null);
+        const models = await fetchLlms();
+        setActiveLlm(models.active || null);
+        setChosenModel(models.active || null);
+      }
       notify(`Switched the active preset to ${name}.`);
     } catch (err) {
       setError(err.message);
@@ -192,12 +403,33 @@ export default function AIconfig() {
     }
   };
 
-  const onSelectModel = async (profile) => {
+  const onEditPreset = (preset) => {
+    const nextIntents = preset.intents;
+    if (nextIntents && Object.keys(nextIntents).length) {
+      const key = nextIntents[preset.preview_intent] ? preset.preview_intent : Object.keys(nextIntents)[0];
+      setIntents(nextIntents);
+      setSelected(key);
+      setDraft({ ...nextIntents[key] });
+    }
+    if (preset.llm_model) {
+      setChosenModel({ provider: preset.llm_provider || "ollama", model: preset.llm_model });
+    }
+    setPresetName(preset.profile_name || "");
+    setAskName(true);
+    setTab("Configuration");
+  };
+
+  const deletePreset = async (preset) => {
     setBusy(true);
+    setError("");
     try {
-      const data = await activateLlm(profile.provider, profile.model);
-      setActiveLlm(data.active);
-      notify(`The next question uses ${profile.model}.`);
+      await deleteNamedPreset(preset.profile_name);
+      const refreshed = await fetchRag();
+      setPresets(refreshed.available_presets || {});
+      setShowcase(refreshed.showcase_presets || []);
+      setActivePreset(refreshed.active_preset || "");
+      if (openPreset === preset.profile_name) setOpenPreset("");
+      notify(`Deleted ${preset.profile_name}.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -205,15 +437,60 @@ export default function AIconfig() {
     }
   };
 
-  const onPing = async (profile) => {
-    setPings((current) => ({ ...current, [profile.id]: { status: "checking" } }));
+  const onDeletePreset = (preset) => {
+    setConfirmState({
+      title: "Delete preset",
+      message: `Delete ${preset.profile_name}?`,
+      confirmLabel: "Delete",
+      run: () => deletePreset(preset),
+    });
+  };
+
+  const acceptConfirm = async () => {
+    const run = confirmState?.run;
+    if (!run) return;
+    setConfirmBusy(true);
     try {
-      const data = await pingLlm(profile.provider, profile.model);
-      setPings((current) => ({ ...current, [profile.id]: data }));
-    } catch (err) {
-      setPings((current) => ({ ...current, [profile.id]: { status: "offline", message: err.message } }));
+      await run();
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
     }
   };
+
+  const onSelectModel = (profile) => {
+    setChosenModel({ provider: profile.provider, model: profile.model });
+  };
+
+  const showcaseNames = new Set(showcase.map((preset) => preset.profile_name));
+  const customPresets = Object.values(presets).filter(
+    (preset) => (preset.kind === "intent_bundle" || preset.custom) && !showcaseNames.has(preset.profile_name),
+  );
+  const compareChoices = [
+    ...showcase.map((preset) => ({
+      name: preset.profile_name,
+      title: preset.title || preset.profile_name,
+      preset,
+    })),
+    ...customPresets.map((preset) => ({
+      name: preset.profile_name,
+      title: preset.profile_name,
+      preset: {
+        ...preset,
+        title: preset.profile_name,
+        emoji: "🏷️",
+        blurb: `Saved by you. Answers with ${preset.llm_model || "the selected model"}.`,
+      },
+    })),
+  ];
+  const compareTitle = (name) => compareChoices.find((choice) => choice.name === name)?.title || name;
+
+  useEffect(() => {
+    const names = compareChoices.map((choice) => choice.name).filter(Boolean);
+    if (!names.length) return;
+    setBaselineName((current) => (names.includes(current) ? current : names[0]));
+    setCandidateName((current) => (names.includes(current) ? current : names[1] || names[0]));
+  }, [showcase, presets]);
 
   return (
     <div className="flex h-screen bg-gray-100 text-sm text-gray-800">
@@ -243,7 +520,7 @@ export default function AIconfig() {
       <main className="min-w-0 flex-1 overflow-y-auto p-5">
         <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
           AI Configuration
-          <Hint text="Saved values apply to the next chat question. A green preset overrides per-intent retrieval." />
+          <Hint text="A built-in preset applies one retrieval setup to every question. A saved preset stores every intent on this page plus the selected model." />
         </h1>
         <div className="mb-4 flex flex-wrap gap-2">
           {TABS.map((item) => (
@@ -259,173 +536,200 @@ export default function AIconfig() {
         </div>
         {error && <p className="mb-3 text-sm font-semibold text-red-700">{error}</p>}
 
-        {tab === "Intent Tuning" && draft && (
-          <div className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {INTENT_ORDER.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => chooseIntent(key)}
-                  className={`rounded-xl border p-3 text-left ${selected === key ? "border-indigo-700 bg-indigo-700 text-white" : "border-gray-200 bg-white"}`}
-                >
-                  <div className="text-xs font-bold">{key}</div>
-                  <div className={`text-[11px] ${selected === key ? "text-indigo-100" : "text-gray-600"}`}>{INTENT_COPY[key]?.[0]}</div>
-                </button>
-              ))}
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center gap-1 text-xs font-semibold">
+        {tab === "Configuration" && draft && (
+          <div className="space-y-3">
+            <section>
+              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Model</h2>
+              <div className="grid items-start gap-2 md:grid-cols-3">
+                {MODEL_CHOICES.map((choice) => {
+                  const profile = profiles.find((item) => item.model === choice.model) || { provider: "ollama", model: choice.model };
+                  const active = (chosenModel?.model || activeLlm?.model) === choice.model;
+                  const tone = PRESET_TONE[choice.tone] || "border-gray-200 bg-white";
+                  return (
+                    <button
+                      key={choice.model}
+                      type="button"
+                      onClick={() => onSelectModel(profile)}
+                      className={`flex h-14 items-center gap-2 rounded-xl border px-2.5 py-2 text-left ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{choice.emoji}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold leading-5">{choice.model}</span>
+                        <span className="block truncate text-[11px] text-gray-500">{choice.blurb}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <section>
+              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Intent</h2>
+              <div className="flex flex-wrap gap-1.5">
+                {INTENT_ORDER.map((key) => {
+                  const active = selected === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => chooseIntent(key)}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : "border-gray-200 bg-white text-gray-700"}`}
+                    >
+                      <span aria-hidden="true">{INTENT_EMOJI[key]}</span>
+                      {INTENT_COPY[key]?.[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="rounded-xl border border-gray-200 bg-white p-2.5">
+              <h2 className="mb-1.5 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
                 {INTENT_COPY[selected]?.[0]}
                 <Hint text={INTENT_COPY[selected]?.[1]} />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              </h2>
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
                 {NUMBER_FIELDS.map(([field, label, hint]) => (
                   <div key={field}>
-                    <div className="flex items-center gap-1 text-xs font-semibold">
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
                       <label htmlFor={`intent-${field}`}>{label}</label>
                       <Hint text={hint} />
                     </div>
                     <input
                       id={`intent-${field}`}
-                      className="mt-1 w-full rounded-lg border px-3 py-2 text-xs font-normal"
+                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-xs font-normal"
                       value={draft[field] ?? ""}
                       onChange={(event) => updateDraft(field, event.target.value)}
                     />
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-                {TOGGLES.map(([field, label, hint]) => (
-                  <div key={field} className="flex items-center gap-1 text-xs">
-                    <label className="flex items-center gap-2 font-semibold">
-                      <input type="checkbox" checked={Boolean(draft[field])} onChange={(event) => updateDraft(field, event.target.checked)} />
-                      {label}
-                    </label>
-                    <Hint text={hint} />
-                  </div>
-                ))}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {TOGGLES.map(([field, label, hint]) => {
+                  const on = Boolean(draft[field]);
+                  return (
+                    <button
+                      key={field}
+                      type="button"
+                      title={hint}
+                      onClick={() => updateDraft(field, !on)}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${on ? "bg-gray-900 text-white" : "border border-gray-200 bg-gray-50 text-gray-600"}`}
+                    >
+                      {label}{on ? " on" : " off"}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="mt-3">
-                <div className="flex items-center gap-1 text-xs font-semibold">
+              <div className="mt-2">
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
                   <label htmlFor="intent-instruction">Extra instruction</label>
-                  <Hint text="Appended to the system prompt for this intent only. An active preset can replace the prompt style." />
+                  <Hint text="Appended to the system prompt for this intent only." />
                 </div>
-                <textarea
+                <input
                   id="intent-instruction"
-                  rows={3}
                   placeholder="Example: answer in a Markdown table"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-xs font-normal"
+                  className="mt-0.5 w-full rounded-lg border px-2 py-1 text-xs font-normal"
                   value={draft.custom_system_instruction || ""}
                   onChange={(event) => updateDraft("custom_system_instruction", event.target.value)}
                 />
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <button type="button" disabled={busy} onClick={onSaveIntent} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-60">
-                  {busy ? "Saving..." : "Save Intent"}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {askName && (
+                  <input
+                    autoFocus
+                    value={presetName}
+                    onChange={(event) => setPresetName(event.target.value)}
+                    placeholder="Preset name"
+                    className="w-40 rounded-lg border bg-white px-2.5 py-1 text-[11px]"
+                  />
+                )}
+                <button type="button" disabled={busy} onClick={() => (askName ? onSavePreset() : setAskName(true))} className="rounded-lg bg-gray-900 px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-60">
+                  {busy ? "Saving..." : askName ? "Save this name" : "Save preset"}
                 </button>
-                <button type="button" disabled={busy} onClick={onReset} className="rounded-lg border px-4 py-2 text-xs font-bold">
-                  Reset all
+                <button type="button" disabled={busy} onClick={onReset} className="rounded-lg border bg-white px-2.5 py-1 text-[11px] font-bold">
+                  Reset
                 </button>
-                <Hint text="Save Intent writes this card only. Reset all restores the eight default intents." />
               </div>
-            </div>
+            </section>
           </div>
         )}
 
-        {tab === "RAG Presets" && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {Object.values(presets).map((preset) => {
-              const active = activePreset === preset.profile_name;
-              return (
-              <div key={preset.profile_name} className="rounded-xl bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="flex items-center gap-1 font-bold">
-                    {preset.profile_name}
-                    <Hint text={active
-                      ? "The next question uses this mode's top_k, quotas, filters, temperature, and answer length. There is no control here to return to per-intent settings."
-                      : "Choosing this preset applies one retrieval setup to every intent."}
+        {tab === "Presets" && (
+          <div className="space-y-4">
+            <section>
+              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Recommended</h2>
+              <div className="grid items-start gap-3 md:grid-cols-3">
+                {showcase.map((preset) => (
+                  <PresetCard
+                    key={preset.profile_name}
+                    preset={preset}
+                    active={activePreset === preset.profile_name}
+                    open={openPreset === preset.profile_name}
+                    busy={busy}
+                    onUse={onPreset}
+                    onToggle={setOpenPreset}
+                  />
+                ))}
+              </div>
+            </section>
+            <section>
+              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Custom</h2>
+              {customPresets.length === 0 ? (
+                <p className="text-xs text-gray-500">No custom presets yet. Save one from Configuration.</p>
+              ) : (
+                <div className="grid items-start gap-3 md:grid-cols-3">
+                  {customPresets.map((preset) => (
+                    <PresetCard
+                      key={preset.profile_name}
+                      preset={{
+                        ...preset,
+                        emoji: "🏷️",
+                        title: preset.profile_name,
+                        blurb: `Saved by you. Answers with ${preset.llm_model || "the selected model"}.`,
+                      }}
+                      active={activePreset === preset.profile_name}
+                      open={openPreset === preset.profile_name}
+                      busy={busy}
+                      onUse={onPreset}
+                      onToggle={setOpenPreset}
+                      onEdit={onEditPreset}
+                      onDelete={onDeletePreset}
+                      showIntents={preset.kind === "intent_bundle"}
                     />
-                  </h2>
-                  {active && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">ACTIVE</span>}
+                  ))}
                 </div>
-                <p className="mt-1 text-xs text-gray-600">{preset.description}</p>
-                <button
-                  type="button"
-                  disabled={busy || active}
-                  onClick={() => onPreset(preset.profile_name)}
-                  className={`mt-3 rounded-lg px-3 py-1.5 text-xs font-bold ${active ? "bg-green-600 text-white" : "bg-gray-900 text-white"} disabled:opacity-100`}
-                >
-                  {active ? "In use" : "Use this preset"}
-                </button>
-              </div>
-              );
-            })}
-          </div>
-        )}
-
-        {tab === "Multi-LLM" && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {profiles.filter((profile) => profile.provider !== "gemini" && profile.provider !== "openai").map((profile) => {
-              const ping = pings[profile.id];
-              const active = activeLlm?.provider === profile.provider && activeLlm?.model === profile.model;
-              return (
-                <div key={profile.id} className="rounded-xl bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="flex items-center gap-1 font-bold">
-                      {profile.model}
-                      <Hint text={`Context window ${profile.context_window || "n/a"}. Typical latency ${profile.latency || "n/a"}. These notes are not settings. Ping only measures reply time.`} />
-                    </h2>
-                    {active && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">ACTIVE</span>}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-600">{profile.fit || profile.description}</p>
-                  <p className="mt-1 text-[11px]">
-                    {ping?.status === "online" && `Online ${ping.latency_ms} ms`}
-                    {ping?.status === "offline" && `Offline ${ping.message || ""}`}
-                    {ping?.status === "checking" && "Checking..."}
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <button type="button" onClick={() => onPing(profile)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">Ping</button>
-                    <button
-                      type="button"
-                      disabled={busy || active}
-                      onClick={() => onSelectModel(profile)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ${active ? "bg-green-600" : "bg-gray-900"} disabled:opacity-100`}
-                    >
-                      {active ? "In use" : "Use this model"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+              )}
+            </section>
           </div>
         )}
 
         {tab === "Benchmark" && (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-3">
+            <section className="rounded-xl border border-gray-200 bg-white p-3">
+              <h2 className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+                Compare
+                <Hint text="Each preset answers the same questions 5 times. Score is the average chance of citing the expected document. Rank prefers the closer answer, then the faster one." />
+              </h2>
+              <div className="flex flex-wrap items-end gap-2">
                 <div>
-                  <div className="flex items-center gap-1 text-xs font-semibold">
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
                     <label htmlFor="benchmark-baseline">Baseline</label>
                     <Hint text="The preset the candidate is compared against." />
                   </div>
-                  <select id="benchmark-baseline" className="mt-1 block rounded-lg border px-2 py-1.5" value={baselineName} onChange={(event) => setBaselineName(event.target.value)}>
-                    {Object.keys(presets).map((name) => <option key={name}>{name}</option>)}
+                  <select id="benchmark-baseline" className="mt-0.5 block h-8 rounded-lg border bg-white px-2 text-xs" value={baselineName} onChange={(event) => setBaselineName(event.target.value)}>
+                    {compareChoices.map((choice) => <option key={choice.name} value={choice.name}>{choice.title}</option>)}
                   </select>
                 </div>
                 <div>
-                  <div className="flex items-center gap-1 text-xs font-semibold">
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
                     <label htmlFor="benchmark-candidate">Candidate</label>
                     <Hint text="The preset you want to measure." />
                   </div>
-                  <select id="benchmark-candidate" className="mt-1 block rounded-lg border px-2 py-1.5" value={candidateName} onChange={(event) => setCandidateName(event.target.value)}>
-                    {Object.keys(presets).map((name) => <option key={name}>{name}</option>)}
+                  <select id="benchmark-candidate" className="mt-0.5 block h-8 rounded-lg border bg-white px-2 text-xs" value={candidateName} onChange={(event) => setCandidateName(event.target.value)}>
+                    {compareChoices.map((choice) => <option key={choice.name} value={choice.name}>{choice.title}</option>)}
                   </select>
                 </div>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || baselineName === candidateName}
                   onClick={async () => {
                     setBusy(true);
                     setError("");
@@ -437,50 +741,93 @@ export default function AIconfig() {
                       setBusy(false);
                     }
                   }}
-                  className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+                  className="h-8 rounded-lg bg-gray-900 px-2.5 text-[11px] font-bold text-white disabled:opacity-60"
                 >
-                  {busy ? "Running..." : "Run benchmark"}
+                  {busy ? "Running 5 times..." : "Compare · 5 runs"}
                 </button>
-                <Hint text="Runs 2 questions from the spec set and compares whether the candidate finds the expected document and how fast it is." />
+                <button
+                  type="button"
+                  disabled={busy || showcase.length < 2}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      setQuality(await rankQuality(showcase.map((preset) => preset.profile_name)));
+                    } catch (err) {
+                      setError(err.message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="h-8 rounded-lg border bg-white px-2.5 text-[11px] font-bold disabled:opacity-60"
+                >
+                  Rank recommended
+                </button>
+                <Hint text="Runs Balanced, Fast, and Academic on the same questions, five times each. Orders them by how often the expected document is cited, then by speed. It does not change the preset in use." />
+              </div>
+              <div className="mt-2 grid items-start gap-2 md:grid-cols-2">
+                {[baselineName, candidateName].map((name) => {
+                  const choice = compareChoices.find((item) => item.name === name);
+                  return choice ? (
+                    <CompareCard
+                      key={name}
+                      preset={choice.preset}
+                      open={openCompare === name}
+                      onToggle={setOpenCompare}
+                    />
+                  ) : null;
+                })}
               </div>
               {benchmark && (
                 <>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Delta score <Hint text="Candidate hit score minus baseline. 100 means the expected source was found." /></div>
-                      <div className="text-lg font-bold">{benchmark.summary.delta_score}</div>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Speedup <Hint text="Baseline time divided by candidate time. Above 1 means the candidate is faster." /></div>
-                      <div className="text-lg font-bold">{benchmark.summary.speedup}x</div>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="flex items-center gap-1 text-[11px] text-gray-500">Cases <Hint text="How many spec questions ran. This button runs 2." /></div>
-                      <div className="text-lg font-bold">{benchmark.summary.cases}</div>
-                    </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                      Delta {benchmark.summary.delta_score}
+                      <Hint text="Candidate hit score minus baseline. 100 means the expected source was found." />
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                      {benchmark.summary.speedup}x
+                      <Hint text="Baseline time divided by candidate time. Above 1 means the candidate is faster." />
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                      {benchmark.summary.cases} cases
+                      <Hint text="How many spec questions ran. Each one is answered 5 times and the numbers here are the average." />
+                    </span>
                   </div>
                   {benchmark.details?.length > 0 && (
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="w-full text-left text-xs">
+                    <div className="mt-2 overflow-x-auto rounded-xl border border-gray-200">
+                      <table className="w-full text-left text-[11px]">
                         <thead>
-                          <tr className="border-b text-[11px] text-gray-500">
-                            <th className="py-2 pr-3 font-semibold">Question</th>
-                            <th className="py-2 pr-3 font-semibold">{baselineName} score</th>
-                            <th className="py-2 pr-3 font-semibold">{candidateName} score</th>
-                            <th className="py-2 pr-3 font-semibold">{baselineName} time</th>
-                            <th className="py-2 pr-3 font-semibold">{candidateName} time</th>
-                            <th className="py-2 font-semibold">Speedup</th>
+                          <tr className="border-b bg-gray-50 text-gray-500">
+                            <th className="px-3 py-1.5 font-semibold">Question</th>
+                            <th className="px-3 py-1.5 font-semibold">{compareTitle(baselineName)} score</th>
+                            <th className="px-3 py-1.5 font-semibold">{compareTitle(candidateName)} score</th>
+                            <th className="px-3 py-1.5 font-semibold">{compareTitle(baselineName)} time</th>
+                            <th className="px-3 py-1.5 font-semibold">{compareTitle(candidateName)} time</th>
+                            <th className="px-3 py-1.5 font-semibold">Speedup</th>
                           </tr>
                         </thead>
                         <tbody>
                           {benchmark.details.map((row) => (
                             <tr key={row.id || row.query} className="border-t align-top">
-                              <td className="py-2 pr-3">{row.query}</td>
-                              <td className="py-2 pr-3">{row.baseline_score}</td>
-                              <td className="py-2 pr-3">{row.candidate_score}</td>
-                              <td className="py-2 pr-3">{row.baseline_seconds}s</td>
-                              <td className="py-2 pr-3">{row.candidate_seconds}s</td>
-                              <td className="py-2">{row.speedup}x</td>
+                              <td className="px-3 py-1.5">
+                                <button type="button" className="text-left font-semibold text-gray-900 underline" onClick={() => setOpenQuestion((current) => (current === row.query ? "" : row.query))}>
+                                  {row.query}
+                                </button>
+                                {openQuestion === row.query && (
+                                  <div className="mt-1.5 space-y-1.5 font-normal text-gray-700">
+                                    <p><span className="font-semibold">{compareTitle(baselineName)}:</span> {row.baseline_answer || "—"}</p>
+                                    <p className="text-gray-500">Sources: {row.baseline_sources || "none"}</p>
+                                    <p><span className="font-semibold">{compareTitle(candidateName)}:</span> {row.candidate_answer || "—"}</p>
+                                    <p className="text-gray-500">Sources: {row.candidate_sources || "none"}</p>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-3 py-1.5 font-semibold">{row.baseline_score}</td>
+                              <td className="px-3 py-1.5 font-semibold">{row.candidate_score}</td>
+                              <td className="px-3 py-1.5">{row.baseline_seconds}s</td>
+                              <td className="px-3 py-1.5">{row.candidate_seconds}s</td>
+                              <td className="px-3 py-1.5">{row.speedup}x</td>
                             </tr>
                           ))}
                         </tbody>
@@ -488,8 +835,8 @@ export default function AIconfig() {
                     </div>
                   )}
                   {benchmark.llm_summary && (
-                    <div className="mt-3 whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-800">
-                      <div className="mb-1 flex items-center gap-1 font-semibold text-gray-500">
+                    <div className="mt-2 whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-800">
+                      <div className="mb-1 flex items-center gap-1 font-semibold uppercase tracking-wide text-gray-500">
                         Summary
                         <Hint text="Written by the active model from both answers, their sources, and the times in this table." />
                       </div>
@@ -498,37 +845,76 @@ export default function AIconfig() {
                   )}
                 </>
               )}
-            </div>
-            <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-gray-50">
-                  <tr>{["Score", "Level", "Content", "Citation"].map((head) => <th key={head} className="px-3 py-2">{head}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {RUBRIC.map((row) => (
-                    <tr key={row[0]} className="border-t">{row.map((cell) => <td key={cell} className="px-3 py-2">{cell}</td>)}</tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm">
-              <h2 className="mb-2 flex items-center gap-1 font-bold">
+            </section>
+            {quality && (
+              <section className="space-y-2">
+                <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Closest answer first · average of {quality.repeats} runs
+                </h2>
+                {quality.presets.map((item, index) => {
+                  const title = compareTitle(item.profile_name);
+                  const tone = PRESET_TONE[title] || "border-gray-200 bg-white";
+                  const emoji = PRESET_EMOJI[title] || compareChoices.find((choice) => choice.name === item.profile_name)?.preset.emoji || "🏷️";
+                  return (
+                    <article key={item.profile_name} className={`self-start rounded-xl border px-3 py-2 ${tone}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-base shadow-sm" aria-hidden="true">{emoji}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold leading-5">{index + 1}. {title}</div>
+                          <div className="truncate text-[11px] text-gray-500">{item.llm_model}</div>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-700">hit {item.score}</span>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-700">{item.seconds}s</span>
+                        <button type="button" onClick={() => setOpenRank((current) => (current === item.profile_name ? "" : item.profile_name))} className="rounded-lg border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-bold">
+                          {openRank === item.profile_name ? "Hide" : "Details"}
+                        </button>
+                      </div>
+                      {openRank === item.profile_name && (
+                        <ul className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px] text-gray-600">
+                          {item.questions.map((question) => (
+                            <li key={question.query} className="flex items-start justify-between gap-3">
+                              <span className="min-w-0">{question.query}</span>
+                              <span className="shrink-0 font-semibold text-gray-900">{question.score}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+            <section className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+              <h2 className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
                 Spec questions
                 <Hint text="These are the spec questions. Hover a row for what that case checks." />
               </h2>
-              <ul className="space-y-2 text-xs">
+              <ul className="grid gap-x-4 md:grid-cols-2">
                 {CASES.map(([query, intent, note]) => (
-                  <li key={query} className="flex items-center gap-1">
-                    <span><span className="font-bold">{intent}</span> — {query}</span>
+                  <li key={query} className="flex items-start gap-1.5 border-b border-gray-100 py-1 text-[11px] leading-4 last:border-0 md:[&:nth-last-child(-n+2)]:border-0">
+                    <span className="w-[8.25rem] shrink-0 font-semibold text-gray-500">
+                      <span aria-hidden="true">{INTENT_EMOJI[intent]} </span>{INTENT_COPY[intent]?.[0] || intent}
+                    </span>
+                    <span className="min-w-0 flex-1 text-gray-800">{query}</span>
                     <Hint text={note} />
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           </div>
         )}
       </main>
-      {toast && <div className="fixed right-4 top-4 rounded-xl bg-gray-900 px-4 py-3 text-xs font-bold text-white shadow-xl">{toast}</div>}
+      <ConfirmModal
+        open={Boolean(confirmState)}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmLabel={confirmState?.confirmLabel || "Delete"}
+        danger
+        busy={confirmBusy}
+        onConfirm={acceptConfirm}
+        onClose={() => { if (!confirmBusy) setConfirmState(null); }}
+      />
+      {toast && <div className="fixed right-4 top-4 z-[60] rounded-xl bg-gray-900 px-4 py-3 text-xs font-bold text-white shadow-xl">{toast}</div>}
     </div>
   );
 }

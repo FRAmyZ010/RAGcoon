@@ -186,10 +186,6 @@ export default function Dashboard() {
   }, [overview]);
   const yearMax = Math.max(1, ...years.map((row) => row.count));
   const needle = query.trim().toLowerCase();
-  const keywords = (overview?.top_keywords || []).filter((item) =>
-    item.keyword.toLowerCase().includes(needle)
-  );
-  const keywordMax = Math.max(1, ...keywords.map((item) => item.count));
   const viewed = (overview?.most_viewed || []).filter((item) => {
     const label = `${item.title || ""} ${item.filename || ""}`.toLowerCase();
     return label.includes(needle);
@@ -374,26 +370,6 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
-          </Panel>
-
-          <Panel title="Top Keywords" hint="Words that appear most often across all documents">
-            <div className="flex max-h-52 flex-col gap-2.5 overflow-y-auto pr-1">
-              {keywords.length === 0 && (
-                <p className="text-xs text-gray-500">{loading ? "Loading..." : "No keywords yet"}</p>
-              )}
-              {keywords.map((item, index) => (
-                <div key={item.keyword} className="grid grid-cols-[minmax(0,9rem)_1fr_1.5rem] items-center gap-3">
-                  <span className="truncate text-xs font-semibold text-gray-800">{item.keyword}</span>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full bg-[#6d9478]"
-                      style={{ width: `${Math.max(8, (item.count / keywordMax) * 100)}%`, opacity: index === 0 ? 1 : 0.72 }}
-                    />
-                  </div>
-                  <span className="text-right text-xs font-bold text-gray-800">{item.count}</span>
-                </div>
-              ))}
-            </div>
           </Panel>
 
           <Panel title="Most Viewed Documents" hint="Documents opened most often">

@@ -25,7 +25,7 @@ import {
   upsertChatThread,
 } from "./services/chatHistory";
 import MarkdownMessage from "./components/MarkdownMessage";
-import { openDocumentPreview } from "./services/documentsApi";
+import { fetchPublicCatalog, openDocumentPreview } from "./services/documentsApi";
 import { submitFeedback } from "./services/feedbackApi";
 
 const SUGGESTIONS = [
@@ -33,6 +33,30 @@ const SUGGESTIONS = [
   "List projects advised by Surapol",
   "Summarize projects about web applications",
 ];
+
+function displayModel(model) {
+  const text = String(model || "");
+  const wrapped = text.match(/\(([^)]+)\)/);
+  return wrapped ? wrapped[1] : text;
+}
+
+function formatAnswerMeta(timing, performance) {
+  const parts = [];
+  const tps = Number(performance?.gen_speed_tps);
+  if (tps > 0) parts.push(`${tps.toFixed(1)} tok/s`);
+  if (timing && timing.total_seconds != null) {
+    const detail = [];
+    if (timing.retrieval_seconds != null) detail.push(`search ${formatSeconds(timing.retrieval_seconds)}s`);
+    if (timing.rerank_seconds != null) detail.push(`rerank ${formatSeconds(timing.rerank_seconds)}s`);
+    if (timing.llm_seconds != null) detail.push(`answer ${formatSeconds(timing.llm_seconds)}s`);
+    const total = `${formatSeconds(timing.total_seconds)}s`;
+    parts.push(detail.length ? `${total} (${detail.join(" · ")})` : total);
+  }
+  const inputTokens = Number(performance?.input_tokens) || 0;
+  const outputTokens = Number(performance?.output_tokens) || 0;
+  if (inputTokens > 0 || outputTokens > 0) parts.push(`${inputTokens} in / ${outputTokens} out`);
+  return parts.join(" · ") || "Completed";
+}
 
 function formatSeconds(value) {
   const n = Number(value);
@@ -52,6 +76,66 @@ function createWorkspaceId() {
   return `ws-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClose }) {
+  const needle = docQuery.trim().toLowerCase();
+  const matches = documents.filter((doc) => `${doc.title} ${doc.filename}`.toLowerCase().includes(needle));
+  return (
+    <aside className="flex h-full w-72 shrink-0 flex-col border-l border-gray-200 bg-[#fafafa]">
+      <div className="flex items-center justify-between border-b border-gray-200 px-3 py-3">
+        <h2 className="text-sm font-bold text-gray-900">Library</h2>
+        <button type="button" onClick={onClose} className="rounded-md p-1 text-gray-500 hover:bg-gray-200" aria-label="Close library">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="border-b border-gray-200 px-3 py-3">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Keywords</p>
+        {keywords.length === 0 ? (
+          <p className="mt-1.5 text-xs text-gray-500">No keywords yet</p>
+        ) : (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {keywords.map((item) => (
+              <button
+                key={item.keyword}
+                type="button"
+                onClick={() => onAsk(`Which senior projects mention ${item.keyword}?`)}
+                className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
+              >
+                {item.keyword}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="px-3 py-3">
+        <label htmlFor="chat-doc-search" className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Documents</label>
+        <input
+          id="chat-doc-search"
+          value={docQuery}
+          onChange={(event) => onDocQuery(event.target.value)}
+          placeholder="Search titles"
+          className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-gray-400"
+        />
+      </div>
+      <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {matches.length === 0 && <li className="px-2 py-2 text-sm text-gray-500">No documents match</li>}
+        {matches.map((doc) => (
+          <li key={doc.id}>
+            <button
+              type="button"
+              onClick={() => openDocumentPreview(doc.id)}
+              title={doc.filename}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-gray-800 hover:bg-white"
+            >
+              <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+              <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
 export default function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
@@ -65,6 +149,9 @@ export default function App() {
   const [feedback, setFeedback] = useState({});
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [catalog, setCatalog] = useState({ documents: [], top_keywords: [] });
+  const [docQuery, setDocQuery] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -76,6 +163,15 @@ export default function App() {
     const maxPx = 160; // ~ max-h-40
     el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
   };
+
+  useEffect(() => {
+    fetchPublicCatalog()
+      .then((data) => setCatalog({
+        documents: data.documents || [],
+        top_keywords: data.top_keywords || [],
+      }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const stored = loadChatThreads();
@@ -155,7 +251,7 @@ export default function App() {
       botMsgIndex = replaceBotIndex;
       snapshot = priorMessages.map((message, index) =>
         index === botMsgIndex
-          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null }
+          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null, preset: null }
           : message
       );
     } else {
@@ -243,9 +339,9 @@ export default function App() {
                       citations: data.citations || [],
                       queryId: data.query_id ?? message.queryId ?? null,
                       model: data.model || message?.model || null,
-                      meta: data.timing
-                        ? `Total ${formatSeconds(data.timing.total_seconds)}s · Retrieval ${formatSeconds(data.timing.retrieval_seconds)}s`
-                        : "Completed",
+                      preset: data.preset || message?.preset || null,
+                      performance: data.performance || null,
+                      meta: formatAnswerMeta(data.timing, data.performance),
                     }
                   : message
               );
@@ -379,8 +475,8 @@ export default function App() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-gray-700 bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ease-in-out lg:static lg:w-64 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-gray-700 bg-[#2d2d2d] p-4 text-white transition-transform duration-300 ease-in-out lg:w-64 ${
+          sidebarOpen ? "translate-x-0 lg:static" : "-translate-x-full"
         }`}
       >
         <div className="mb-5 flex items-center justify-between">
@@ -496,7 +592,8 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex h-full min-w-0 flex-1 flex-col bg-white">
+      <main className="flex h-full min-w-0 flex-1 bg-white">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white/90 px-4 backdrop-blur md:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -517,6 +614,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLibraryOpen((open) => !open)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold ${libraryOpen ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 text-gray-700 hover:bg-gray-100"}`}
+            >
+              <FileText className="h-4 w-4" />
+              <span className="hidden sm:inline">Documents</span>
+            </button>
             <Link
               to="/feedback"
               className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-100"
@@ -558,6 +663,20 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {catalog.top_keywords.length > 0 && (
+                  <div className="mt-4 flex w-full max-w-xl flex-wrap justify-center gap-1.5">
+                    {catalog.top_keywords.map((item) => (
+                      <button
+                        key={item.keyword}
+                        type="button"
+                        onClick={() => handleSuggestion(`Which senior projects mention ${item.keyword}?`)}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                      >
+                        {item.keyword}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-6">
@@ -651,16 +770,29 @@ export default function App() {
                                   <ThumbsDown className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                              <div className="flex flex-col items-end gap-0.5 text-right">
-                                {msg.model && (
-                                  <span className="text-xs text-gray-400">
-                                    Model: {msg.model}
-                                  </span>
-                                )}
-                                {msg.meta && (
-                                  <span className="text-xs text-gray-400">{msg.meta}</span>
-                                )}
-                              </div>
+                            </div>
+                          )}
+                          {(msg.preset || msg.model || msg.meta) && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                              {msg.preset && (
+                                <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                                  msg.preset === "Fast"
+                                    ? "bg-amber-50 text-amber-800"
+                                    : msg.preset === "Academic"
+                                      ? "bg-indigo-50 text-indigo-800"
+                                      : msg.preset === "Balanced"
+                                        ? "bg-emerald-50 text-emerald-800"
+                                        : "bg-gray-100 text-gray-700"
+                                }`}>
+                                  {msg.preset}
+                                </span>
+                              )}
+                              {msg.model && (
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                                  {displayModel(msg.model)}
+                                </span>
+                              )}
+                              {msg.meta && <span className="text-gray-400">{msg.meta}</span>}
                             </div>
                           )}
 
@@ -671,6 +803,15 @@ export default function App() {
                                 <div className="font-bold text-gray-900">Sources</div>
                                 {msg.citations.map((c, i) => {
                                   const canPreview = Boolean(c.document_id);
+                                  const pageLabel =
+                                    c.pages_formatted && c.pages_formatted !== "?"
+                                      ? `pages ${c.pages_formatted}`
+                                      : c.page
+                                        ? `page ${c.page}`
+                                        : null;
+                                  const people = [c.author, c.advisor ? `Advisor: ${c.advisor}` : null, c.year]
+                                    .filter(Boolean)
+                                    .join(" · ");
                                   return (
                                     <div
                                       key={i}
@@ -680,12 +821,15 @@ export default function App() {
                                         <div className="min-w-0">
                                           <div className="font-semibold text-[#800000]">
                                             {c.project_title || c.source}
-                                            {c.page ? (
+                                            {pageLabel ? (
                                               <span className="ml-1 font-normal text-gray-500">
-                                                · page {c.page}
+                                                · {pageLabel}
                                               </span>
                                             ) : null}
                                           </div>
+                                          {people ? (
+                                            <p className="mt-1 text-xs text-gray-600">{people}</p>
+                                          ) : null}
                                           {c.content_snippet && (
                                             <p className="mt-1 line-clamp-3 text-gray-500 italic">
                                               "{c.content_snippet}"
@@ -782,6 +926,17 @@ export default function App() {
             Answers are grounded in uploaded senior project PDFs · Citations included when available
           </div>
         </div>
+        </div>
+        {libraryOpen && (
+          <LibraryPanel
+            documents={catalog.documents}
+            keywords={catalog.top_keywords}
+            docQuery={docQuery}
+            onDocQuery={setDocQuery}
+            onAsk={handleSuggestion}
+            onClose={() => setLibraryOpen(false)}
+          />
+        )}
       </main>
     </div>
   );

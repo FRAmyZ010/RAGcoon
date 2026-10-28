@@ -319,6 +319,23 @@ def _rag_config(config: Any):
     return config if isinstance(config, RAGConfig) else None
 
 
+def _request_model_label(
+    llm_provider: Optional[str],
+    llm_model: Optional[str],
+    config: Any,
+) -> str:
+    """Label the model this question actually used, including a per-request override."""
+    rag_cfg = _rag_config(config)
+    provider = llm_provider or (rag_cfg.llm_provider if rag_cfg is not None else None)
+    model = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None)
+    if not provider or not model:
+        from .llm_provider import get_active_llm
+        active_provider, active_model = get_active_llm()
+        provider = provider or active_provider
+        model = model or active_model or _active_model()
+    return f"{provider} ({model})"
+
+
 def _preset_style(preset: str, is_thai: bool) -> str:
     if preset == "concise":
         return (
@@ -1088,6 +1105,7 @@ def answer_question(
     sources = prep["sources"]
     citations = prep["citations"]
     chat_history_str = prep["chat_history_str"]
+    model_label = _request_model_label(llm_provider, llm_model, config)
 
     if not contexts and retrieval_errors:
         error_msg = (
@@ -1109,6 +1127,7 @@ def answer_question(
             "query_variants": retrieval_details.get("query_variants", []),
             "retrieved_count": 0,
             "errors": retrieval_errors,
+            "model": model_label,
             "timing": {
                 "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
                 "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
@@ -1221,6 +1240,7 @@ def answer_question(
         "retrieved_count": retrieval_details.get("retrieved_count", len(scored_contexts)),
         "fast_path_used": bool(retrieval_details.get("fast_path_used")),
         "errors": retrieval_errors,
+        "model": model_label,
         "timing": {
             "query_proc_seconds": retrieval_timing.get("query_proc_seconds", 0.0),
             "retrieval_seconds": retrieval_timing.get("retrieval_seconds", 0.0),
@@ -1261,13 +1281,14 @@ def stream_answer_question(
     sources = prep["sources"]
     citations = prep["citations"]
     chat_history_str = prep["chat_history_str"]
+    model_label = _request_model_label(llm_provider, llm_model, config)
 
     # 1. Yield metadata before tokens, including when retrieval fails.
     metadata_payload = {
         "question": question,
         "session_id": session_id,
         "intent": intent,
-        "model": _active_model(),
+        "model": model_label,
         "normalized_query": retrieval_details.get("normalized_query", question),
         "filters": prep["filters"],
         "sources": sources,
@@ -1293,7 +1314,7 @@ def stream_answer_question(
             "data": {
                 "answer": error_msg,
                 "session_id": session_id,
-                "model": _active_model(),
+                "model": model_label,
                 "sources": [],
                 "citations": [],
                 "timing": {
@@ -1396,7 +1417,7 @@ def stream_answer_question(
             "answer": cleaned_answer,
             "session_id": session_id,
             "intent": intent,
-            "model": _active_model(),
+            "model": model_label,
             "sources": sources,
             "citations": citations,
             "timing": {

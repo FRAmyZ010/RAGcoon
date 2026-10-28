@@ -106,16 +106,59 @@ def summarize_benchmark(baseline: str, candidate: str, rows: list[dict]) -> str:
     return cleaned
 
 
-def run_preset_benchmark(baseline: str, candidate: str, limit: int = 2) -> dict:
-    from app.rag.retrieval.rag_config import get_config_preset
+def _average_runs(case: dict, config, repeats: int) -> dict:
+    runs = [_run_case(case, config) for _ in range(repeats)]
+    count = len(runs) or 1
+    return {
+        "score": round(sum(item["score"] for item in runs) / count, 1),
+        "seconds": round(sum(item["seconds"] for item in runs) / count, 3),
+        "answer": runs[-1]["answer"],
+        "sources": runs[-1]["sources"],
+    }
 
-    baseline_cfg = get_config_preset(baseline)
-    candidate_cfg = get_config_preset(candidate)
+
+def _config_for_name(name: str):
+    """Load a Presets-page profile: a built-in RAG preset, or a saved intent bundle."""
+    from app.rag.retrieval.rag_config import RAGConfig, get_config_by_name
+
+    try:
+        return get_config_by_name(name)
+    except KeyError:
+        pass
+    from app.core.database import SessionLocal
+    from app.services.ai_config_service import load_named_presets
+
+    db = SessionLocal()
+    try:
+        bundle = load_named_presets(db).get(name)
+    finally:
+        db.close()
+    if not isinstance(bundle, dict):
+        raise KeyError(f"Configuration profile '{name}' not found.")
+    intents = bundle.get("intents") or {}
+    preview_name = bundle.get("preview_intent") or next(iter(intents), "")
+    preview = intents.get(preview_name) if isinstance(intents.get(preview_name), dict) else {}
+    base = get_config_by_name("winner_rank1_llama3_2_3b").to_dict()
+    for key, value in preview.items():
+        if key in base and value is not None:
+            base[key] = value
+    base["profile_name"] = name
+    if bundle.get("llm_provider"):
+        base["llm_provider"] = bundle["llm_provider"]
+    if bundle.get("llm_model"):
+        base["llm_model"] = bundle["llm_model"]
+    return RAGConfig.from_dict(base)
+
+
+def run_preset_benchmark(baseline: str, candidate: str, limit: int = 2, repeats: int = 5) -> dict:
+    repeats = min(max(int(repeats or 5), 1), 5)
+    baseline_cfg = _config_for_name(baseline)
+    candidate_cfg = _config_for_name(candidate)
     cases = load_handoff_cases(limit)
     details = []
     for case in cases:
-        base = _run_case(case, baseline_cfg)
-        other = _run_case(case, candidate_cfg)
+        base = _average_runs(case, baseline_cfg, repeats)
+        other = _average_runs(case, candidate_cfg, repeats)
         speedup = round(base["seconds"] / other["seconds"], 2) if other["seconds"] else 1.0
         details.append({
             "id": case.get("id"),
@@ -150,11 +193,48 @@ def run_preset_benchmark(baseline: str, candidate: str, limit: int = 2) -> dict:
                 "query": row["query"],
                 "baseline_score": row["baseline_score"],
                 "candidate_score": row["candidate_score"],
-                "baseline_seconds": row["baseline_seconds"],
-                "candidate_seconds": row["candidate_seconds"],
-                "speedup": row["speedup"],
-            }
-            for row in details
-        ],
+            "baseline_seconds": row["baseline_seconds"],
+            "candidate_seconds": row["candidate_seconds"],
+            "speedup": row["speedup"],
+            "baseline_answer": row["baseline_answer"],
+            "candidate_answer": row["candidate_answer"],
+            "baseline_sources": row["baseline_sources"],
+            "candidate_sources": row["candidate_sources"],
+        }
+        for row in details
+    ],
+        "repeats": repeats,
         "llm_summary": summarize_benchmark(baseline, candidate, details),
     }
+
+
+def rank_answer_quality(preset_names: list[str] | None = None, limit: int = 2, repeats: int = 5) -> dict:
+    """Rank presets by how often the answer cites the expected document, then by time."""
+    names = preset_names or [
+        "winner_rank1_llama3_2_3b",
+        "winner_rank2_qwen2_5_3b",
+        "winner_rank3_gemma3_4b_academic",
+    ]
+    repeats = min(max(int(repeats or 5), 1), 5)
+    cases = load_handoff_cases(limit)
+    ranked = []
+    for name in names:
+        config = _config_for_name(name)
+        rows = [_average_runs(case, config, repeats) for case in cases]
+        count = len(rows) or 1
+        ranked.append({
+            "profile_name": name,
+            "llm_model": config.llm_model,
+            "score": round(sum(row["score"] for row in rows) / count, 1),
+            "seconds": round(sum(row["seconds"] for row in rows) / count, 3),
+            "top_k": config.top_k,
+            "rerank_top_n": config.rerank_top_n,
+            "max_context_chunks": config.max_context_chunks,
+            "prompt_preset": config.prompt_preset,
+            "questions": [
+                {"query": case["query"], "score": row["score"], "seconds": row["seconds"], "answer": row["answer"]}
+                for case, row in zip(cases, rows)
+            ],
+        })
+    ranked.sort(key=lambda item: (-item["score"], item["seconds"]))
+    return {"status": "success", "repeats": repeats, "ranked_by": "answer_hit_then_time", "presets": ranked}

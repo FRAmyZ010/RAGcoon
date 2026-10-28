@@ -14,6 +14,22 @@ class DocumentBase(BaseModel):
     supervisory_committee: str | None = None
     keywords: str | None = None
 
+class CatalogDocument(BaseModel):
+    id: int
+    title: str
+    filename: str
+
+
+class CatalogKeyword(BaseModel):
+    keyword: str
+    count: int
+
+
+class PublicCatalog(BaseModel):
+    documents: list[CatalogDocument]
+    top_keywords: list[CatalogKeyword]
+
+
 class DocumentCreate(DocumentBase):
     file_path: str
     project_id: int | None = None
