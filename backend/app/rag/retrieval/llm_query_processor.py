@@ -82,7 +82,8 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
     if any(k in q for k in [
         "ขอรายชื่อ", "รายชื่อ", "ทั้งหมด", "ทุกโครงงาน", "ทุกโปรเจกต์", "list all", "all projects",
         "show all", "list", "survey", "มีอะไรบ้าง", "อะไรบ้าง", "มีโครงงานอะไร", "โครงงานทั้งหมด",
-        "โปรเจกต์ทั้งหมด", "โครงงานในปี", "โปรเจกต์ในปี", "which project", "ขอเอกสาร"
+        "โปรเจกต์ทั้งหมด", "โครงงานในปี", "โปรเจกต์ในปี", "which project", "ขอเอกสาร",
+        "โครงงานไหน", "โปรเจกต์ไหน", "เรื่องไหนบ้าง"
     ]):
         return "EXPLORATORY"
     # Specific factual questions about a project (microcontroller, sensor, tool, author, advisor, year, objective, etc.)
@@ -242,8 +243,9 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
             if title not in matched_titles:
                 matched_titles.append(title)
 
-    # Second pass: Only if NO direct match was found, try multi-word phrase matching
-    if not matched_titles:
+    # Second pass: Try multi-word phrase matching if no direct match or if comparison needs a 2nd title
+    is_comp_q = any(k in q_lower for k in ["เปรียบเทียบ", "compare", " vs ", "versus", "ต่างกัน"])
+    if not matched_titles or (is_comp_q and len(matched_titles) < 2):
         for title in sorted(metadata_cache.titles, key=len, reverse=True):
             t_low = title.lower()
             words = [w for w in re.split(r"[\s\-_]+", t_low) if len(w) >= 3 and w not in ["the", "and", "for", "system", "systems", "project", "proposal", "using", "with", "based", "application", "web"]]
@@ -453,6 +455,9 @@ def _is_title_explicitly_in_query(query: str, candidate_title: str, chat_history
         if candidate_title.lower() in chat_history.lower():
             return True
     return False
+
+
+_NON_NAME_WORDS = {"prof", "asst", "assoc", "doctor", "lecturer", "dr", "aj", "phd", "wg", "cdr", "mr", "ms", "miss", "mrs"}
 
 
 def _is_author_explicitly_in_query(query: str, candidate_author: str) -> bool:

@@ -1,0 +1,106 @@
+{
+  "top3_presets": [
+    {
+      "rank": 1,
+      "profile_name": "winner_rank1_llama3_2_3b",
+      "badge": "🥇 อันดับ 1 ชนะเลิศความคุ้มค่ารวม (Best Overall Speed & Precision)",
+      "target_use_case": "โหมดเริ่มต้นแนะนำสำหรับการใช้งานจริง (Production Default) — ตอบไวทันใจและแม่นยำสูง",
+      "model": {
+        "name": "llama3.2:3b",
+        "size_gb": 2.0,
+        "family": "Meta Llama 3.2",
+        "vram_fit": "🟢 100% GPU (เหลือ VRAM 2.0GB บน RTX 3050 Ti)"
+      },
+      "config": {
+        "top_k": 15,
+        "rerank_top_n": 10,
+        "max_context_chunks": 6,
+        "max_chunks_per_project": 2,
+        "enable_hybrid": true,
+        "enable_reranker": true,
+        "enable_boilerplate_filter": true,
+        "enable_fast_path": true,
+        "temperature": 0.0,
+        "prompt_preset": "balanced",
+        "num_predict": 512
+      },
+      "benchmark_scores": {
+        "suitability_composite": 87.70,
+        "blended_quality": 84.07,
+        "phrase_recall_pct": 86.68,
+        "hallucination_guard_pct": 100.0,
+        "multi_project_coverage_pct": 100.0,
+        "avg_latency_seconds": 5.60,
+        "avg_tps": 47.6
+      }
+    },
+    {
+      "rank": 2,
+      "profile_name": "winner_rank2_qwen2_5_3b",
+      "badge": "🥈 อันดับ 2 รองชนะเลิศสายความเร็วสูงสุด (Ultra-Fast Speed Champion)",
+      "target_use_case": "โหมดเน้นความเร็วสูงสุด (Ultra-Fast Mode) — ปั่น Token ไวถึง 60 TPS ไม่ติดโหมดคิดยาว",
+      "model": {
+        "name": "qwen2.5:3b",
+        "size_gb": 1.9,
+        "family": "Alibaba Qwen 2.5",
+        "vram_fit": "🟢 100% GPU (เบาพิเศษ เหลือ VRAM 2.1GB)"
+      },
+      "config": {
+        "top_k": 15,
+        "rerank_top_n": 10,
+        "max_context_chunks": 6,
+        "max_chunks_per_project": 2,
+        "enable_hybrid": true,
+        "enable_reranker": true,
+        "enable_boilerplate_filter": true,
+        "enable_fast_path": true,
+        "temperature": 0.0,
+        "prompt_preset": "balanced",
+        "num_predict": 512
+      },
+      "benchmark_scores": {
+        "suitability_composite": 82.48,
+        "blended_quality": 81.20,
+        "phrase_recall_pct": 80.02,
+        "hallucination_guard_pct": 100.0,
+        "multi_project_coverage_pct": 100.0,
+        "avg_latency_seconds": 10.07,
+        "avg_tps": 60.0
+      }
+    },
+    {
+      "rank": 3,
+      "profile_name": "winner_rank3_gemma3_4b_academic",
+      "badge": "🥉 อันดับ 3 / 🏅 แชมป์คุณภาพวิชาการภาษาไทยสูงสุด (Academic Thai Champion)",
+      "target_use_case": "โหมดเน้นภาษาไทยและตารางวิชาการละเอียด (Academic Deep-Research) — ตอบยาวสละสลวย อ้างอิงวิชาการครบ",
+      "model": {
+        "name": "gemma3:4b",
+        "size_gb": 3.3,
+        "family": "Google Gemma 3",
+        "vram_fit": "🟢 100% GPU (พอดี VRAM 4GB)"
+      },
+      "config": {
+        "top_k": 15,
+        "rerank_top_n": 10,
+        "max_context_chunks": 6,
+        "max_chunks_per_project": 2,
+        "enable_hybrid": true,
+        "enable_reranker": true,
+        "enable_boilerplate_filter": true,
+        "enable_fast_path": true,
+        "temperature": 0.0,
+        "prompt_preset": "deep_academic",
+        "num_predict": 512
+      },
+      "benchmark_scores": {
+        "suitability_composite": 78.03,
+        "blended_quality": 84.67,
+        "phrase_recall_pct": 86.68,
+        "hallucination_guard_pct": 100.0,
+        "multi_project_coverage_pct": 100.0,
+        "avg_latency_seconds": 19.23,
+        "avg_tps": 12.4
+      }
+    }
+  ]
+}
