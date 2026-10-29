@@ -20,11 +20,11 @@ function Hint({ text }) {
   return (
     <span className="group relative inline-flex">
       <button type="button" className="rounded-full text-gray-400 hover:text-gray-700" aria-label={text}>
-        <CircleHelp className="h-3.5 w-3.5" />
+        <CircleHelp className="h-4 w-4" />
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden w-64 rounded-lg bg-gray-900 px-2.5 py-1.5 text-left text-[11px] font-normal leading-snug text-white shadow-lg group-hover:block group-focus-within:block"
+        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden w-72 rounded-lg bg-gray-900 px-3 py-2 text-left text-sm font-normal leading-snug text-white shadow-lg group-hover:block group-focus-within:block"
       >
         {text}
       </span>
@@ -33,6 +33,48 @@ function Hint({ text }) {
 }
 
 const TABS = ["Configuration", "Presets", "Benchmark"];
+
+let liveBenchmark = null;
+const benchmarkWatchers = new Set();
+
+function emitBenchmark(job) {
+  liveBenchmark = job;
+  benchmarkWatchers.forEach((watch) => watch(job));
+}
+
+function watchBenchmark(watch) {
+  benchmarkWatchers.add(watch);
+  watch(liveBenchmark);
+  return () => benchmarkWatchers.delete(watch);
+}
+
+function beginBenchmark(kind, label, task) {
+  if (liveBenchmark?.running) return;
+  emitBenchmark({ kind, label, running: true, error: "", result: null });
+  task()
+    .then((result) => emitBenchmark({ kind, label, running: false, error: "", result }))
+    .catch((err) => emitBenchmark({
+      kind,
+      label,
+      running: false,
+      error: err?.message || "The test failed.",
+      result: null,
+    }));
+}
+
+function TestRunBanner({ label }) {
+  return (
+    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status" aria-live="polite">
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+          <span className="absolute h-5 w-5 animate-ping rounded-full bg-amber-400/70" />
+          <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-amber-200 border-t-amber-700" />
+        </span>
+        <p><span className="font-bold">Testing.</span> {label} The rest of this page still works.</p>
+      </div>
+    </div>
+  );
+}
 
 const MODEL_CHOICES = [
   { model: "llama3.2:3b", tone: "Balanced", emoji: "🥇", blurb: "Best mix of speed and a correct answer." },
@@ -111,46 +153,46 @@ function PresetCard({ preset, active, open, busy, onUse, onToggle, onEdit, onDel
   const onSwitches = switches.filter(([key]) => preset[key] === true).map(([, label]) => label);
   const offSwitches = switches.filter(([key]) => preset[key] === false).map(([, label]) => label);
   return (
-    <article className={`self-start rounded-xl border p-3 ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}>
-      <div className={`flex flex-col justify-between ${onEdit ? "h-[6.75rem]" : "h-[5.75rem]"}`}>
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{emoji}</span>
+    <article className={`self-start rounded-xl border p-4 ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}>
+      <div className={`flex flex-col justify-between ${onEdit ? "h-[13.5rem]" : "h-[11.5rem]"}`}>
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-2xl shadow-sm" aria-hidden="true">{emoji}</span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-bold leading-5">{preset.title}</h3>
-            <p className="truncate text-[11px] text-gray-500">{preset.llm_model || "Saved settings"}</p>
+            <h3 className="truncate text-base font-bold leading-6">{preset.title}</h3>
+            <p className="truncate text-sm text-gray-500">{preset.llm_model || "Saved settings"}</p>
           </div>
         </div>
-        <p className="truncate text-[11px] leading-4 text-gray-600" title={preset.blurb}>{preset.blurb}</p>
-        <div className="flex gap-1.5">
+        <p className="line-clamp-2 min-h-10 text-sm leading-5 text-gray-600" title={preset.blurb}>{preset.blurb}</p>
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={busy || active}
             onClick={() => onUse(preset.profile_name)}
-            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${active ? "bg-emerald-600 text-white" : "bg-gray-900 text-white"} disabled:opacity-100`}
+            className={`rounded-lg px-3 py-1.5 text-sm font-bold ${active ? "bg-emerald-600 text-white" : "bg-gray-900 text-white"} disabled:opacity-100`}
           >
             {active ? "In use" : "Use"}
           </button>
           <button
             type="button"
-            onClick={() => onToggle(open ? "" : preset.profile_name)}
-            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold"
+            onClick={() => onToggle(preset.profile_name)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold"
           >
             {open ? "Hide" : "Details"}
           </button>
           {onEdit && (
-            <button type="button" disabled={busy} onClick={() => onEdit(preset)} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold">
+            <button type="button" disabled={busy} onClick={() => onEdit(preset)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
               Edit
             </button>
           )}
           {onDelete && (
-            <button type="button" disabled={busy} onClick={() => onDelete(preset)} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700">
+            <button type="button" disabled={busy} onClick={() => onDelete(preset)} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-bold text-red-700">
               Delete
             </button>
           )}
         </div>
       </div>
       {open && (
-        <dl className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px]">
+        <dl className="mt-3 space-y-1.5 border-t border-black/5 pt-3 text-sm">
           {rows.map(([key, label]) => (
             <div key={key} className="flex items-center justify-between gap-3">
               <dt className="text-gray-500">{label}</dt>
@@ -191,22 +233,22 @@ function CompareCard({ preset, open, onToggle }) {
   const onSwitches = switches.filter(([key]) => preset[key] === true).map(([, label]) => label);
   const offSwitches = switches.filter(([key]) => preset[key] === false).map(([, label]) => label);
   return (
-    <article className={`self-start rounded-xl border p-3 ${tone}`}>
-      <div className="flex h-[5.75rem] flex-col justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{emoji}</span>
+    <article className={`self-start rounded-xl border p-4 ${tone}`}>
+      <div className="flex h-[11.5rem] flex-col justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-2xl shadow-sm" aria-hidden="true">{emoji}</span>
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-bold leading-5">{title}</h3>
-            <p className="truncate text-[11px] text-gray-500">{preset.llm_model || "Saved settings"}</p>
+            <h3 className="truncate text-base font-bold leading-6">{title}</h3>
+            <p className="truncate text-sm text-gray-500">{preset.llm_model || "Saved settings"}</p>
           </div>
         </div>
-        <p className="truncate text-[11px] leading-4 text-gray-600" title={blurb}>{blurb}</p>
-        <button type="button" onClick={() => onToggle(open ? "" : preset.profile_name)} className="w-fit rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-bold">
+        <p className="line-clamp-2 min-h-10 text-sm leading-5 text-gray-600" title={blurb}>{blurb}</p>
+        <button type="button" onClick={() => onToggle(preset.profile_name)} className="w-fit rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
           {open ? "Hide" : "Details"}
         </button>
       </div>
       {open && (
-      <dl className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px]">
+      <dl className="mt-3 space-y-1.5 border-t border-black/5 pt-3 text-sm">
         {rows.map(([key, label]) => (
           <div key={key} className="flex items-center justify-between gap-3">
             <dt className="text-gray-500">{label}</dt>
@@ -253,14 +295,14 @@ const TOGGLES = [
   ["preserve_raw_code", "Preserve raw code", "Saved with this intent. The answer path does not read this switch yet. CODE questions already keep chunks from the same project."],
 ];
 const CASES = [
-  ["What does Ajarn Surapol supervise?", "FACTUAL_LOOKUP", "The model fixes the typo, then finds the advisor."],
-  ["Which projects use the SX1276 module?", "FACTUAL_LOOKUP", "Exact-word search retrieves the hardware name."],
-  ["What are the steps and experiments of The LoRaWAN?", "DEEP_DIVE", "Drop the table of contents, then rank the methods section."],
-  ["Who advises The LoRaWAN?", "FACTOID", "Answer from metadata without calling the model."],
-  ["What type of system is The LoRaWAN?", "EXPLANATION", "Use the extracted project type."],
-  ["Does The LoRaWAN connect to Line Notify?", "FACTOID", "Refuse when the documents do not say so."],
-  ["Compare The LoRaWAN and BSLD on purpose and hardware.", "COMPARISON", "Split the context quota across two projects."],
-  ["What hardware does this project use?", "DEEP_DIVE", "Remember the project from the previous question."],
+  ["What are the SRAM and Flash memory sizes of the Arduino Mega 2560 in the Intelligent Watering System?", "FACTOID", "Two numbers from one project. A guess from general knowledge does not count."],
+  ["Which GPIO pins connect the RFID-RC522 reader to the NodeMCU ESP8266 in Online Vehicle Access Monitoring?", "FACTUAL_LOOKUP", "Exact pin names and part numbers, not a similar board."],
+  ["What are the average recall and accuracy scores achieved by the 13-feature Logistic Regression model for dormitory price prediction?", "DEEP_DIVE", "The experiment result of one named model, not a nearby model."],
+  ["How does the 5.0 GHz shutoff mechanism work in MFU Access Points Energy Saving?", "EXPLANATION", "How the mechanism works, not only which parts it uses."],
+  ["Compare Gem Car Tracking Application and Tracking and Locating System on Website on data transmission and alert methods.", "COMPARISON", "Two projects, and both how data is sent and how alerts are raised."],
+  ["Which project in the archive is recommended for building an automated precision NPK fertilizer and water dispensing system?", "RECOMMENDATION", "Pick one archived project that fits, and say why from that document."],
+  ["Which projects in the archive were advised by Dr. Mahamah Sebakor?", "EXPLORATORY", "Advisor only. A committee seat is not the same as advising the project."],
+  ["What is the Netmiko Python code used to shut down the 5GHz interface on the Cisco WLC?", "CODE", "The source snippet itself, not a description of what the code does."],
 ];
 
 export default function AIconfig() {
@@ -284,17 +326,32 @@ export default function AIconfig() {
   const [quality, setQuality] = useState(null);
   const [presetName, setPresetName] = useState("");
   const [askName, setAskName] = useState(false);
-  const [openPreset, setOpenPreset] = useState("");
+  const [openPresets, setOpenPresets] = useState(() => new Set());
   const [openQuestion, setOpenQuestion] = useState("");
-  const [openCompare, setOpenCompare] = useState("");
-  const [openRank, setOpenRank] = useState("");
+  const [openCompare, setOpenCompare] = useState(() => new Set());
+  const [openRank, setOpenRank] = useState(() => new Set());
   const [confirmState, setConfirmState] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [benchmarkNotice, setBenchmarkNotice] = useState(null);
 
   const notify = (message) => {
     setToast(message);
     setTimeout(() => setToast(""), 4000);
   };
+
+  useEffect(() => watchBenchmark((job) => {
+    setBenchmarkNotice(job);
+    if (!job || job.running) return;
+    if (job.result && job.kind === "compare") setBenchmark(job.result);
+    if (job.result && job.kind === "rank") setQuality(job.result);
+    if (job.error) setError(job.error);
+  }), []);
+
+  useEffect(() => {
+    if (tab === "Benchmark" && benchmarkNotice && !benchmarkNotice.running) {
+      emitBenchmark(null);
+    }
+  }, [tab, benchmarkNotice]);
 
   useEffect(() => {
     fetchIntents()
@@ -359,7 +416,7 @@ export default function AIconfig() {
       setAskName(false);
       setActiveLlm(model);
       setTab("Presets");
-      setOpenPreset(data.active_preset);
+      setOpenPresets((current) => new Set(current).add(data.active_preset));
       notify(`Saved ${data.active_preset}. It is under Custom. Chat uses these settings and ${model.model}.`);
     } catch (err) {
       setError(err.message);
@@ -381,6 +438,18 @@ export default function AIconfig() {
       setBusy(false);
     }
   };
+
+  const toggleNamed = (setter) => (name) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+  const togglePreset = toggleNamed(setOpenPresets);
+  const toggleCompare = toggleNamed(setOpenCompare);
+  const toggleRank = toggleNamed(setOpenRank);
 
   const onPreset = async (name) => {
     setBusy(true);
@@ -428,7 +497,11 @@ export default function AIconfig() {
       setPresets(refreshed.available_presets || {});
       setShowcase(refreshed.showcase_presets || []);
       setActivePreset(refreshed.active_preset || "");
-      if (openPreset === preset.profile_name) setOpenPreset("");
+      setOpenPresets((current) => {
+        const next = new Set(current);
+        next.delete(preset.profile_name);
+        return next;
+      });
       notify(`Deleted ${preset.profile_name}.`);
     } catch (err) {
       setError(err.message);
@@ -517,30 +590,39 @@ export default function AIconfig() {
         </button>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto p-5">
-        <h1 className="mb-4 flex items-center gap-2 text-xl font-bold">
+      <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        <h1 className="mb-5 flex items-center gap-2 text-2xl font-bold">
           AI Configuration
           <Hint text="A built-in preset applies one retrieval setup to every question. A saved preset stores every intent on this page plus the selected model." />
         </h1>
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-5 flex flex-wrap gap-2">
           {TABS.map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setTab(item)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${tab === item ? "bg-gray-900 text-white" : "bg-white text-gray-700"}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${tab === item ? "bg-gray-900 text-white" : "bg-white text-gray-700"}`}
             >
               {item}
             </button>
           ))}
         </div>
+        {benchmarkNotice?.running && <TestRunBanner label={benchmarkNotice.label} />}
+        {benchmarkNotice && !benchmarkNotice.running && tab !== "Benchmark" && (
+          <div
+            className={`mb-5 rounded-xl border px-4 py-3 text-sm ${benchmarkNotice.error ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}
+            role="status"
+          >
+            {benchmarkNotice.error ? "The test failed. Open Benchmark to read the message." : "Test finished. Open Benchmark to read the result."}
+          </div>
+        )}
         {error && <p className="mb-3 text-sm font-semibold text-red-700">{error}</p>}
 
         {tab === "Configuration" && draft && (
-          <div className="space-y-3">
+          <div className="space-y-5">
             <section>
-              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Model</h2>
-              <div className="grid items-start gap-2 md:grid-cols-3">
+              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Model</h2>
+              <div className="grid items-start gap-3 md:grid-cols-3">
                 {MODEL_CHOICES.map((choice) => {
                   const profile = profiles.find((item) => item.model === choice.model) || { provider: "ollama", model: choice.model };
                   const active = (chosenModel?.model || activeLlm?.model) === choice.model;
@@ -550,12 +632,12 @@ export default function AIconfig() {
                       key={choice.model}
                       type="button"
                       onClick={() => onSelectModel(profile)}
-                      className={`flex h-14 items-center gap-2 rounded-xl border px-2.5 py-2 text-left ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}
+                      className={`flex h-20 items-center gap-3 rounded-xl border px-4 py-3 text-left ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : tone}`}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-lg shadow-sm" aria-hidden="true">{choice.emoji}</span>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-2xl shadow-sm" aria-hidden="true">{choice.emoji}</span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold leading-5">{choice.model}</span>
-                        <span className="block truncate text-[11px] text-gray-500">{choice.blurb}</span>
+                        <span className="block truncate text-base font-bold leading-6">{choice.model}</span>
+                        <span className="line-clamp-2 text-sm text-gray-500">{choice.blurb}</span>
                       </span>
                     </button>
                   );
@@ -563,8 +645,8 @@ export default function AIconfig() {
               </div>
             </section>
             <section>
-              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Intent</h2>
-              <div className="flex flex-wrap gap-1.5">
+              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Intent</h2>
+              <div className="flex flex-wrap gap-2">
                 {INTENT_ORDER.map((key) => {
                   const active = selected === key;
                   return (
@@ -572,7 +654,7 @@ export default function AIconfig() {
                       key={key}
                       type="button"
                       onClick={() => chooseIntent(key)}
-                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : "border-gray-200 bg-white text-gray-700"}`}
+                      className={`inline-flex h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold ${active ? "border-emerald-500 bg-white ring-2 ring-emerald-100" : "border-gray-200 bg-white text-gray-700"}`}
                     >
                       <span aria-hidden="true">{INTENT_EMOJI[key]}</span>
                       {INTENT_COPY[key]?.[0]}
@@ -581,28 +663,28 @@ export default function AIconfig() {
                 })}
               </div>
             </section>
-            <section className="rounded-xl border border-gray-200 bg-white p-2.5">
-              <h2 className="mb-1.5 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+            <section className="rounded-xl border border-gray-200 bg-white p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-gray-500">
                 {INTENT_COPY[selected]?.[0]}
                 <Hint text={INTENT_COPY[selected]?.[1]} />
               </h2>
-              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {NUMBER_FIELDS.map(([field, label, hint]) => (
                   <div key={field}>
-                    <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
                       <label htmlFor={`intent-${field}`}>{label}</label>
                       <Hint text={hint} />
                     </div>
                     <input
                       id={`intent-${field}`}
-                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-xs font-normal"
+                      className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal"
                       value={draft[field] ?? ""}
                       onChange={(event) => updateDraft(field, event.target.value)}
                     />
                   </div>
                 ))}
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-4 flex flex-wrap gap-2">
                 {TOGGLES.map(([field, label, hint]) => {
                   const on = Boolean(draft[field]);
                   return (
@@ -611,40 +693,40 @@ export default function AIconfig() {
                       type="button"
                       title={hint}
                       onClick={() => updateDraft(field, !on)}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${on ? "bg-gray-900 text-white" : "border border-gray-200 bg-gray-50 text-gray-600"}`}
+                      className={`rounded-full px-3.5 py-1.5 text-sm font-semibold ${on ? "bg-gray-900 text-white" : "border border-gray-200 bg-gray-50 text-gray-600"}`}
                     >
                       {label}{on ? " on" : " off"}
                     </button>
                   );
                 })}
               </div>
-              <div className="mt-2">
-                <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
+              <div className="mt-4">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
                   <label htmlFor="intent-instruction">Extra instruction</label>
                   <Hint text="Appended to the system prompt for this intent only." />
                 </div>
                 <input
                   id="intent-instruction"
                   placeholder="Example: answer in a Markdown table"
-                  className="mt-0.5 w-full rounded-lg border px-2 py-1 text-xs font-normal"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal"
                   value={draft.custom_system_instruction || ""}
                   onChange={(event) => updateDraft("custom_system_instruction", event.target.value)}
                 />
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 {askName && (
                   <input
                     autoFocus
                     value={presetName}
                     onChange={(event) => setPresetName(event.target.value)}
                     placeholder="Preset name"
-                    className="w-40 rounded-lg border bg-white px-2.5 py-1 text-[11px]"
+                    className="w-52 rounded-lg border bg-white px-3 py-2 text-sm"
                   />
                 )}
-                <button type="button" disabled={busy} onClick={() => (askName ? onSavePreset() : setAskName(true))} className="rounded-lg bg-gray-900 px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-60">
+                <button type="button" disabled={busy} onClick={() => (askName ? onSavePreset() : setAskName(true))} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
                   {busy ? "Saving..." : askName ? "Save this name" : "Save preset"}
                 </button>
-                <button type="button" disabled={busy} onClick={onReset} className="rounded-lg border bg-white px-2.5 py-1 text-[11px] font-bold">
+                <button type="button" disabled={busy} onClick={onReset} className="rounded-lg border bg-white px-4 py-2 text-sm font-bold">
                   Reset
                 </button>
               </div>
@@ -653,29 +735,29 @@ export default function AIconfig() {
         )}
 
         {tab === "Presets" && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <section>
-              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Recommended</h2>
-              <div className="grid items-start gap-3 md:grid-cols-3">
+              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Recommended</h2>
+              <div className="grid items-start gap-4 md:grid-cols-3">
                 {showcase.map((preset) => (
                   <PresetCard
                     key={preset.profile_name}
                     preset={preset}
                     active={activePreset === preset.profile_name}
-                    open={openPreset === preset.profile_name}
+                    open={openPresets.has(preset.profile_name)}
                     busy={busy}
                     onUse={onPreset}
-                    onToggle={setOpenPreset}
+                    onToggle={togglePreset}
                   />
                 ))}
               </div>
             </section>
             <section>
-              <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500">Custom</h2>
+              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Custom</h2>
               {customPresets.length === 0 ? (
-                <p className="text-xs text-gray-500">No custom presets yet. Save one from Configuration.</p>
+                <p className="text-sm text-gray-500">No custom presets yet. Save one from Configuration.</p>
               ) : (
-                <div className="grid items-start gap-3 md:grid-cols-3">
+                <div className="grid items-start gap-4 md:grid-cols-3">
                   {customPresets.map((preset) => (
                     <PresetCard
                       key={preset.profile_name}
@@ -686,10 +768,10 @@ export default function AIconfig() {
                         blurb: `Saved by you. Answers with ${preset.llm_model || "the selected model"}.`,
                       }}
                       active={activePreset === preset.profile_name}
-                      open={openPreset === preset.profile_name}
+                      open={openPresets.has(preset.profile_name)}
                       busy={busy}
                       onUse={onPreset}
-                      onToggle={setOpenPreset}
+                      onToggle={togglePreset}
                       onEdit={onEditPreset}
                       onDelete={onDeletePreset}
                       showIntents={preset.kind === "intent_bundle"}
@@ -702,115 +784,109 @@ export default function AIconfig() {
         )}
 
         {tab === "Benchmark" && (
-          <div className="space-y-3">
-            <section className="rounded-xl border border-gray-200 bg-white p-3">
-              <h2 className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+          <div className="space-y-5">
+            <section className="rounded-xl border border-gray-200 bg-white p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-gray-500">
                 Compare
                 <Hint text="Each preset answers the same questions 5 times. Score is the average chance of citing the expected document. Rank prefers the closer answer, then the faster one." />
               </h2>
-              <div className="flex flex-wrap items-end gap-2">
+              <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
                     <label htmlFor="benchmark-baseline">Baseline</label>
                     <Hint text="The preset the candidate is compared against." />
                   </div>
-                  <select id="benchmark-baseline" className="mt-0.5 block h-8 rounded-lg border bg-white px-2 text-xs" value={baselineName} onChange={(event) => setBaselineName(event.target.value)}>
+                  <select id="benchmark-baseline" className="mt-1 block h-10 rounded-lg border bg-white px-3 text-sm" value={baselineName} onChange={(event) => setBaselineName(event.target.value)}>
                     {compareChoices.map((choice) => <option key={choice.name} value={choice.name}>{choice.title}</option>)}
                   </select>
                 </div>
                 <div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-500">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-500">
                     <label htmlFor="benchmark-candidate">Candidate</label>
                     <Hint text="The preset you want to measure." />
                   </div>
-                  <select id="benchmark-candidate" className="mt-0.5 block h-8 rounded-lg border bg-white px-2 text-xs" value={candidateName} onChange={(event) => setCandidateName(event.target.value)}>
+                  <select id="benchmark-candidate" className="mt-1 block h-10 rounded-lg border bg-white px-3 text-sm" value={candidateName} onChange={(event) => setCandidateName(event.target.value)}>
                     {compareChoices.map((choice) => <option key={choice.name} value={choice.name}>{choice.title}</option>)}
                   </select>
                 </div>
                 <button
                   type="button"
-                  disabled={busy || baselineName === candidateName}
-                  onClick={async () => {
-                    setBusy(true);
+                  disabled={Boolean(benchmarkNotice?.running) || baselineName === candidateName}
+                  onClick={() => {
                     setError("");
-                    try {
-                      setBenchmark(await runBenchmark(baselineName, candidateName));
-                    } catch (err) {
-                      setError(err.message);
-                    } finally {
-                      setBusy(false);
-                    }
+                    beginBenchmark(
+                      "compare",
+                      `Comparing ${compareTitle(baselineName)} with ${compareTitle(candidateName)}.`,
+                      () => runBenchmark(baselineName, candidateName),
+                    );
                   }}
-                  className="h-8 rounded-lg bg-gray-900 px-2.5 text-[11px] font-bold text-white disabled:opacity-60"
+                  className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-bold text-white disabled:opacity-60"
                 >
-                  {busy ? "Running 5 times..." : "Compare · 5 runs"}
+                  {benchmarkNotice?.running && benchmarkNotice.kind === "compare" ? "Testing..." : "Compare · 5 runs"}
                 </button>
                 <button
                   type="button"
-                  disabled={busy || showcase.length < 2}
-                  onClick={async () => {
-                    setBusy(true);
+                  disabled={Boolean(benchmarkNotice?.running) || showcase.length < 2}
+                  onClick={() => {
                     setError("");
-                    try {
-                      setQuality(await rankQuality(showcase.map((preset) => preset.profile_name)));
-                    } catch (err) {
-                      setError(err.message);
-                    } finally {
-                      setBusy(false);
-                    }
+                    beginBenchmark(
+                      "rank",
+                      "Ranking Balanced, Fast, and Academic.",
+                      () => rankQuality(showcase.map((preset) => preset.profile_name)),
+                    );
                   }}
-                  className="h-8 rounded-lg border bg-white px-2.5 text-[11px] font-bold disabled:opacity-60"
+                  className="h-10 rounded-lg border bg-white px-4 text-sm font-bold disabled:opacity-60"
                 >
-                  Rank recommended
+                  {benchmarkNotice?.running && benchmarkNotice.kind === "rank" ? "Testing..." : "Rank recommended"}
                 </button>
                 <Hint text="Runs Balanced, Fast, and Academic on the same questions, five times each. Orders them by how often the expected document is cited, then by speed. It does not change the preset in use." />
               </div>
-              <div className="mt-2 grid items-start gap-2 md:grid-cols-2">
+              <div className="mt-4 grid items-start gap-4 md:grid-cols-2">
                 {[baselineName, candidateName].map((name) => {
                   const choice = compareChoices.find((item) => item.name === name);
                   return choice ? (
                     <CompareCard
                       key={name}
                       preset={choice.preset}
-                      open={openCompare === name}
-                      onToggle={setOpenCompare}
+                      open={openCompare.has(name)}
+                      onToggle={toggleCompare}
                     />
                   ) : null;
                 })}
               </div>
               {benchmark && (
                 <>
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                  <div className="mt-4 flex flex-wrap gap-2 text-sm">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700">
                       Delta {benchmark.summary.delta_score}
                       <Hint text="Candidate hit score minus baseline. 100 means the expected source was found." />
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700">
                       {benchmark.summary.speedup}x
                       <Hint text="Baseline time divided by candidate time. Above 1 means the candidate is faster." />
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 font-semibold text-gray-700">
                       {benchmark.summary.cases} cases
                       <Hint text="How many spec questions ran. Each one is answered 5 times and the numbers here are the average." />
                     </span>
                   </div>
                   {benchmark.details?.length > 0 && (
-                    <div className="mt-2 overflow-x-auto rounded-xl border border-gray-200">
-                      <table className="w-full text-left text-[11px]">
+                    <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
+                      <table className="w-full text-left text-sm">
                         <thead>
                           <tr className="border-b bg-gray-50 text-gray-500">
-                            <th className="px-3 py-1.5 font-semibold">Question</th>
-                            <th className="px-3 py-1.5 font-semibold">{compareTitle(baselineName)} score</th>
-                            <th className="px-3 py-1.5 font-semibold">{compareTitle(candidateName)} score</th>
-                            <th className="px-3 py-1.5 font-semibold">{compareTitle(baselineName)} time</th>
-                            <th className="px-3 py-1.5 font-semibold">{compareTitle(candidateName)} time</th>
-                            <th className="px-3 py-1.5 font-semibold">Speedup</th>
+                            <th className="px-3 py-2.5 font-semibold">Question</th>
+                            <th className="px-3 py-2.5 font-semibold">{compareTitle(baselineName)} score</th>
+                            <th className="px-3 py-2.5 font-semibold">{compareTitle(candidateName)} score</th>
+                            <th className="px-3 py-2.5 font-semibold">{compareTitle(baselineName)} time</th>
+                            <th className="px-3 py-2.5 font-semibold">{compareTitle(candidateName)} time</th>
+                            <th className="px-3 py-2.5 font-semibold">Speedup</th>
                           </tr>
                         </thead>
                         <tbody>
                           {benchmark.details.map((row) => (
                             <tr key={row.id || row.query} className="border-t align-top">
-                              <td className="px-3 py-1.5">
+                              <td className="px-3 py-2.5">
                                 <button type="button" className="text-left font-semibold text-gray-900 underline" onClick={() => setOpenQuestion((current) => (current === row.query ? "" : row.query))}>
                                   {row.query}
                                 </button>
@@ -823,11 +899,11 @@ export default function AIconfig() {
                                   </div>
                                 )}
                               </td>
-                              <td className="px-3 py-1.5 font-semibold">{row.baseline_score}</td>
-                              <td className="px-3 py-1.5 font-semibold">{row.candidate_score}</td>
-                              <td className="px-3 py-1.5">{row.baseline_seconds}s</td>
-                              <td className="px-3 py-1.5">{row.candidate_seconds}s</td>
-                              <td className="px-3 py-1.5">{row.speedup}x</td>
+                              <td className="px-3 py-2.5 font-semibold">{row.baseline_score}</td>
+                              <td className="px-3 py-2.5 font-semibold">{row.candidate_score}</td>
+                              <td className="px-3 py-2.5">{row.baseline_seconds}s</td>
+                              <td className="px-3 py-2.5">{row.candidate_seconds}s</td>
+                              <td className="px-3 py-2.5">{row.speedup}x</td>
                             </tr>
                           ))}
                         </tbody>
@@ -835,7 +911,7 @@ export default function AIconfig() {
                     </div>
                   )}
                   {benchmark.llm_summary && (
-                    <div className="mt-2 whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-800">
+                    <div className="mt-4 whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800">
                       <div className="mb-1 flex items-center gap-1 font-semibold uppercase tracking-wide text-gray-500">
                         Summary
                         <Hint text="Written by the active model from both answers, their sources, and the times in this table." />
@@ -848,7 +924,7 @@ export default function AIconfig() {
             </section>
             {quality && (
               <section className="space-y-2">
-                <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">
                   Closest answer first · average of {quality.repeats} runs
                 </h2>
                 {quality.presets.map((item, index) => {
@@ -856,21 +932,21 @@ export default function AIconfig() {
                   const tone = PRESET_TONE[title] || "border-gray-200 bg-white";
                   const emoji = PRESET_EMOJI[title] || compareChoices.find((choice) => choice.name === item.profile_name)?.preset.emoji || "🏷️";
                   return (
-                    <article key={item.profile_name} className={`self-start rounded-xl border px-3 py-2 ${tone}`}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-base shadow-sm" aria-hidden="true">{emoji}</span>
+                    <article key={item.profile_name} className={`self-start rounded-xl border px-4 py-3 ${tone}`}>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-2xl shadow-sm" aria-hidden="true">{emoji}</span>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-bold leading-5">{index + 1}. {title}</div>
-                          <div className="truncate text-[11px] text-gray-500">{item.llm_model}</div>
+                          <div className="text-base font-bold leading-6">{index + 1}. {title}</div>
+                          <div className="truncate text-sm text-gray-500">{item.llm_model}</div>
                         </div>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-700">hit {item.score}</span>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-700">{item.seconds}s</span>
-                        <button type="button" onClick={() => setOpenRank((current) => (current === item.profile_name ? "" : item.profile_name))} className="rounded-lg border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-bold">
-                          {openRank === item.profile_name ? "Hide" : "Details"}
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-gray-700">hit {item.score}</span>
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-gray-700">{item.seconds}s</span>
+                        <button type="button" onClick={() => toggleRank(item.profile_name)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
+                          {openRank.has(item.profile_name) ? "Hide" : "Details"}
                         </button>
                       </div>
-                      {openRank === item.profile_name && (
-                        <ul className="mt-2 space-y-1 border-t border-black/5 pt-2 text-[11px] text-gray-600">
+                      {openRank.has(item.profile_name) && (
+                        <ul className="mt-3 space-y-1.5 border-t border-black/5 pt-3 text-sm text-gray-600">
                           {item.questions.map((question) => (
                             <li key={question.query} className="flex items-start justify-between gap-3">
                               <span className="min-w-0">{question.query}</span>
@@ -884,15 +960,15 @@ export default function AIconfig() {
                 })}
               </section>
             )}
-            <section className="rounded-xl border border-gray-200 bg-white px-3 py-2">
-              <h2 className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+            <section className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-gray-500">
                 Spec questions
                 <Hint text="These are the spec questions. Hover a row for what that case checks." />
               </h2>
-              <ul className="grid gap-x-4 md:grid-cols-2">
+              <ul className="grid gap-x-6 md:grid-cols-2">
                 {CASES.map(([query, intent, note]) => (
-                  <li key={query} className="flex items-start gap-1.5 border-b border-gray-100 py-1 text-[11px] leading-4 last:border-0 md:[&:nth-last-child(-n+2)]:border-0">
-                    <span className="w-[8.25rem] shrink-0 font-semibold text-gray-500">
+                  <li key={query} className="flex items-start gap-2 border-b border-gray-100 py-2.5 text-sm leading-5 last:border-0 md:[&:nth-last-child(-n+2)]:border-0">
+                    <span className="w-40 shrink-0 font-semibold text-gray-500">
                       <span aria-hidden="true">{INTENT_EMOJI[intent]} </span>{INTENT_COPY[intent]?.[0] || intent}
                     </span>
                     <span className="min-w-0 flex-1 text-gray-800">{query}</span>
@@ -914,7 +990,7 @@ export default function AIconfig() {
         onConfirm={acceptConfirm}
         onClose={() => { if (!confirmBusy) setConfirmState(null); }}
       />
-      {toast && <div className="fixed right-4 top-4 z-[60] rounded-xl bg-gray-900 px-4 py-3 text-xs font-bold text-white shadow-xl">{toast}</div>}
+      {toast && <div className="fixed right-4 top-4 z-[60] rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white shadow-xl">{toast}</div>}
     </div>
   );
 }

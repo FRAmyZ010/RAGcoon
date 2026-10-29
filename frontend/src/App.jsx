@@ -76,6 +76,33 @@ function createWorkspaceId() {
   return `ws-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const TOPIC_STYLE = {
+  Hardware: "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-500 hover:text-white",
+  Web: "border-sky-300 bg-sky-50 text-sky-950 hover:bg-sky-600 hover:text-white",
+  "Machine learning": "border-violet-300 bg-violet-50 text-violet-950 hover:bg-violet-600 hover:text-white",
+  Network: "border-emerald-300 bg-emerald-50 text-emerald-950 hover:bg-emerald-600 hover:text-white",
+  Data: "border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-500 hover:text-white",
+  Other: "border-gray-300 bg-white text-gray-800 hover:bg-gray-900 hover:text-white",
+};
+
+function TopicChip({ name, count, onClick, large = false }) {
+  const tone = TOPIC_STYLE[name] || TOPIC_STYLE.Other;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 font-semibold shadow-sm transition ${large ? "text-sm" : "text-xs"} ${tone}`}
+    >
+      {name}
+      {count > 0 && (
+        <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold leading-none text-gray-700">
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClose }) {
   const needle = docQuery.trim().toLowerCase();
   const matches = documents.filter((doc) => `${doc.title} ${doc.filename}`.toLowerCase().includes(needle));
@@ -88,20 +115,19 @@ function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClos
         </button>
       </div>
       <div className="border-b border-gray-200 px-3 py-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Keywords</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Document topics</p>
+        <p className="mt-1 text-xs leading-4 text-gray-500">Taken from keywords in the PDFs, then grouped. Click one to ask.</p>
         {keywords.length === 0 ? (
-          <p className="mt-1.5 text-xs text-gray-500">No keywords yet</p>
+          <p className="mt-1.5 text-xs text-gray-500">No topics yet</p>
         ) : (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {keywords.map((item) => (
-              <button
+              <TopicChip
                 key={item.keyword}
-                type="button"
-                onClick={() => onAsk(`Which senior projects mention ${item.keyword}?`)}
-                className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-100"
-              >
-                {item.keyword}
-              </button>
+                name={item.keyword}
+                count={item.count}
+                onClick={() => onAsk(`Which senior projects are in the ${item.keyword} group?`)}
+              />
             ))}
           </div>
         )}
@@ -124,9 +150,9 @@ function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClos
               type="button"
               onClick={() => openDocumentPreview(doc.id)}
               title={doc.filename}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-gray-800 hover:bg-white"
+              className="mb-1 flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left text-sm text-gray-800 shadow-sm transition hover:border-gray-400"
             >
-              <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+              <FileText className="h-4 w-4 shrink-0 text-amber-700" />
               <span className="min-w-0 flex-1 truncate">{doc.title}</span>
             </button>
           </li>
@@ -664,17 +690,19 @@ export default function App() {
                   ))}
                 </div>
                 {catalog.top_keywords.length > 0 && (
-                  <div className="mt-4 flex w-full max-w-xl flex-wrap justify-center gap-1.5">
+                  <div className="mt-4 w-full max-w-xl">
+                    <p className="mb-2 text-center text-xs text-gray-500">Topics from keywords in the PDFs. Click one to ask.</p>
+                    <div className="flex flex-wrap justify-center gap-1.5">
                     {catalog.top_keywords.map((item) => (
-                      <button
+                      <TopicChip
                         key={item.keyword}
-                        type="button"
-                        onClick={() => handleSuggestion(`Which senior projects mention ${item.keyword}?`)}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-                      >
-                        {item.keyword}
-                      </button>
+                        name={item.keyword}
+                        count={item.count}
+                        large
+                        onClick={() => handleSuggestion(`Which senior projects are in the ${item.keyword} group?`)}
+                      />
                     ))}
+                    </div>
                   </div>
                 )}
               </div>

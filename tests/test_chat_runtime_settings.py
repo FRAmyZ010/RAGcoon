@@ -73,12 +73,10 @@ class HandoffIntentMatrixTests(unittest.TestCase):
         self.assertEqual(get_intent_config("CODE").max_context_chunks, 4)
 
     def test_handoff_cases_follow_the_sheet_questions(self):
-        cases = load_handoff_cases(limit=2)
-        self.assertEqual(len(cases), 2)
-        self.assertIn(cases[0]["query"], {
-            "อาจารสุรพลดูแลเรื่องไรบ้าง",
-            "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
-        })
+        cases = load_handoff_cases()
+        self.assertEqual(len(cases), 8)
+        self.assertTrue(all(case["query"].isascii() for case in cases))
+        self.assertIn("Arduino Mega 2560", cases[0]["query"])
 
     def test_benchmark_summary_prompt_includes_both_answers(self):
         prompt = build_benchmark_summary_prompt("fast_mode", "deep_academic", [{

@@ -13,6 +13,7 @@ class Document(Base):
     title = Column(String(255), nullable=True)
     supervisory_committee = Column(Text, nullable=True)
     keywords = Column(Text, nullable=True)
+    keyword_groups = Column(Text, nullable=True)
     status = Column(String(50), nullable=False, default="PENDING")
     status_message = Column(Text, nullable=True)
     view_count = Column(Integer, nullable=False, default=0, server_default="0")

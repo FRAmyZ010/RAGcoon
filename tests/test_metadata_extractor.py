@@ -43,6 +43,27 @@ def test_extract_approval_committee_with_adviser():
     assert committee == ["Dr. Mahamah Sebakor", "Dr. Surapong Uttama"]
 
 
+def test_extract_keywords_from_label():
+    text = """
+    Intelligent Watering System
+    Keywords: Arduino Mega 2560, soil moisture, LoRa
+    ABSTRACT
+    This project waters plants.
+    """
+    meta = extract_project_metadata(text)
+    assert meta["keywords"] == "Arduino Mega 2560, soil moisture, LoRa"
+
+
+def test_extract_thai_keywords_on_the_next_line():
+    text = """
+    ระบบรดน้ำอัจฉริยะ
+    คำสำคัญ
+    เซนเซอร์, อาดูอิโน, โลรา
+    """
+    meta = extract_project_metadata(text)
+    assert meta["keywords"] == "เซนเซอร์, อาดูอิโน, โลรา"
+
+
 def test_extract_academic_metadata():
     sample_text = """
     Gem car tracking application
