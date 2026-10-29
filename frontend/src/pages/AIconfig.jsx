@@ -174,7 +174,7 @@ function PresetCard({ preset, active, open, busy, onUse, onToggle, onEdit, onDel
           </button>
           <button
             type="button"
-            onClick={() => onToggle(open ? "" : preset.profile_name)}
+            onClick={() => onToggle(preset.profile_name)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold"
           >
             {open ? "Hide" : "Details"}
@@ -243,7 +243,7 @@ function CompareCard({ preset, open, onToggle }) {
           </div>
         </div>
         <p className="line-clamp-2 min-h-10 text-sm leading-5 text-gray-600" title={blurb}>{blurb}</p>
-        <button type="button" onClick={() => onToggle(open ? "" : preset.profile_name)} className="w-fit rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
+        <button type="button" onClick={() => onToggle(preset.profile_name)} className="w-fit rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
           {open ? "Hide" : "Details"}
         </button>
       </div>
@@ -326,10 +326,10 @@ export default function AIconfig() {
   const [quality, setQuality] = useState(null);
   const [presetName, setPresetName] = useState("");
   const [askName, setAskName] = useState(false);
-  const [openPreset, setOpenPreset] = useState("");
+  const [openPresets, setOpenPresets] = useState(() => new Set());
   const [openQuestion, setOpenQuestion] = useState("");
-  const [openCompare, setOpenCompare] = useState("");
-  const [openRank, setOpenRank] = useState("");
+  const [openCompare, setOpenCompare] = useState(() => new Set());
+  const [openRank, setOpenRank] = useState(() => new Set());
   const [confirmState, setConfirmState] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [benchmarkNotice, setBenchmarkNotice] = useState(null);
@@ -416,7 +416,7 @@ export default function AIconfig() {
       setAskName(false);
       setActiveLlm(model);
       setTab("Presets");
-      setOpenPreset(data.active_preset);
+      setOpenPresets((current) => new Set(current).add(data.active_preset));
       notify(`Saved ${data.active_preset}. It is under Custom. Chat uses these settings and ${model.model}.`);
     } catch (err) {
       setError(err.message);
@@ -438,6 +438,18 @@ export default function AIconfig() {
       setBusy(false);
     }
   };
+
+  const toggleNamed = (setter) => (name) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+  const togglePreset = toggleNamed(setOpenPresets);
+  const toggleCompare = toggleNamed(setOpenCompare);
+  const toggleRank = toggleNamed(setOpenRank);
 
   const onPreset = async (name) => {
     setBusy(true);
@@ -485,7 +497,11 @@ export default function AIconfig() {
       setPresets(refreshed.available_presets || {});
       setShowcase(refreshed.showcase_presets || []);
       setActivePreset(refreshed.active_preset || "");
-      if (openPreset === preset.profile_name) setOpenPreset("");
+      setOpenPresets((current) => {
+        const next = new Set(current);
+        next.delete(preset.profile_name);
+        return next;
+      });
       notify(`Deleted ${preset.profile_name}.`);
     } catch (err) {
       setError(err.message);
@@ -728,10 +744,10 @@ export default function AIconfig() {
                     key={preset.profile_name}
                     preset={preset}
                     active={activePreset === preset.profile_name}
-                    open={openPreset === preset.profile_name}
+                    open={openPresets.has(preset.profile_name)}
                     busy={busy}
                     onUse={onPreset}
-                    onToggle={setOpenPreset}
+                    onToggle={togglePreset}
                   />
                 ))}
               </div>
@@ -752,10 +768,10 @@ export default function AIconfig() {
                         blurb: `Saved by you. Answers with ${preset.llm_model || "the selected model"}.`,
                       }}
                       active={activePreset === preset.profile_name}
-                      open={openPreset === preset.profile_name}
+                      open={openPresets.has(preset.profile_name)}
                       busy={busy}
                       onUse={onPreset}
-                      onToggle={setOpenPreset}
+                      onToggle={togglePreset}
                       onEdit={onEditPreset}
                       onDelete={onDeletePreset}
                       showIntents={preset.kind === "intent_bundle"}
@@ -832,8 +848,8 @@ export default function AIconfig() {
                     <CompareCard
                       key={name}
                       preset={choice.preset}
-                      open={openCompare === name}
-                      onToggle={setOpenCompare}
+                      open={openCompare.has(name)}
+                      onToggle={toggleCompare}
                     />
                   ) : null;
                 })}
@@ -925,11 +941,11 @@ export default function AIconfig() {
                         </div>
                         <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-gray-700">hit {item.score}</span>
                         <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-gray-700">{item.seconds}s</span>
-                        <button type="button" onClick={() => setOpenRank((current) => (current === item.profile_name ? "" : item.profile_name))} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
-                          {openRank === item.profile_name ? "Hide" : "Details"}
+                        <button type="button" onClick={() => toggleRank(item.profile_name)} className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-bold">
+                          {openRank.has(item.profile_name) ? "Hide" : "Details"}
                         </button>
                       </div>
-                      {openRank === item.profile_name && (
+                      {openRank.has(item.profile_name) && (
                         <ul className="mt-3 space-y-1.5 border-t border-black/5 pt-3 text-sm text-gray-600">
                           {item.questions.map((question) => (
                             <li key={question.query} className="flex items-start justify-between gap-3">
