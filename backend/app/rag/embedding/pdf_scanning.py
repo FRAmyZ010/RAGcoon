@@ -90,6 +90,12 @@ def scan_pdf_document(file_path):
             project_title=special_meta.get("project_title"),
         )
         special_meta.update(enrichment)
+        if not special_meta.get("keywords"):
+            techs = special_meta.get("key_technologies") or []
+            if isinstance(techs, list):
+                names = [str(item).strip() for item in techs if str(item).strip()]
+                if names:
+                    special_meta["keywords"] = ", ".join(names[:15])
 
         # 4. Keep every scanned page in order. Blank pages should still carry their
         #    original page number so the numbering stays aligned with the PDF scan.

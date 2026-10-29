@@ -5,6 +5,11 @@ _DEGREE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _NAME_PREFIX_PATTERN = re.compile(r"^(?:Mr\.|Ms\.|Miss|Mrs\.)\s+[A-Z].*", re.IGNORECASE)
+_KEYWORD_LABEL = re.compile(r"^(?:Keywords?|คำสำคัญ)\b\s*[:：\-]?\s*(.*)$", re.IGNORECASE)
+_KEYWORD_STOP = re.compile(
+    r"^(?:ABSTRACT|บทคัดย่อ|CHAPTER|REFERENCES|ACKNOWLEDGEMENTS?|TABLE\s+OF\s+CONTENTS|สารบัญ)\b",
+    re.IGNORECASE,
+)
 
 _DOC_HEADER_PATTERN = re.compile(
     r"^\(?\s*(?:PROJECT\s+PROPO?S[AO]?L|PRE[\-\s]PROJECT(?:\s+PROPO?S[AO]?L)?|SENIOR\s+PROJECT(?:\s+PROPO?S[AO]?L)?|FINAL\s+PROJECT(?:\s+REPORT)?|FINAL\s+REPORT)\s*\)?\s*[:\-]?",
@@ -206,6 +211,34 @@ def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]
     return advisor, committee
 
 
+def _extract_keywords(lines: list[str]) -> str | None:
+    """Read a Keywords or คำสำคัญ line. Values may sit on that line or the next one."""
+    for index, line in enumerate(lines):
+        match = _KEYWORD_LABEL.match(line)
+        if not match:
+            continue
+        chunks = [match.group(1).strip(" .:-")]
+        if not chunks[0]:
+            for follow in lines[index + 1 : index + 3]:
+                if _KEYWORD_STOP.match(follow):
+                    break
+                chunks.append(follow.strip(" .:-"))
+        raw = " ".join(part for part in chunks if part)
+        raw = _KEYWORD_STOP.split(raw, maxsplit=1)[0]
+        items = [
+            item.strip(" .;")
+            for item in re.split(r"[,،;|/、]", raw)
+            if item.strip(" .;")
+        ]
+        if len(items) == 1 and len(items[0]) > 80:
+            return None
+        if not items:
+            continue
+        unique = list(dict.fromkeys(items))[:15]
+        return ", ".join(unique)
+    return None
+
+
 def extract_project_metadata(first_page_text: str, filename: str | None = None) -> dict[str, str | None]:
     metadata: dict[str, str | None] = {
         "project_title": None,
@@ -224,6 +257,7 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
         return metadata
 
     lines = [line.strip() for line in first_page_text.split('\n') if line.strip()]
+    metadata["keywords"] = _extract_keywords(lines)
 
     if len(lines) >= 1:
         # --- Project Title ---

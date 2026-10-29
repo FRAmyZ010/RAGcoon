@@ -340,15 +340,15 @@ def run_benchmark(payload: dict, _db: Session = Depends(_admin)):
     if baseline == candidate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Baseline and candidate must be different presets")
     try:
-        limit = int(payload.get("limit") or 2)
+        limit = int(payload.get("limit") or 8)
     except (TypeError, ValueError):
-        limit = 2
+        limit = 8
     try:
         repeats = int(payload.get("repeats") or 5)
     except (TypeError, ValueError):
         repeats = 5
     try:
-        return run_preset_benchmark(baseline, candidate, min(max(limit, 1), 6), repeats)
+        return run_preset_benchmark(baseline, candidate, min(max(limit, 1), 8), repeats)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -359,14 +359,14 @@ def rank_quality(payload: dict, _db: Session = Depends(_admin)):
     from app.rag.evaluation.benchmark_run import rank_answer_quality
 
     try:
-        limit = int(payload.get("limit") or 2)
+        limit = int(payload.get("limit") or 8)
         repeats = int(payload.get("repeats") or 5)
     except (TypeError, ValueError):
-        limit, repeats = 2, 5
+        limit, repeats = 8, 5
     raw_names = payload.get("preset_names")
     names = [str(name) for name in raw_names if str(name).strip()] if isinstance(raw_names, list) else None
     try:
-        return rank_answer_quality(preset_names=names or None, limit=min(max(limit, 1), 6), repeats=repeats)
+        return rank_answer_quality(preset_names=names or None, limit=min(max(limit, 1), 8), repeats=repeats)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

@@ -34,6 +34,48 @@ function Hint({ text }) {
 
 const TABS = ["Configuration", "Presets", "Benchmark"];
 
+let liveBenchmark = null;
+const benchmarkWatchers = new Set();
+
+function emitBenchmark(job) {
+  liveBenchmark = job;
+  benchmarkWatchers.forEach((watch) => watch(job));
+}
+
+function watchBenchmark(watch) {
+  benchmarkWatchers.add(watch);
+  watch(liveBenchmark);
+  return () => benchmarkWatchers.delete(watch);
+}
+
+function beginBenchmark(kind, label, task) {
+  if (liveBenchmark?.running) return;
+  emitBenchmark({ kind, label, running: true, error: "", result: null });
+  task()
+    .then((result) => emitBenchmark({ kind, label, running: false, error: "", result }))
+    .catch((err) => emitBenchmark({
+      kind,
+      label,
+      running: false,
+      error: err?.message || "The test failed.",
+      result: null,
+    }));
+}
+
+function TestRunBanner({ label }) {
+  return (
+    <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status" aria-live="polite">
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
+          <span className="absolute h-5 w-5 animate-ping rounded-full bg-amber-400/70" />
+          <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-amber-200 border-t-amber-700" />
+        </span>
+        <p><span className="font-bold">Testing.</span> {label} The rest of this page still works.</p>
+      </div>
+    </div>
+  );
+}
+
 const MODEL_CHOICES = [
   { model: "llama3.2:3b", tone: "Balanced", emoji: "🥇", blurb: "Best mix of speed and a correct answer." },
   { model: "qwen2.5:3b", tone: "Fast", emoji: "🥈", blurb: "Highest speed on this machine." },
@@ -253,14 +295,14 @@ const TOGGLES = [
   ["preserve_raw_code", "Preserve raw code", "Saved with this intent. The answer path does not read this switch yet. CODE questions already keep chunks from the same project."],
 ];
 const CASES = [
-  ["What does Ajarn Surapol supervise?", "FACTUAL_LOOKUP", "The model fixes the typo, then finds the advisor."],
-  ["Which projects use the SX1276 module?", "FACTUAL_LOOKUP", "Exact-word search retrieves the hardware name."],
-  ["What are the steps and experiments of The LoRaWAN?", "DEEP_DIVE", "Drop the table of contents, then rank the methods section."],
-  ["Who advises The LoRaWAN?", "FACTOID", "Answer from metadata without calling the model."],
-  ["What type of system is The LoRaWAN?", "EXPLANATION", "Use the extracted project type."],
-  ["Does The LoRaWAN connect to Line Notify?", "FACTOID", "Refuse when the documents do not say so."],
-  ["Compare The LoRaWAN and BSLD on purpose and hardware.", "COMPARISON", "Split the context quota across two projects."],
-  ["What hardware does this project use?", "DEEP_DIVE", "Remember the project from the previous question."],
+  ["What are the SRAM and Flash memory sizes of the Arduino Mega 2560 in the Intelligent Watering System?", "FACTOID", "Two numbers from one project. A guess from general knowledge does not count."],
+  ["Which GPIO pins connect the RFID-RC522 reader to the NodeMCU ESP8266 in Online Vehicle Access Monitoring?", "FACTUAL_LOOKUP", "Exact pin names and part numbers, not a similar board."],
+  ["What are the average recall and accuracy scores achieved by the 13-feature Logistic Regression model for dormitory price prediction?", "DEEP_DIVE", "The experiment result of one named model, not a nearby model."],
+  ["How does the 5.0 GHz shutoff mechanism work in MFU Access Points Energy Saving?", "EXPLANATION", "How the mechanism works, not only which parts it uses."],
+  ["Compare Gem Car Tracking Application and Tracking and Locating System on Website on data transmission and alert methods.", "COMPARISON", "Two projects, and both how data is sent and how alerts are raised."],
+  ["Which project in the archive is recommended for building an automated precision NPK fertilizer and water dispensing system?", "RECOMMENDATION", "Pick one archived project that fits, and say why from that document."],
+  ["Which projects in the archive were advised by Dr. Mahamah Sebakor?", "EXPLORATORY", "Advisor only. A committee seat is not the same as advising the project."],
+  ["What is the Netmiko Python code used to shut down the 5GHz interface on the Cisco WLC?", "CODE", "The source snippet itself, not a description of what the code does."],
 ];
 
 export default function AIconfig() {
@@ -290,11 +332,26 @@ export default function AIconfig() {
   const [openRank, setOpenRank] = useState("");
   const [confirmState, setConfirmState] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [benchmarkNotice, setBenchmarkNotice] = useState(null);
 
   const notify = (message) => {
     setToast(message);
     setTimeout(() => setToast(""), 4000);
   };
+
+  useEffect(() => watchBenchmark((job) => {
+    setBenchmarkNotice(job);
+    if (!job || job.running) return;
+    if (job.result && job.kind === "compare") setBenchmark(job.result);
+    if (job.result && job.kind === "rank") setQuality(job.result);
+    if (job.error) setError(job.error);
+  }), []);
+
+  useEffect(() => {
+    if (tab === "Benchmark" && benchmarkNotice && !benchmarkNotice.running) {
+      emitBenchmark(null);
+    }
+  }, [tab, benchmarkNotice]);
 
   useEffect(() => {
     fetchIntents()
@@ -534,6 +591,15 @@ export default function AIconfig() {
             </button>
           ))}
         </div>
+        {benchmarkNotice?.running && <TestRunBanner label={benchmarkNotice.label} />}
+        {benchmarkNotice && !benchmarkNotice.running && tab !== "Benchmark" && (
+          <div
+            className={`mb-5 rounded-xl border px-4 py-3 text-sm ${benchmarkNotice.error ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}
+            role="status"
+          >
+            {benchmarkNotice.error ? "The test failed. Open Benchmark to read the message." : "Test finished. Open Benchmark to read the result."}
+          </div>
+        )}
         {error && <p className="mb-3 text-sm font-semibold text-red-700">{error}</p>}
 
         {tab === "Configuration" && draft && (
@@ -729,39 +795,33 @@ export default function AIconfig() {
                 </div>
                 <button
                   type="button"
-                  disabled={busy || baselineName === candidateName}
-                  onClick={async () => {
-                    setBusy(true);
+                  disabled={Boolean(benchmarkNotice?.running) || baselineName === candidateName}
+                  onClick={() => {
                     setError("");
-                    try {
-                      setBenchmark(await runBenchmark(baselineName, candidateName));
-                    } catch (err) {
-                      setError(err.message);
-                    } finally {
-                      setBusy(false);
-                    }
+                    beginBenchmark(
+                      "compare",
+                      `Comparing ${compareTitle(baselineName)} with ${compareTitle(candidateName)}.`,
+                      () => runBenchmark(baselineName, candidateName),
+                    );
                   }}
                   className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-bold text-white disabled:opacity-60"
                 >
-                  {busy ? "Running 5 times..." : "Compare · 5 runs"}
+                  {benchmarkNotice?.running && benchmarkNotice.kind === "compare" ? "Testing..." : "Compare · 5 runs"}
                 </button>
                 <button
                   type="button"
-                  disabled={busy || showcase.length < 2}
-                  onClick={async () => {
-                    setBusy(true);
+                  disabled={Boolean(benchmarkNotice?.running) || showcase.length < 2}
+                  onClick={() => {
                     setError("");
-                    try {
-                      setQuality(await rankQuality(showcase.map((preset) => preset.profile_name)));
-                    } catch (err) {
-                      setError(err.message);
-                    } finally {
-                      setBusy(false);
-                    }
+                    beginBenchmark(
+                      "rank",
+                      "Ranking Balanced, Fast, and Academic.",
+                      () => rankQuality(showcase.map((preset) => preset.profile_name)),
+                    );
                   }}
                   className="h-10 rounded-lg border bg-white px-4 text-sm font-bold disabled:opacity-60"
                 >
-                  Rank recommended
+                  {benchmarkNotice?.running && benchmarkNotice.kind === "rank" ? "Testing..." : "Rank recommended"}
                 </button>
                 <Hint text="Runs Balanced, Fast, and Academic on the same questions, five times each. Orders them by how often the expected document is cited, then by speed. It does not change the preset in use." />
               </div>

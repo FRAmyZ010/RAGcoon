@@ -1,30 +1,60 @@
 """Run a short preset-versus-preset benchmark for the admin page."""
 
-import json
 import logging
 import time
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 ANSWER_CLIP = 800
 
-GOLDEN_PATH = Path(__file__).with_name("golden_dataset.json")
-HANDOFF_QUERIES = [
-    "อาจารสุรพลดูแลเรื่องไรบ้าง",
-    "โครงงานที่ใช้โมดูล SX1276 มีอะไรบ้าง",
-    "ขั้นตอนการทำงานและการทดลองของ The LoRaWAN",
-    "ใครเป็นที่ปรึกษาของ The LoRaWAN",
-    "The LoRaWAN เป็นระบบประเภทไหน",
-    "โครงงาน The LoRaWAN มีการเชื่อมต่อกับ Line Notify หรือไม่",
+SPEC_CASES = [
+    {
+        "id": "SQ-01",
+        "query": "What are the SRAM and Flash memory sizes of the Arduino Mega 2560 in the Intelligent Watering System?",
+        "expected_sources": ["Final document(8).pdf"],
+    },
+    {
+        "id": "SQ-02",
+        "query": "Which GPIO pins connect the RFID-RC522 reader to the NodeMCU ESP8266 in Online Vehicle Access Monitoring?",
+        "expected_sources": ["13_Online-Vehicle-access-management-system-proposol3_compressed.pdf"],
+    },
+    {
+        "id": "SQ-03",
+        "query": "What are the average recall and accuracy scores achieved by the 13-feature Logistic Regression model for dormitory price prediction?",
+        "expected_sources": [],
+    },
+    {
+        "id": "SQ-04",
+        "query": "How does the 5.0 GHz shutoff mechanism work in MFU Access Points Energy Saving?",
+        "expected_sources": [],
+    },
+    {
+        "id": "SQ-05",
+        "query": "Compare Gem Car Tracking Application and Tracking and Locating System on Website on data transmission and alert methods.",
+        "expected_sources": ["15_Pre-Project_Gem_Car2_edit2_V2.pdf"],
+    },
+    {
+        "id": "SQ-06",
+        "query": "Which project in the archive is recommended for building an automated precision NPK fertilizer and water dispensing system?",
+        "expected_sources": ["Final document(8).pdf"],
+    },
+    {
+        "id": "SQ-07",
+        "query": "Which projects in the archive were advised by Dr. Mahamah Sebakor?",
+        "expected_sources": [],
+    },
+    {
+        "id": "SQ-08",
+        "query": "What is the Netmiko Python code used to shut down the 5GHz interface on the Cisco WLC?",
+        "expected_sources": [],
+    },
 ]
 
 
-def load_handoff_cases(limit: int = 2) -> list[dict]:
-    """Golden cases whose question is in the handoff sheet, capped for an HTTP request."""
-    cases = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
-    wanted = set(HANDOFF_QUERIES)
-    picked = [case for case in cases if case.get("query") in wanted]
-    return picked[: max(1, limit)]
+def load_handoff_cases(limit: int | None = None) -> list[dict]:
+    """English spec questions shown on the Benchmark tab. No limit runs every question."""
+    if limit is None:
+        return list(SPEC_CASES)
+    return list(SPEC_CASES[: max(1, limit)])
 
 
 def _clip(text: str, limit: int = ANSWER_CLIP) -> str:
@@ -150,7 +180,7 @@ def _config_for_name(name: str):
     return RAGConfig.from_dict(base)
 
 
-def run_preset_benchmark(baseline: str, candidate: str, limit: int = 2, repeats: int = 5) -> dict:
+def run_preset_benchmark(baseline: str, candidate: str, limit: int | None = None, repeats: int = 5) -> dict:
     repeats = min(max(int(repeats or 5), 1), 5)
     baseline_cfg = _config_for_name(baseline)
     candidate_cfg = _config_for_name(candidate)
@@ -208,7 +238,7 @@ def run_preset_benchmark(baseline: str, candidate: str, limit: int = 2, repeats:
     }
 
 
-def rank_answer_quality(preset_names: list[str] | None = None, limit: int = 2, repeats: int = 5) -> dict:
+def rank_answer_quality(preset_names: list[str] | None = None, limit: int | None = None, repeats: int = 5) -> dict:
     """Rank presets by how often the answer cites the expected document, then by time."""
     names = preset_names or [
         "winner_rank1_llama3_2_3b",

@@ -44,7 +44,7 @@ export const deleteNamedPreset = (name) =>
 export const rankQuality = (presetNames) =>
   request("/benchmark/quality", {
     method: "POST",
-    body: JSON.stringify({ limit: 2, repeats: 5, preset_names: presetNames }),
+    body: JSON.stringify({ limit: 8, repeats: 5, preset_names: presetNames }),
   });
 export const fetchLlms = () => request("/llms");
 export const setActiveLlm = (provider, model) =>
@@ -54,5 +54,5 @@ export const pingLlm = (provider, model) =>
 export const runBenchmark = (baseline, candidate) =>
   request("/benchmark/run", {
     method: "POST",
-    body: JSON.stringify({ baseline, candidate, limit: 2, repeats: 5 }),
+    body: JSON.stringify({ baseline, candidate, limit: 8, repeats: 5 }),
   });
