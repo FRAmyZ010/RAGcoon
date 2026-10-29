@@ -13,6 +13,7 @@ class DocumentBase(BaseModel):
     title: str | None = None
     supervisory_committee: str | None = None
     keywords: str | None = None
+    keyword_groups: str | None = None
 
 class CatalogDocument(BaseModel):
     id: int

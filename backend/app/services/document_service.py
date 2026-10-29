@@ -231,6 +231,9 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         document.title = project_title
         document.supervisory_committee = supervisory_committee
         document.keywords = keywords
+        from app.rag.embedding.keyword_groups import groups_for_keywords
+
+        document.keyword_groups = groups_for_keywords(keywords) or None
         db.commit()
 
         chunks = chunk_extracted_data(pages)
@@ -300,7 +303,7 @@ def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Docum
         (Document.status == ProcessingStatus.PENDING.value, 3),
         else_=4,
     )
-    return (
+    rows = (
         db.query(Document)
         .options(joinedload(Document.project))
         .order_by(
@@ -313,24 +316,44 @@ def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Docum
         .limit(limit)
         .all()
     )
+    _ensure_keyword_groups(db, rows)
+    return rows
+
+
+def _ensure_keyword_groups(db: Session, rows: list[Document]) -> None:
+    from app.rag.embedding.keyword_groups import groups_for_keywords
+
+    changed = False
+    for row in rows:
+        if row.keyword_groups or not row.keywords:
+            continue
+        row.keyword_groups = groups_for_keywords(row.keywords) or None
+        changed = True
+    if changed:
+        db.commit()
 
 
 def get_public_catalog(db: Session) -> dict:
-    """Titles guests can search, plus the words that show up most often."""
-    from app.services.dashboard_service import count_keywords
+    """Titles guests can search, plus the keyword groups those documents fall into."""
+    from app.rag.embedding.keyword_groups import GROUP_ORDER
 
     rows = (
         db.query(Document)
         .order_by(Document.title.asc(), Document.filename.asc())
         .all()
     )
+    _ensure_keyword_groups(db, rows)
     documents = []
-    keyword_values = []
+    counts = {name: 0 for name in GROUP_ORDER}
     for row in rows:
         title = (row.title or "").strip() or row.filename
         documents.append({"id": row.id, "title": title, "filename": row.filename})
-        keyword_values.append(row.keywords)
-    return {"documents": documents, "top_keywords": count_keywords(keyword_values)}
+        for name in (row.keyword_groups or "").split(","):
+            group = name.strip()
+            if group in counts:
+                counts[group] += 1
+    groups = [{"keyword": name, "count": counts[name]} for name in GROUP_ORDER if counts[name]]
+    return {"documents": documents, "top_keywords": groups}
 
 
 def get_document_by_id(db: Session, document_id: int) -> Document | None:

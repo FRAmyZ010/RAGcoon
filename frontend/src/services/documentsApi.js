@@ -197,6 +197,7 @@ export function mapDocumentToRow(doc) {
     advisor: doc.advisor || "—",
     year: doc.academic_year != null ? String(doc.academic_year) : "—",
     keywords: doc.keywords || "—",
+    groups: doc.keyword_groups || "—",
     supervisoryCommittee: doc.supervisory_committee || "—",
     status: statusMap[doc.status] || doc.status || "Processing",
     statusMessage: doc.status_message || null,

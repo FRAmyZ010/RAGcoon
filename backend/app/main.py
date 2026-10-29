@@ -15,6 +15,7 @@ Base.metadata.create_all(bind=engine)
 # Soft-migrate: เพิ่มคอลัมน์ใหม่บน DB ที่มีอยู่แล้ว (create_all ไม่แก้ตารางเก่า)
 with engine.begin() as conn:
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keywords TEXT"))
+    conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS keyword_groups TEXT"))
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS status_message TEXT"))
     conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"))
     conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS submitter_name VARCHAR(120)"))

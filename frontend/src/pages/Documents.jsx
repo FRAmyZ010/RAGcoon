@@ -670,6 +670,7 @@ export default function DocumentsManagement() {
                   <th className="py-1.5 px-2">Academic Year</th>
                   <th className="py-1.5 px-2">Source</th>
                   <th className="py-1.5 px-2">Status</th>
+                  <th className="py-1.5 px-2">Topic</th>
                   <th className="py-1.5 px-2">Date</th>
                   <th className="py-1.5 px-2 text-center">Details</th>
                   <th className="py-1.5 px-2.5 text-right">Actions</th>
@@ -678,7 +679,7 @@ export default function DocumentsManagement() {
               <tbody className="divide-y divide-gray-100 text-[11px] sm:text-xs">
                 {loading && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-gray-500">
+                    <td colSpan={9} className="py-8 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading documents...
@@ -689,7 +690,7 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-gray-500">
+                    <td colSpan={9} className="py-8 text-center text-gray-500">
                       No documents yet. Choose Upload File to add a PDF.
                     </td>
                   </tr>
@@ -697,7 +698,7 @@ export default function DocumentsManagement() {
 
                 {!loading && filesData.length > 0 && filteredFiles.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-gray-500">
+                    <td colSpan={9} className="py-8 text-center text-gray-500">
                       No documents match this search
                     </td>
                   </tr>
@@ -764,6 +765,7 @@ export default function DocumentsManagement() {
                           )}
                         </div>
                       </td>
+                      <td className="py-1.5 px-2 text-gray-700">{row.groups}</td>
                       <td className="py-1.5 px-2 text-gray-500 whitespace-nowrap">{row.date}</td>
                       <td className="py-1.5 px-2 text-center">
                         <button
@@ -986,6 +988,23 @@ export default function DocumentsManagement() {
                       </li>
                     ))}
                   </ul>
+                ) : (
+                  <p className="text-gray-400">—</p>
+                )}
+              </section>
+
+              <section>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Document topic
+                </p>
+                {splitCommaList(detailsRow.groups).length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {splitCommaList(detailsRow.groups).map((name) => (
+                      <span key={name} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-gray-400">—</p>
                 )}
