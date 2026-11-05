@@ -4,6 +4,10 @@ from backend.app.rag.embedding.metadata_extractor import (
     _looks_like_author_name,
     _extract_title_and_authors,
     _extract_approval_committee,
+    _extract_supervisory_block,
+    _finalize_person_name,
+    _is_valid_author_name,
+    _is_valid_supervisory_name,
     extract_project_metadata,
 )
 
@@ -96,4 +100,67 @@ def test_all_five_majors_mapped_to_applied_digital_technology():
         meta = extract_project_metadata(full_text)
         assert meta["program"] == expected_program, f"Failed for {text_fragment}"
         assert meta["school"] == "Applied Digital Technology", f"School must be Applied Digital Technology for {expected_program}"
+
+
+def test_author_label_stripped_and_length_filter():
+    assert _finalize_person_name("Author Mr. Vasawat prapachaimongkol") == "Mr. Vasawat prapachaimongkol"
+    assert _is_valid_author_name("Aung") is False  # len <= 5
+    assert _is_valid_author_name("AungMy") is True
+    assert _is_valid_author_name("Mr. Vasawat prapachaimongkol") is True
+
+    text = """
+    Title Robot avoiding obstacles
+    Author Mr. Vasawat prapachaimongkol
+    Mr. Peeradon buranathawon
+    Degree Bachelor of Engineering
+    (Computer Engineering)
+    Supervisory Committee Asst. Prof. Gp. Capt. Dr. Thongchai Yooyatiwong Advisor
+    Aj. Dr. Mahamah Sebakor Committee
+    Asst. Prof. Dr. Roungsan Chaisricharoen Committee
+    Abstract
+    The robot project explores automation.
+    """
+    meta = extract_project_metadata(text)
+    assert meta["author"] == "Mr. Vasawat prapachaimongkol, Mr. Peeradon buranathawon"
+    assert not meta["author"].lower().startswith("author ")
+    assert meta["advisor"] == "Asst. Prof. Gp. Capt. Dr. Thongchai Yooyatiwong"
+    assert meta["committee"] == "Aj. Dr. Mahamah Sebakor, Asst. Prof. Dr. Roungsan Chaisricharoen"
+
+
+def test_supervisory_name_filters_drop_junk():
+    assert _is_valid_supervisory_name("Committ") is False
+    assert _is_valid_supervisory_name("Aj. ee") is False
+    assert _is_valid_supervisory_name("Aj. Mahamah Sebakor") is True
+    assert _is_valid_supervisory_name("Dr. X") is False  # too short
+
+
+def test_cisco_style_broken_supervisory_does_not_leak_junk():
+    lines = [
+        "Supervisory Aj.Mahamah Sebakor Advisor",
+        "Committee",
+        "Aj. Dr.Surapol Committ",
+        "Vorapatratorn Aj. ee",
+        "Suppakarn Committ",
+        "Chaisricharoen ee",
+        "Abstract",
+    ]
+    advisor, committee = _extract_supervisory_block(lines)
+    assert advisor == "Aj. Mahamah Sebakor"
+    assert committee == []
+
+    text = "\n".join(
+        [
+            "Title The development of Bluetooth low energy in cisco WLAN",
+            "Author Mr.Kiattisak Hasati",
+            "Miss Parichat Taram",
+            "Degree Bachelor of Engineering",
+            "(Computer Engineering)",
+            *lines,
+            "Keyword: Bluetooth Low Energy",
+        ]
+    )
+    meta = extract_project_metadata(text)
+    assert meta["author"] == "Mr. Kiattisak Hasati, Miss Parichat Taram"
+    assert meta["advisor"] == "Aj. Mahamah Sebakor"
+    assert meta["committee"] is None
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
-import { isAuthenticated, login } from "../services/authApi";
+import { getStoredRole, homePathForRole, isAuthenticated, login } from "../services/authApi";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   if (isAuthenticated()) {
-    return <Navigate to="/documents" replace />;
+    return <Navigate to={homePathForRole(getStoredRole())} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -29,8 +29,8 @@ export default function LoginPage() {
     setError("");
     setIsLoading(true);
     try {
-      await login(username.trim(), password);
-      navigate("/documents", { replace: true });
+      const data = await login(username.trim(), password);
+      navigate(homePathForRole(data.role), { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {

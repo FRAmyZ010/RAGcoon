@@ -3,11 +3,12 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_administrator
+from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     ROLE_ADMINISTRATOR,
+    ROLE_AI_ENGINEER,
     create_access_token,
     verify_password,
 )
@@ -16,6 +17,8 @@ from app.schemas.auth import LoginRequest, Token
 from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+_ALLOWED_LOGIN_ROLES = frozenset({ROLE_ADMINISTRATOR, ROLE_AI_ENGINEER})
 
 
 @router.post("/login", response_model=Token)
@@ -33,10 +36,10 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         )
 
     role_name = user.role.name if user.role else None
-    if role_name != ROLE_ADMINISTRATOR:
+    if role_name not in _ALLOWED_LOGIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only an administrator can sign in",
+            detail="This account cannot sign in",
         )
 
     token = create_access_token(
@@ -52,5 +55,5 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-def read_me(current_user: User = Depends(get_current_administrator)):
+def read_me(current_user: User = Depends(get_current_user)):
     return current_user

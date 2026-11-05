@@ -158,11 +158,18 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         if not file_path or not os.path.exists(file_path):
             raise DocumentUploadError("ไม่พบไฟล์บนดิสก์สำหรับประมวลผล")
 
+        from app.rag.embedding.category_registry import (
+            categories_to_storage,
+            get_categories,
+            normalize_categories,
+            register_invented,
+        )
         from app.rag.embedding.pdf_scanning import scan_pdf_document
         from app.rag.embedding.text_processor import chunk_extracted_data
         from app.rag.embedding.vector_store import upload_to_qdrant
 
-        pages = scan_pdf_document(file_path)
+        category_options = get_categories(db)
+        pages = scan_pdf_document(file_path, category_options=category_options)
         if not pages:
             raise DocumentUploadError("ไม่พบข้อความในไฟล์ PDF หรือไฟล์ชำรุด")
 
@@ -231,9 +238,11 @@ def ingest_document_by_id(db: Session, document_id: int) -> Document | None:
         document.title = project_title
         document.supervisory_committee = supervisory_committee
         document.keywords = keywords
-        from app.rag.embedding.keyword_groups import groups_for_keywords
 
-        document.keyword_groups = groups_for_keywords(keywords) or None
+        raw_categories = extracted_meta.get("categories") or extracted_meta.get("keyword_groups")
+        categories = normalize_categories(raw_categories, category_options)
+        register_invented(db, categories)
+        document.keyword_groups = categories_to_storage(categories)
         db.commit()
 
         chunks = chunk_extracted_data(pages)
@@ -321,22 +330,22 @@ def get_all_documents(db: Session, skip: int = 0, limit: int = 50) -> list[Docum
 
 
 def _ensure_keyword_groups(db: Session, rows: list[Document]) -> None:
-    from app.rag.embedding.keyword_groups import groups_for_keywords
-
+    """Backfill missing groups as Other only (no regex map). Old docs wait for re-upload."""
     changed = False
     for row in rows:
         if row.keyword_groups or not row.keywords:
             continue
-        row.keyword_groups = groups_for_keywords(row.keywords) or None
+        row.keyword_groups = "Other"
         changed = True
     if changed:
         db.commit()
 
 
 def get_public_catalog(db: Session) -> dict:
-    """Titles guests can search, plus the keyword groups those documents fall into."""
-    from app.rag.embedding.keyword_groups import GROUP_ORDER
+    """Titles guests can search, plus category chips (seed + invented) with counts."""
+    from app.rag.embedding.category_registry import get_categories
 
+    registry = get_categories(db)
     rows = (
         db.query(Document)
         .order_by(Document.title.asc(), Document.filename.asc())
@@ -344,15 +353,20 @@ def get_public_catalog(db: Session) -> dict:
     )
     _ensure_keyword_groups(db, rows)
     documents = []
-    counts = {name: 0 for name in GROUP_ORDER}
+    counts: dict[str, int] = {name: 0 for name in registry}
     for row in rows:
         title = (row.title or "").strip() or row.filename
         documents.append({"id": row.id, "title": title, "filename": row.filename})
         for name in (row.keyword_groups or "").split(","):
             group = name.strip()
-            if group in counts:
-                counts[group] += 1
-    groups = [{"keyword": name, "count": counts[name]} for name in GROUP_ORDER if counts[name]]
+            if not group:
+                continue
+            counts[group] = counts.get(group, 0) + 1
+    ordered = list(registry)
+    for name in counts:
+        if name not in ordered:
+            ordered.append(name)
+    groups = [{"keyword": name, "count": counts[name]} for name in ordered if counts.get(name)]
     return {"documents": documents, "top_keywords": groups}
 
 

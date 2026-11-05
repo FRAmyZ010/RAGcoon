@@ -1,0 +1,13 @@
+{
+  "name": "ragcoon",
+  "private": true,
+  "version": "0.0.0",
+  "description": "RAGcoon monorepo helper scripts",
+  "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f backend"
+  }
+}

@@ -2,10 +2,22 @@ import { clearClientAuth, getAuthToken, setAuthToken } from "./documentsApi";
 
 const AUTH_BASE = "/api/v1/auth";
 
+export const ROLE_ADMINISTRATOR = "Administrator";
+export const ROLE_AI_ENGINEER = "AI Engineer";
+
 export { getAuthToken, setAuthToken };
 
 export function isAuthenticated() {
   return Boolean(getAuthToken());
+}
+
+export function getStoredRole() {
+  return localStorage.getItem("role");
+}
+
+export function homePathForRole(role) {
+  if (role === ROLE_AI_ENGINEER) return "/ai-config";
+  return "/documents";
 }
 
 export function clearAuth() {

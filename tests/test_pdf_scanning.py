@@ -1,6 +1,17 @@
 from backend.app.rag.embedding import pdf_scanning
 
 
+def test_metadata_page_score_prefers_labelled_abstract_page():
+    cover = "SOME TITLE\nJOHN DOE\nBACHELOR OF ENGINEERING\n2023"
+    labelled = (
+        "Title Some Title\n"
+        "Author Mr. John Doe\n"
+        "Supervisory Committee Dr. Ada Lovelace Advisor\n"
+        "Abstract\nA short abstract."
+    )
+    assert pdf_scanning._metadata_page_score(labelled) > pdf_scanning._metadata_page_score(cover)
+
+
 class FakePage:
     def __init__(self, text: str):
         self._text = text
@@ -35,11 +46,13 @@ def test_scan_pdf_document_keeps_page_numbers_aligned_with_scan(monkeypatch, tmp
     monkeypatch.setattr(
         pdf_scanning,
         "extract_project_enrichment",
-        lambda text, project_title=None, timeout=(3, 30): {
+        lambda text, project_title=None, existing_keywords=None, category_options=None, timeout=(3, 30): {
             "summary": None,
             "project_type": [],
             "key_technologies": [],
             "target_problem": None,
+            "keywords": [],
+            "categories": ["Other"],
         },
     )
 

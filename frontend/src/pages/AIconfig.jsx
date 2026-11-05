@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CircleHelp, LayoutDashboard, FolderClosed, MessageSquare, LogOut, Sliders } from "lucide-react";
+import { CircleHelp, MessageSquare, LogOut, Sliders } from "lucide-react";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import { clearAuth } from "../services/authApi";
 import {
@@ -574,9 +574,6 @@ export default function AIconfig() {
             <span>RAGcoon</span>
           </div>
           <nav className="space-y-1">
-            <Link className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10" to="/dashboard"><LayoutDashboard className="h-3.5 w-3.5" />Dashboard</Link>
-            <Link className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10" to="/documents"><FolderClosed className="h-3.5 w-3.5" />Documents</Link>
-            <Link className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10" to="/feedback-admin"><MessageSquare className="h-3.5 w-3.5" />Feedback</Link>
             <span className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-1.5 font-bold text-gray-900"><Sliders className="h-3.5 w-3.5" />AI Configuration</span>
             <Link className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10" to="/chat"><MessageSquare className="h-3.5 w-3.5" />Chat Workspace</Link>
           </nav>

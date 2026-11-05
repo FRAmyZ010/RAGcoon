@@ -31,6 +31,22 @@ class PublicCatalog(BaseModel):
     top_keywords: list[CatalogKeyword]
 
 
+class CategoryItem(BaseModel):
+    name: str
+    is_seed: bool
+    deletable: bool
+
+
+class CategoryRegistryResponse(BaseModel):
+    categories: list[CategoryItem]
+
+
+class CategoryDeleteResponse(BaseModel):
+    deleted: str
+    documents_updated: int
+    categories: list[str]
+
+
 class DocumentCreate(DocumentBase):
     file_path: str
     project_id: int | None = None

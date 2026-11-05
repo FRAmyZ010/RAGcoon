@@ -23,11 +23,10 @@ def prewarm_rag_components() -> None:
         print(f"⚠️ [PRE-WARM] Metadata Cache pre-warm skipped: {e}")
 
     try:
-        from .config import get_embed_model, get_reranker
+        from .config import get_embed_model
         get_embed_model()
         print("✅ [PRE-WARM] Dense Multilingual-E5 Embedding model loaded into RAM.")
-        get_reranker()
-        print("✅ [PRE-WARM] Cross-Encoder Reranker model loaded into RAM.")
+        # Skip reranker pre-warm to reduce RAM pressure on Docker Desktop.
     except Exception as e:
         print(f"⚠️ [PRE-WARM] Neural models pre-warm skipped: {e}")
 
@@ -39,10 +38,12 @@ def prewarm_rag_components() -> None:
         print(f"⚠️ [PRE-WARM] BM25 pre-warm skipped: {e}")
 
     try:
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
+        if ollama_url.endswith("/api"):
+            ollama_url = ollama_url[: -len("/api")]
         ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
         requests.post(
-            f"{ollama_url.rstrip('/')}/api/generate",
+            f"{ollama_url}/api/generate",
             json={
                 "model": ollama_model,
                 "keep_alive": "30m",

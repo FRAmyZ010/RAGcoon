@@ -3,7 +3,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_administrator
+from app.api.deps import get_current_ai_engineer
 from app.core.database import get_db
 from app.models.user import User
 from app.rag.retrieval.intent_config import (
@@ -82,17 +82,17 @@ PROFILE_NOTES = {
 }
 
 
-def _admin(db: Session = Depends(get_db), _user: User = Depends(get_current_administrator)):
+def _ai_engineer(db: Session = Depends(get_db), _user: User = Depends(get_current_ai_engineer)):
     return db
 
 
 @router.get("/intents")
-def read_intents(db: Session = Depends(_admin)):
+def read_intents(db: Session = Depends(_ai_engineer)):
     return {"status": "success", "intents": get_all_intent_configs()}
 
 
 @router.put("/intents/{intent_name}")
-def write_intent(intent_name: str, payload: dict, db: Session = Depends(_admin)):
+def write_intent(intent_name: str, payload: dict, db: Session = Depends(_ai_engineer)):
     try:
         updated = update_intent_config(intent_name, payload)
     except KeyError as exc:
@@ -102,7 +102,7 @@ def write_intent(intent_name: str, payload: dict, db: Session = Depends(_admin))
 
 
 @router.post("/intents/reset")
-def reset_intents(db: Session = Depends(_admin)):
+def reset_intents(db: Session = Depends(_ai_engineer)):
     intents = reset_intent_configs()
     save_intents(db)
     return {"status": "success", "message": "Reset all intents", "intents": intents}
@@ -159,7 +159,7 @@ def _bundle_card(bundle: dict) -> dict:
 
 
 @router.get("/rag")
-def read_rag(db: Session = Depends(_admin)):
+def read_rag(db: Session = Depends(_ai_engineer)):
     active = get_active_config()
     presets = {name: _preset_card(config) for name, config in CONFIG_PRESETS.items()}
     for name, config in load_custom_configs().items():
@@ -175,7 +175,7 @@ def read_rag(db: Session = Depends(_admin)):
 
 
 @router.put("/rag")
-def write_rag(payload: dict, db: Session = Depends(_admin)):
+def write_rag(payload: dict, db: Session = Depends(_ai_engineer)):
     merged = {**get_active_config().to_dict(), **payload}
     config = RAGConfig.from_dict(merged)
     set_active_config(config)
@@ -202,7 +202,7 @@ _PROFILE_FIELDS = {
 
 
 @router.post("/rag/profiles")
-def create_profile(payload: dict, db: Session = Depends(_admin)):
+def create_profile(payload: dict, db: Session = Depends(_ai_engineer)):
     """Save a named preset from slider values and use it on the next chat question."""
     name = str(payload.get("profile_name") or "").strip()
     if not _PROFILE_NAME.fullmatch(name):
@@ -245,7 +245,7 @@ def create_profile(payload: dict, db: Session = Depends(_admin)):
 
 
 @router.post("/presets")
-def create_named_preset(payload: dict, db: Session = Depends(_admin)):
+def create_named_preset(payload: dict, db: Session = Depends(_ai_engineer)):
     """Name and store the current intent settings together with the selected model."""
     name = str(payload.get("profile_name") or "").strip()
     if not _PROFILE_NAME.fullmatch(name):
@@ -275,7 +275,7 @@ def create_named_preset(payload: dict, db: Session = Depends(_admin)):
 
 
 @router.delete("/presets/{preset_name}")
-def remove_named_preset(preset_name: str, db: Session = Depends(_admin)):
+def remove_named_preset(preset_name: str, db: Session = Depends(_ai_engineer)):
     """Delete a custom preset. Recommended presets from the handoff file stay."""
     if preset_name in CONFIG_PRESETS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Built-in presets cannot be deleted.")
@@ -288,7 +288,7 @@ def remove_named_preset(preset_name: str, db: Session = Depends(_admin)):
 
 
 @router.post("/rag/preset/{preset_name}")
-def apply_preset(preset_name: str, db: Session = Depends(_admin)):
+def apply_preset(preset_name: str, db: Session = Depends(_ai_engineer)):
     if preset_name in load_named_presets(db):
         try:
             apply_named_preset(db, preset_name)
@@ -310,7 +310,7 @@ def apply_preset(preset_name: str, db: Session = Depends(_admin)):
 
 
 @router.get("/llms")
-def read_llms(_db: Session = Depends(_admin)):
+def read_llms(_db: Session = Depends(_ai_engineer)):
     provider, model = get_active_llm()
     profiles = []
     for profile in AVAILABLE_LLM_PROFILES:
@@ -320,7 +320,7 @@ def read_llms(_db: Session = Depends(_admin)):
 
 
 @router.post("/llms/set-active")
-def activate_llm(payload: dict, db: Session = Depends(_admin)):
+def activate_llm(payload: dict, db: Session = Depends(_ai_engineer)):
     provider = str(payload.get("provider") or "").strip()
     model = payload.get("model")
     if not provider:
@@ -332,7 +332,7 @@ def activate_llm(payload: dict, db: Session = Depends(_admin)):
 
 
 @router.post("/benchmark/run")
-def run_benchmark(payload: dict, _db: Session = Depends(_admin)):
+def run_benchmark(payload: dict, _db: Session = Depends(_ai_engineer)):
     from app.rag.evaluation.benchmark_run import run_preset_benchmark
 
     baseline = str(payload.get("baseline") or "winner_rank1_llama3_2_3b")
@@ -354,7 +354,7 @@ def run_benchmark(payload: dict, _db: Session = Depends(_admin)):
 
 
 @router.post("/benchmark/quality")
-def rank_quality(payload: dict, _db: Session = Depends(_admin)):
+def rank_quality(payload: dict, _db: Session = Depends(_ai_engineer)):
     """Rank the presets named by the caller. Defaults to the three Presets-page recommendations."""
     from app.rag.evaluation.benchmark_run import rank_answer_quality
 
@@ -372,7 +372,7 @@ def rank_quality(payload: dict, _db: Session = Depends(_admin)):
 
 
 @router.post("/llms/test-connectivity")
-def ping_llm(payload: dict, _db: Session = Depends(_admin)):
+def ping_llm(payload: dict, _db: Session = Depends(_ai_engineer)):
     provider = str(payload.get("provider") or "").strip()
     model = payload.get("model")
     if not provider:

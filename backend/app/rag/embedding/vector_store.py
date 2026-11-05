@@ -1,13 +1,12 @@
 import os
 import uuid
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from langchain_huggingface import HuggingFaceEmbeddings
+from .embeddings import get_shared_embedding_model
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
@@ -29,10 +28,9 @@ FILTERABLE_FIELDS = (
 )
 
 
-@lru_cache(maxsize=1)
-def get_embedding_model() -> HuggingFaceEmbeddings:
+def get_embedding_model():
     """Load the embedding model only when an upload is requested."""
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return get_shared_embedding_model(EMBEDDING_MODEL)
 
 
 def ensure_payload_indexes(client: QdrantClient) -> None:
@@ -69,28 +67,43 @@ def upload_to_qdrant(chunks: Iterable[Mapping[str, Any]]) -> bool:
         metas = [dict(chunk.get("metadata", {})) for chunk in valid_chunks]
 
         vectors = get_embedding_model().embed_documents(docs)
+        vector_size = len(vectors[0])
 
-        # 📦 สร้าง collection ถ้ายังไม่มี หรือ collection เดิมไม่มี vector schema
+        # 📦 สร้าง collection ถ้ายังไม่มี / schema ว่าง / มิติไม่ตรงกับ embedding ปัจจุบัน
         collections = [c.name for c in client.get_collections().collections]
         if COLLECTION_NAME in collections:
             collection_info = client.get_collection(COLLECTION_NAME)
-            if (
-                collection_info.points_count == 0
-                and collection_info.config.params.vectors == {}
-            ):
+            existing_vectors = collection_info.config.params.vectors
+            existing_size = None
+            if isinstance(existing_vectors, models.VectorParams):
+                existing_size = existing_vectors.size
+            elif isinstance(existing_vectors, dict) and existing_vectors:
+                # Named vectors config — take first size if present
+                first = next(iter(existing_vectors.values()), None)
+                if isinstance(first, models.VectorParams):
+                    existing_size = first.size
+
+            needs_recreate = (
+                existing_vectors == {}
+                or (existing_size is not None and existing_size != vector_size)
+            )
+            if needs_recreate:
                 client.delete_collection(collection_name=COLLECTION_NAME)
                 collections.remove(COLLECTION_NAME)
-                print(f"Recreated invalid collection: {COLLECTION_NAME}")
+                print(
+                    f"Recreated collection {COLLECTION_NAME} "
+                    f"(old dim={existing_size}, new dim={vector_size})"
+                )
 
         if COLLECTION_NAME not in collections:
             client.create_collection(
                 collection_name=COLLECTION_NAME,
                 vectors_config=models.VectorParams(
-                    size=len(vectors[0]),
+                    size=vector_size,
                     distance=models.Distance.COSINE
                 )
             )
-            print(f"Created collection: {COLLECTION_NAME}")
+            print(f"Created collection: {COLLECTION_NAME} (dim={vector_size})")
 
         ensure_payload_indexes(client)
 

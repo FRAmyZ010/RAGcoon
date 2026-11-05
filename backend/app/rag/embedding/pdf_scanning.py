@@ -4,12 +4,33 @@ from typing import Any
 
 import pdfplumber
 
+from .category_registry import (
+    categories_to_storage,
+    normalize_categories,
+    normalize_keywords,
+    seed_categories,
+)
 from .enricher import extract_project_enrichment
 from .metadata_extractor import extract_project_metadata
 
 
-def scan_pdf_document(file_path):
+def _metadata_page_score(text: str) -> int:
+    """Prefer the labelled Title/Author/Supervisory/Abstract metadata page."""
+    score = 0
+    if re.search(r"(?m)^\s*Title\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"(?m)^\s*Author\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"\bSupervisory\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"\bAbstract\b", text, re.IGNORECASE) or "บทคัดย่อ" in text:
+        score += 1
+    return score
+
+
+def scan_pdf_document(file_path, category_options: list[str] | None = None):
     extracted_data = []
+    options = list(category_options or seed_categories())
 
     with pdfplumber.open(file_path) as pdf:
         total_pages = len(pdf.pages)
@@ -20,6 +41,7 @@ def scan_pdf_document(file_path):
             "author": None,
             "advisor": None,
             "committee": None,
+            "keywords": None,
             "year": None,
             "school": None,
             "program": None,
@@ -27,14 +49,18 @@ def scan_pdf_document(file_path):
             "project_type": [],
             "key_technologies": [],
             "target_problem": None,
+            "categories": ["Other"],
+            "keyword_groups": "Other",
         }
 
         # 2. Collect metadata first so every page receives the final payload.
+        # Prefer labelled metadata pages (Title + Supervisory + Abstract) over cover pages.
         file_basename = os.path.basename(file_path)
         page_texts = [
             page.extract_text(x_tolerance=1, y_tolerance=2) or ""
             for page in pdf.pages
         ]
+        scored_pages: list[tuple[int, dict[str, Any]]] = []
         for text in page_texts[:5]:
             if not text:
                 continue
@@ -42,6 +68,9 @@ def scan_pdf_document(file_path):
                 page_meta = extract_project_metadata(text, filename=file_basename)
             except TypeError:
                 page_meta = extract_project_metadata(text)
+            scored_pages.append((_metadata_page_score(text), page_meta))
+
+        for _, page_meta in sorted(scored_pages, key=lambda item: -item[0]):
             for key, value in page_meta.items():
                 if value is None:
                     continue
@@ -57,13 +86,14 @@ def scan_pdf_document(file_path):
                     elif key == "author":
                         current_names = [n.strip() for n in current.split(",") if n.strip()]
                         new_names = [n.strip() for n in value.split(",") if n.strip()]
+                        has_label_leak = any(n.lower().startswith("author ") for n in current_names)
                         has_single_word_current = any(len(n.split()) == 1 for n in current_names)
                         all_multi_word_new = all(len(n.split()) >= 2 for n in new_names)
-                        if has_single_word_current and all_multi_word_new:
+                        if has_label_leak or (has_single_word_current and all_multi_word_new):
                             special_meta[key] = value
                     elif key == "advisor":
                         # Prefer advisor that has academic title or is longer
-                        if len(current) < 5 or (
+                        if len(current) < 10 or (
                             re.search(r"\b(?:Dr\.|Prof\.|Aj\.|Asst\.|Assoc\.)", value)
                             and not re.search(r"\b(?:Dr\.|Prof\.|Aj\.|Asst\.|Assoc\.)", current)
                         ):
@@ -78,24 +108,35 @@ def scan_pdf_document(file_path):
                         if not re.search(r"\b(20[12]\d)\b", current) and re.search(r"\b(20[12]\d)\b", value):
                             special_meta[key] = value
 
-        # 3. LLM Metadata Enrichment (summary, project_type, key_technologies, target_problem)
+        # 3. LLM: Abstract (+ existing Keyword line) → refined keywords + categories
         abstract_candidates = []
         for text in page_texts[:6]:
             if text and ("ABSTRACT" in text.upper() or "บทคัดย่อ" in text):
                 abstract_candidates.append(text)
         enrichment_text = "\n\n".join(abstract_candidates) if abstract_candidates else "\n\n".join(page_texts[:4])
+        existing_keywords = special_meta.get("keywords")
 
         enrichment = extract_project_enrichment(
             enrichment_text,
             project_title=special_meta.get("project_title"),
+            existing_keywords=existing_keywords if isinstance(existing_keywords, str) else None,
+            category_options=options,
         )
-        special_meta.update(enrichment)
-        if not special_meta.get("keywords"):
-            techs = special_meta.get("key_technologies") or []
-            if isinstance(techs, list):
-                names = [str(item).strip() for item in techs if str(item).strip()]
-                if names:
-                    special_meta["keywords"] = ", ".join(names[:15])
+        special_meta["summary"] = enrichment.get("summary")
+        special_meta["project_type"] = enrichment.get("project_type") or []
+        special_meta["key_technologies"] = enrichment.get("key_technologies") or []
+        special_meta["target_problem"] = enrichment.get("target_problem")
+
+        refined_keywords = normalize_keywords(enrichment.get("keywords"))
+        if not refined_keywords:
+            refined_keywords = normalize_keywords(existing_keywords)
+        if not refined_keywords:
+            refined_keywords = normalize_keywords(special_meta.get("key_technologies"))
+        special_meta["keywords"] = ", ".join(refined_keywords) if refined_keywords else None
+
+        categories = normalize_categories(enrichment.get("categories"), options)
+        special_meta["categories"] = categories
+        special_meta["keyword_groups"] = categories_to_storage(categories)
 
         # 4. Keep every scanned page in order. Blank pages should still carry their
         #    original page number so the numbering stays aligned with the PDF scan.

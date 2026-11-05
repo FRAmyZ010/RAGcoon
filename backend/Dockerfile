@@ -30,5 +30,5 @@ COPY . .
 # เปิด Port 8000 สำหรับ FastAPI
 EXPOSE 8000
 
-# คำสั่งสำหรับเริ่มรัน FastAPI ด้วย Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# No --reload in Docker: saves RAM and avoids watchfiles OOM crashes.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

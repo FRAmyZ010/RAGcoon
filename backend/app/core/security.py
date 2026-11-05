@@ -8,6 +8,7 @@ from jwt.exceptions import InvalidTokenError
 from app.core.config import settings
 
 ROLE_ADMINISTRATOR = "Administrator"
+ROLE_AI_ENGINEER = "AI Engineer"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

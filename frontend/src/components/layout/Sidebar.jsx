@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Folder, MessageSquare, Sliders, LogOut } from 'lucide-react';
+import { LayoutDashboard, Folder, MessageSquare, LogOut } from 'lucide-react';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -8,7 +8,6 @@ export default function Sidebar() {
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Documents Management', path: '/admin/documents', icon: Folder },
     { name: 'Feedback', path: '/admin/feedback', icon: MessageSquare },
-    { name: 'AI Configuration', path: '/admin/ai-config', icon: Sliders },
   ];
 
   return (

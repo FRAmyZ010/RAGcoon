@@ -9,13 +9,19 @@ os.environ.setdefault("QDRANT_URL", "http://localhost")
 os.environ.setdefault("QDRANT_API_KEY", "test")
 os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-min-32-characters!!")
 
-from app.core.security import ROLE_ADMINISTRATOR, create_access_token, decode_access_token
+from app.core.security import (
+    ROLE_ADMINISTRATOR,
+    ROLE_AI_ENGINEER,
+    create_access_token,
+    decode_access_token,
+)
 from app.schemas.auth import Token
 
 
 class AuthSchemaTests(unittest.TestCase):
-    def test_role_constant(self):
+    def test_role_constants(self):
         self.assertEqual(ROLE_ADMINISTRATOR, "Administrator")
+        self.assertEqual(ROLE_AI_ENGINEER, "AI Engineer")
 
     def test_token_schema_includes_role_username(self):
         token = Token(
@@ -32,6 +38,12 @@ class AuthSchemaTests(unittest.TestCase):
         payload = decode_access_token(raw)
         self.assertEqual(payload["sub"], "admin")
         self.assertEqual(payload["role"], ROLE_ADMINISTRATOR)
+
+    def test_ai_engineer_jwt_roundtrip(self):
+        raw = create_access_token({"sub": "ai_engineer", "role": ROLE_AI_ENGINEER})
+        payload = decode_access_token(raw)
+        self.assertEqual(payload["sub"], "ai_engineer")
+        self.assertEqual(payload["role"], ROLE_AI_ENGINEER)
 
 
 if __name__ == "__main__":

@@ -77,6 +77,21 @@ _KNOWN_PROGRAMS = [
 ]
 
 
+_FIELD_LABEL_PREFIX = re.compile(
+    r"^(?:Title|Authors?|Degree|Advisor|Adviser|Committee|Supervisory(?:\s+Committee)?)\s*[:\-.]?\s*",
+    re.IGNORECASE,
+)
+_TRAILING_ROLE = re.compile(r"\s+(?:Advisor|Adviser|Committee)\s*$", re.IGNORECASE)
+_ROLE_JUNK_TOKEN = re.compile(
+    r"\b(?:Supervisory|Committee|Committ(?:ee)?|Advisor|Adviser)\b",
+    re.IGNORECASE,
+)
+_SUPERVISORY_STOP = re.compile(
+    r"^(?:Abstract|บทคัดย่อ|Keywords?|คำสำคัญ|Contents|สารบัญ)\b",
+    re.IGNORECASE,
+)
+
+
 def _clean_name_spacing(name: str | None) -> str | None:
     """Clean missing spaces after dots and in CamelCase/TitleCase words from OCR/PDF."""
     if not name or not isinstance(name, str):
@@ -88,8 +103,51 @@ def _clean_name_spacing(name: str | None) -> str | None:
     return cleaned or None
 
 
+def _strip_field_label(line: str) -> str:
+    """Remove leading metadata labels such as Author / Title from a line."""
+    return _FIELD_LABEL_PREFIX.sub("", line.strip()).strip(" .:-")
+
+
+def _finalize_person_name(raw: str | None) -> str | None:
+    """Strip labels/role junk then normalize OCR spacing."""
+    if not raw or not isinstance(raw, str):
+        return None
+    cleaned = _strip_field_label(raw)
+    cleaned = _TRAILING_ROLE.sub("", cleaned).strip(" .:-")
+    cleaned = _ROLE_JUNK_TOKEN.sub(" ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .:-")
+    return _clean_name_spacing(cleaned)
+
+
+def _is_valid_author_name(name: str | None) -> bool:
+    """Author kept when length > 5; single-token given names are allowed."""
+    if not name:
+        return False
+    if len(name) <= 5:
+        return False
+    if _ROLE_JUNK_TOKEN.search(name):
+        return False
+    return bool(re.search(r"[A-Za-zก-๙]", name))
+
+
+def _is_valid_supervisory_name(name: str | None) -> bool:
+    """Advisor/Committee: ≥10 chars and ≥2 words; drop OCR role junk."""
+    if not name:
+        return False
+    if _ROLE_JUNK_TOKEN.search(name):
+        return False
+    words = [w for w in re.findall(r"[A-Za-zก-๙]+", name) if w]
+    if len(name) < 10 or len(words) < 2:
+        return False
+    if not re.fullmatch(r"[A-Za-zก-๙][A-Za-zก-๙ .,'()&-]*", name):
+        return False
+    return True
+
+
 def _looks_like_author_name(line: str) -> bool:
-    line_clean = line.strip(" .:-")
+    line_clean = _strip_field_label(line.strip(" .:-"))
+    if not line_clean:
+        return False
     if _NAME_PREFIX_PATTERN.match(line_clean):
         return True
     words = re.findall(r"[A-Za-z]+", line_clean)
@@ -194,11 +252,11 @@ def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]
 
         name = next(
             (
-                _clean_name_spacing(candidate)
+                finalized
                 for candidate in candidates
-                if candidate and len(_clean_name_spacing(candidate) or "") > 3
-                and re.fullmatch(r"[A-Za-z][A-Za-z .,'()&-]*", _clean_name_spacing(candidate) or "")
-                and not any(w.lower() in _TITLE_WORDS for w in re.findall(r"[A-Za-z]+", candidate))
+                for finalized in [_finalize_person_name(candidate)]
+                if _is_valid_supervisory_name(finalized)
+                and not any(w.lower() in _TITLE_WORDS for w in re.findall(r"[A-Za-z]+", finalized or ""))
             ),
             None,
         )
@@ -209,6 +267,52 @@ def _extract_approval_committee(lines: list[str]) -> tuple[str | None, list[str]
                 committee.append(name)
 
     return advisor, committee
+
+
+def _extract_supervisory_block(lines: list[str]) -> tuple[str | None, list[str]]:
+    """Parse Supervisory Advisor/Committee lines; keep roles clearly separated."""
+    start = next(
+        (index for index, line in enumerate(lines) if re.search(r"\bSupervisory\b", line, re.IGNORECASE)),
+        None,
+    )
+    if start is None:
+        return None, []
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if _SUPERVISORY_STOP.match(lines[index]):
+            end = index
+            break
+
+    advisor: str | None = None
+    committee: list[str] = []
+
+    for line in lines[start:end]:
+        working = re.sub(
+            r"^(?:Supervisory(?:\s+Committee)?|Committee)\s*",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        ).strip()
+        if not working:
+            continue
+
+        role_match = re.search(r"\s+(Advisor|Adviser|Committee)\s*$", working, re.IGNORECASE)
+        if not role_match:
+            continue
+
+        name = _finalize_person_name(working[: role_match.start()])
+        if not _is_valid_supervisory_name(name) or name == advisor:
+            continue
+
+        role = role_match.group(1).upper()
+        if role in ("ADVISOR", "ADVISER"):
+            if advisor is None:
+                advisor = name
+        else:
+            committee.append(name)
+
+    return advisor, list(dict.fromkeys(committee))
 
 
 def _extract_keywords(lines: list[str]) -> str | None:
@@ -281,67 +385,38 @@ def extract_project_metadata(first_page_text: str, filename: str | None = None) 
         
         cleaned_authors = []
         for a in authors:
-            ca = _clean_name_spacing(a)
-            if ca and ca not in cleaned_authors:
+            ca = _finalize_person_name(a)
+            if _is_valid_author_name(ca) and ca not in cleaned_authors:
                 cleaned_authors.append(ca)
 
         if cleaned_authors:
             metadata["author"] = ", ".join(cleaned_authors)
 
-    # --- 3. Advisor and Committee ---
-    found_advisor: str | None = None
-    found_committee: list[str] = []
-    for i, line in enumerate(lines):
-        if re.search(r"Supervisory", line, re.IGNORECASE):
-            search_scope = lines[i : i + 8]
-            combined_context = " ".join(search_scope)
-            mid_match = re.search(
-                r"Supervisory\s+Committee\s+(.*?)\s+Advis[oe]r",
-                combined_context,
-                re.IGNORECASE,
-            )
+    # --- 3. Advisor and Committee (roles stay separated) ---
+    found_advisor, found_committee = _extract_supervisory_block(lines)
 
-            if mid_match:
-                advisor_name = mid_match.group(1).strip()
-                advisor_name = advisor_name.strip(" .:-")
-                found_advisor = advisor_name
-
-            for committee_line in search_scope:
-                committee_line = re.sub(
-                    r"^Supervisory\s+Committee\s*",
-                    "",
-                    committee_line,
-                    flags=re.IGNORECASE,
-                )
-                committee_match = re.search(
-                    r"\bCommittee\b",
-                    committee_line,
-                    re.IGNORECASE,
-                )
-                if not committee_match:
-                    continue
-
-                committee_name = committee_line[:committee_match.start()].strip(" .:-")
-                if committee_name and committee_name.lower() != "supervisory":
-                    found_committee.append(committee_name)
-
-            break
-
-    if found_advisor is None or not found_committee:
+    # Approval-page fallback only on EXAMINING COMMITTEE pages (avoid OCR junk
+    # from broken Supervisory metadata pages being treated as labelled roles).
+    if (found_advisor is None or not found_committee) and re.search(
+        r"\bEXAMINING\s+COMMITTEE\b", first_page_text, re.IGNORECASE
+    ):
         approval_advisor, approval_committee = _extract_approval_committee(lines)
         if found_advisor is None and approval_advisor:
             found_advisor = approval_advisor
         if not found_committee and approval_committee:
             found_committee = approval_committee
 
-    cleaned_advisor = _clean_name_spacing(found_advisor)
-    metadata["advisor"] = cleaned_advisor
+    cleaned_advisor = _finalize_person_name(found_advisor)
+    metadata["advisor"] = cleaned_advisor if _is_valid_supervisory_name(cleaned_advisor) else None
     if found_committee:
         cleaned_committee_list = [
-            _clean_name_spacing(c) for c in found_committee
-            if _clean_name_spacing(c)
+            name
+            for raw in found_committee
+            for name in [_finalize_person_name(raw)]
+            if _is_valid_supervisory_name(name) and name != metadata["advisor"]
         ]
-        metadata["committee"] = ", ".join(dict.fromkeys(cleaned_committee_list))
+        if cleaned_committee_list:
+            metadata["committee"] = ", ".join(dict.fromkeys(cleaned_committee_list))
 
     # Year
     year_match = re.search(r"\b(20[12]\d)\b", first_page_text)
