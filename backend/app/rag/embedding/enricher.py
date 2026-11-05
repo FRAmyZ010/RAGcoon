@@ -14,6 +14,13 @@ from .category_registry import (
 
 load_dotenv()
 
+def _ollama_generate_url() -> str:
+    base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
+    return f"{base}/api/generate"
+
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
@@ -66,7 +73,7 @@ Document Excerpt (prefer Abstract / บทคัดย่อ):
 Existing Keyword line (may be empty or truncated):
 {existing_kw_text}
 
-Available categories (prefer these exact names; invent a short new English category ONLY if none fit):
+Available categories (prefer these exact names when they fit):
 {options_text}
 
 Extract the following fields into valid JSON:
@@ -75,7 +82,13 @@ Extract the following fields into valid JSON:
 3. "key_technologies": A JSON array of specifically mentioned technologies, frameworks, microcontrollers, sensors, or databases.
 4. "target_problem": A concise 1-sentence statement of the main real-world problem or pain point this project solves.
 5. "keywords": A refined JSON array of up to {MAX_KEYWORDS} concise keywords (not a raw copy of the Keyword line only). Use English when the abstract is English.
-6. "categories": A JSON array of 1-3 category names from the available list above. Use exactly ["Other"] when nothing else fits. Never combine Other with another category.
+6. "categories": A JSON array of 1-3 category names.
+   Rules for categories (strict):
+   - Prefer exact names from the available list when they fit.
+   - If the abstract/title has a clear domain that is NOT well covered by the list, invent 1 short English category name (Title Case, 1-3 words, e.g. "Transit", "E-Commerce", "Computer Vision"). Do NOT use Other in that case.
+   - Prefer inventing a precise new category over Other whenever the project topic is identifiable.
+   - Use exactly ["Other"] ONLY when the excerpt is empty, unreadable, or truly has no identifiable domain.
+   - Never combine Other with another category.
 
 JSON Format:
 {{
@@ -89,7 +102,7 @@ JSON Format:
 
     try:
         response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
+            _ollama_generate_url(),
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": f"<start_of_turn>user\n{system_prompt}\n\n{user_prompt}<end_of_turn>\n<start_of_turn>model\n",

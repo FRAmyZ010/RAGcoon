@@ -56,14 +56,9 @@ services:
       PID=$$!;
       echo '⏳ Waiting for Ollama service to start...';
       sleep 5;
-      echo '📥 Pulling recommended RAGcoon LLM models (gemma3:4b, qwen3:4b, qwen2.5:3b, llama3.2:3b, gemma3:1b, qwen2.5:7b)...';
+      echo '📥 Pulling default RAGcoon LLM model gemma3:4b (extra models can be pulled from AI Config)...';
       ollama pull gemma3:4b || true;
-      ollama pull qwen3:4b || true;
-      ollama pull qwen2.5:3b || true;
-      ollama pull llama3.2:3b || true;
-      ollama pull gemma3:1b || true;
-      ollama pull qwen2.5:7b || true;
-      echo '✅ Ollama models ready!';
+      echo '✅ Ollama default model ready!';
       wait $$PID
       "
     networks:
@@ -86,6 +81,13 @@ services:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragcoon_db}
       - POSTGRES_HOST=postgres
       - OLLAMA_BASE_URL=http://ollama:11434
+      # Must match a model that the ollama service actually pulls
+      - OLLAMA_MODEL=gemma3:4b
+      # Avoid CUDA/meta-tensor crashes when embedding documents for Qdrant upload
+      - CUDA_VISIBLE_DEVICES=
+      - TOKENIZERS_PARALLELISM=false
+      # Smaller embedding model to reduce RAM pressure on Windows Docker
+      - EMBEDDING_MODEL=intfloat/multilingual-e5-small
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

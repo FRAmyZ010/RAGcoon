@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
 from qdrant_client import QdrantClient
 from sentence_transformers import CrossEncoder
+
+from app.rag.embedding.embeddings import get_shared_embedding_model
 
 # Load .env from backend or root directory
 env_path = Path(__file__).resolve().parents[3] / ".env"
@@ -98,13 +99,13 @@ client: QdrantClient = QdrantClient(
 )
 
 
-@lru_cache(maxsize=1)
-def get_embed_model() -> HuggingFaceEmbeddings:
+def get_embed_model():
     """Load the embedding model only for an actual semantic search."""
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return get_shared_embedding_model(EMBEDDING_MODEL)
 
 
 @lru_cache(maxsize=1)
 def get_reranker() -> CrossEncoder:
     """Load the reranker only when results need reranking."""
-    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    # Keep reranker on CPU for the same container compatibility reason as embeddings.
+    return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
