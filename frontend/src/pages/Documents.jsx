@@ -22,13 +22,10 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Sliders,
 } from "lucide-react";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import {
   deleteDocument,
-  deleteDocumentCategory,
-  listDocumentCategories,
   listDocuments,
   mapDocumentToRow,
   openDocumentPreview,
@@ -80,23 +77,9 @@ export default function DocumentsManagement() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const [detailsRow, setDetailsRow] = useState(null);
-  const [categories, setCategories] = useState([]);
-  const [categoriesError, setCategoriesError] = useState("");
-  const [categoriesBusy, setCategoriesBusy] = useState(false);
   const fileInputRef = useRef(null);
   const toastTimerRef = useRef(null);
   const backgroundUploadRef = useRef(false);
-
-  const fetchCategories = useCallback(async () => {
-    try {
-      setCategoriesError("");
-      const data = await listDocumentCategories();
-      setCategories(Array.isArray(data?.categories) ? data.categories : []);
-    } catch (err) {
-      setCategories([]);
-      setCategoriesError(err.message || "Failed to load categories");
-    }
-  }, []);
 
   const fetchDocuments = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -123,8 +106,7 @@ export default function DocumentsManagement() {
 
   useEffect(() => {
     fetchDocuments();
-    fetchCategories();
-  }, [fetchDocuments, fetchCategories]);
+  }, [fetchDocuments]);
 
   useEffect(() => {
     return () => {
@@ -469,27 +451,6 @@ export default function DocumentsManagement() {
     });
   };
 
-  const removeCategory = async (name) => {
-    setCategoriesBusy(true);
-    try {
-      await deleteDocumentCategory(name);
-      await Promise.all([fetchCategories(), fetchDocuments({ silent: true })]);
-    } catch (err) {
-      setCategoriesError(err.message || "Failed to delete category");
-    } finally {
-      setCategoriesBusy(false);
-    }
-  };
-
-  const handleRemoveCategory = (name) => {
-    setConfirmState({
-      title: "Delete category",
-      message: `Remove "${name}" from the registry and from all documents? Documents left with no category become Other.`,
-      confirmLabel: "Delete category",
-      run: () => removeCategory(name),
-    });
-  };
-
   const acceptConfirm = async () => {
     const run = confirmState?.run;
     if (!run) return;
@@ -569,13 +530,6 @@ export default function DocumentsManagement() {
               <span>Feedback</span>
             </Link>
             <Link
-              to="/ai-config"
-              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
-            >
-              <Sliders className="h-3.5 w-3.5" />
-              <span>AI Configuration</span>
-            </Link>
-            <Link
               to="/chat"
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-white/10"
             >
@@ -650,57 +604,6 @@ export default function DocumentsManagement() {
             {error}
           </div>
         )}
-
-        <section className="mb-4 rounded-lg border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-gray-900">Document categories</h2>
-              <p className="text-[11px] text-gray-500 sm:text-xs">
-                Seed categories are locked. Invented names can be deleted here only; documents lose that label and become Other if empty.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={fetchCategories}
-              disabled={categoriesBusy}
-              className="inline-flex items-center gap-1 self-start rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3 w-3 ${categoriesBusy ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-          {categoriesError && (
-            <p className="mb-2 text-xs text-red-600">{categoriesError}</p>
-          )}
-          {categories.length === 0 ? (
-            <p className="text-xs text-gray-500">No categories loaded yet.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {categories.map((item) => (
-                <span
-                  key={item.name}
-                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-800"
-                >
-                  {item.name}
-                  {item.is_seed ? (
-                    <span className="text-[10px] font-medium text-gray-400">locked</span>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={categoriesBusy}
-                      onClick={() => handleRemoveCategory(item.name)}
-                      className="rounded-full p-0.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      aria-label={`Delete category ${item.name}`}
-                      title="Delete invented category"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-        </section>
 
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-sm">

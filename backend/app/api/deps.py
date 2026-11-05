@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.security import (
     ROLE_ADMINISTRATOR,
+    ROLE_AI_ENGINEER,
     decode_access_token,
     is_token_invalid,
 )
@@ -67,5 +68,17 @@ def get_current_administrator(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access required",
+        )
+    return current_user
+
+
+def get_current_ai_engineer(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    role_name = current_user.role.name if current_user.role else None
+    if role_name != ROLE_AI_ENGINEER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI Engineer access required",
         )
     return current_user

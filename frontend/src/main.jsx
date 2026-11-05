@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import FeedbackAdmin from "./pages/FeedbackAdmin.jsx";
 import LoginPage from "./pages/Login.jsx";
 import AIconfigPage from "./pages/AIconfig.jsx";
+import { ROLE_ADMINISTRATOR, ROLE_AI_ENGINEER } from "./services/authApi.js";
 import "./index.css";
 
 let visitSent = false;
@@ -53,7 +54,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route
           path="/feedback-admin"
           element={
-            <RequireAuth>
+            <RequireAuth roles={[ROLE_ADMINISTRATOR]}>
               <FeedbackAdmin />
             </RequireAuth>
           }
@@ -61,7 +62,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route
           path="/documents"
           element={
-            <RequireAuth>
+            <RequireAuth roles={[ROLE_ADMINISTRATOR]}>
               <DocumentsManagement />
             </RequireAuth>
           }
@@ -69,7 +70,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route
           path="/dashboard"
           element={
-            <RequireAuth>
+            <RequireAuth roles={[ROLE_ADMINISTRATOR]}>
               <Dashboard />
             </RequireAuth>
           }
@@ -77,7 +78,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route
           path="/ai-config"
           element={
-            <RequireAuth>
+            <RequireAuth roles={[ROLE_AI_ENGINEER]}>
               <AIconfigPage />
             </RequireAuth>
           }

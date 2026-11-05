@@ -7,7 +7,7 @@ from app.core.database import engine, Base, get_db, SessionLocal
 from app.core.config import settings
 import app.models  # โหลด Models ทั้งหมดเพื่อให้ SQLAlchemy สแกน Schema
 from app.api.v1.router import api_router
-from app.services.auth_service import ensure_administrator_seed
+from app.services.auth_service import ensure_administrator_seed, ensure_ai_engineer_seed
 
 # สร้างตารางใน PostgreSQL หากยังไม่มี
 Base.metadata.create_all(bind=engine)
@@ -25,10 +25,11 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS attachment_path VARCHAR(500)"))
     conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'Open'"))
 
-# Seed Administrator from env (idempotent — ไม่ reset password ถ้ามี user แล้ว)
+# Seed Administrator + AI Engineer from env (idempotent — ไม่ reset password ถ้ามี user แล้ว)
 _seed_db = SessionLocal()
 try:
     ensure_administrator_seed(_seed_db)
+    ensure_ai_engineer_seed(_seed_db)
 finally:
     _seed_db.close()
 

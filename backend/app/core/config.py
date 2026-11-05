@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
 
-    # Startup seed — Administrator only (Sprint 2)
+    # Startup seed — Administrator (Sprint 2)
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
     ADMIN_EMAIL: str = "admin@example.com"
+
+    # Startup seed — AI Engineer (AI Configuration + Chat)
+    AI_ENGINEER_USERNAME: str = "ai_engineer"
+    AI_ENGINEER_PASSWORD: str = "ai_engineer"
+    AI_ENGINEER_EMAIL: str = "ai_engineer@example.com"
 
     model_config = SettingsConfigDict(
         env_file = ".env",
