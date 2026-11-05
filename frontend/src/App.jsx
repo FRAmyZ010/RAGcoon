@@ -78,15 +78,36 @@ function createWorkspaceId() {
 
 const TOPIC_STYLE = {
   Hardware: "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-500 hover:text-white",
-  Web: "border-sky-300 bg-sky-50 text-sky-950 hover:bg-sky-600 hover:text-white",
-  "Machine learning": "border-violet-300 bg-violet-50 text-violet-950 hover:bg-violet-600 hover:text-white",
+  IoT: "border-orange-300 bg-orange-50 text-orange-950 hover:bg-orange-500 hover:text-white",
   Network: "border-emerald-300 bg-emerald-50 text-emerald-950 hover:bg-emerald-600 hover:text-white",
+  Web: "border-sky-300 bg-sky-50 text-sky-950 hover:bg-sky-600 hover:text-white",
+  Mobile: "border-cyan-300 bg-cyan-50 text-cyan-950 hover:bg-cyan-600 hover:text-white",
+  "Machine learning": "border-violet-300 bg-violet-50 text-violet-950 hover:bg-violet-600 hover:text-white",
+  Security: "border-red-300 bg-red-50 text-red-950 hover:bg-red-600 hover:text-white",
+  Database: "border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-500 hover:text-white",
   Data: "border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-500 hover:text-white",
+  Automation: "border-lime-300 bg-lime-50 text-lime-950 hover:bg-lime-600 hover:text-white",
   Other: "border-gray-300 bg-white text-gray-800 hover:bg-gray-900 hover:text-white",
 };
 
+const INVENTED_TONES = [
+  "border-slate-300 bg-slate-50 text-slate-900 hover:bg-slate-700 hover:text-white",
+  "border-stone-300 bg-stone-50 text-stone-900 hover:bg-stone-700 hover:text-white",
+  "border-zinc-300 bg-zinc-50 text-zinc-900 hover:bg-zinc-700 hover:text-white",
+  "border-neutral-300 bg-neutral-50 text-neutral-900 hover:bg-neutral-800 hover:text-white",
+  "border-teal-300 bg-teal-50 text-teal-950 hover:bg-teal-700 hover:text-white",
+];
+
+function inventedTone(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return INVENTED_TONES[hash % INVENTED_TONES.length];
+}
+
 function TopicChip({ name, count, onClick, large = false }) {
-  const tone = TOPIC_STYLE[name] || TOPIC_STYLE.Other;
+  const tone = TOPIC_STYLE[name] || inventedTone(name);
   return (
     <button
       type="button"
@@ -115,10 +136,10 @@ function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClos
         </button>
       </div>
       <div className="border-b border-gray-200 px-3 py-3">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Document topics</p>
-        <p className="mt-1 text-xs leading-4 text-gray-500">Taken from keywords in the PDFs, then grouped. Click one to ask.</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Document categories</p>
+        <p className="mt-1 text-xs leading-4 text-gray-500">From the live category registry. Click one to ask.</p>
         {keywords.length === 0 ? (
-          <p className="mt-1.5 text-xs text-gray-500">No topics yet</p>
+          <p className="mt-1.5 text-xs text-gray-500">No categories yet</p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {keywords.map((item) => (
@@ -126,7 +147,7 @@ function LibraryPanel({ documents, keywords, docQuery, onDocQuery, onAsk, onClos
                 key={item.keyword}
                 name={item.keyword}
                 count={item.count}
-                onClick={() => onAsk(`Which senior projects are in the ${item.keyword} group?`)}
+                onClick={() => onAsk(`Which senior projects are in the ${item.keyword} category?`)}
               />
             ))}
           </div>
@@ -691,7 +712,7 @@ export default function App() {
                 </div>
                 {catalog.top_keywords.length > 0 && (
                   <div className="mt-4 w-full max-w-xl">
-                    <p className="mb-2 text-center text-xs text-gray-500">Topics from keywords in the PDFs. Click one to ask.</p>
+                    <p className="mb-2 text-center text-xs text-gray-500">Categories from the document registry. Click one to ask.</p>
                     <div className="flex flex-wrap justify-center gap-1.5">
                     {catalog.top_keywords.map((item) => (
                       <TopicChip
@@ -699,7 +720,7 @@ export default function App() {
                         name={item.keyword}
                         count={item.count}
                         large
-                        onClick={() => handleSuggestion(`Which senior projects are in the ${item.keyword} group?`)}
+                        onClick={() => handleSuggestion(`Which senior projects are in the ${item.keyword} category?`)}
                       />
                     ))}
                     </div>

@@ -4,6 +4,12 @@ from typing import Any
 
 import pdfplumber
 
+from .category_registry import (
+    categories_to_storage,
+    normalize_categories,
+    normalize_keywords,
+    seed_categories,
+)
 from .enricher import extract_project_enrichment
 from .metadata_extractor import extract_project_metadata
 
@@ -22,8 +28,9 @@ def _metadata_page_score(text: str) -> int:
     return score
 
 
-def scan_pdf_document(file_path):
+def scan_pdf_document(file_path, category_options: list[str] | None = None):
     extracted_data = []
+    options = list(category_options or seed_categories())
 
     with pdfplumber.open(file_path) as pdf:
         total_pages = len(pdf.pages)
@@ -34,6 +41,7 @@ def scan_pdf_document(file_path):
             "author": None,
             "advisor": None,
             "committee": None,
+            "keywords": None,
             "year": None,
             "school": None,
             "program": None,
@@ -41,6 +49,8 @@ def scan_pdf_document(file_path):
             "project_type": [],
             "key_technologies": [],
             "target_problem": None,
+            "categories": ["Other"],
+            "keyword_groups": "Other",
         }
 
         # 2. Collect metadata first so every page receives the final payload.
@@ -98,24 +108,35 @@ def scan_pdf_document(file_path):
                         if not re.search(r"\b(20[12]\d)\b", current) and re.search(r"\b(20[12]\d)\b", value):
                             special_meta[key] = value
 
-        # 3. LLM Metadata Enrichment (summary, project_type, key_technologies, target_problem)
+        # 3. LLM: Abstract (+ existing Keyword line) → refined keywords + categories
         abstract_candidates = []
         for text in page_texts[:6]:
             if text and ("ABSTRACT" in text.upper() or "บทคัดย่อ" in text):
                 abstract_candidates.append(text)
         enrichment_text = "\n\n".join(abstract_candidates) if abstract_candidates else "\n\n".join(page_texts[:4])
+        existing_keywords = special_meta.get("keywords")
 
         enrichment = extract_project_enrichment(
             enrichment_text,
             project_title=special_meta.get("project_title"),
+            existing_keywords=existing_keywords if isinstance(existing_keywords, str) else None,
+            category_options=options,
         )
-        special_meta.update(enrichment)
-        if not special_meta.get("keywords"):
-            techs = special_meta.get("key_technologies") or []
-            if isinstance(techs, list):
-                names = [str(item).strip() for item in techs if str(item).strip()]
-                if names:
-                    special_meta["keywords"] = ", ".join(names[:15])
+        special_meta["summary"] = enrichment.get("summary")
+        special_meta["project_type"] = enrichment.get("project_type") or []
+        special_meta["key_technologies"] = enrichment.get("key_technologies") or []
+        special_meta["target_problem"] = enrichment.get("target_problem")
+
+        refined_keywords = normalize_keywords(enrichment.get("keywords"))
+        if not refined_keywords:
+            refined_keywords = normalize_keywords(existing_keywords)
+        if not refined_keywords:
+            refined_keywords = normalize_keywords(special_meta.get("key_technologies"))
+        special_meta["keywords"] = ", ".join(refined_keywords) if refined_keywords else None
+
+        categories = normalize_categories(enrichment.get("categories"), options)
+        special_meta["categories"] = categories
+        special_meta["keyword_groups"] = categories_to_storage(categories)
 
         # 4. Keep every scanned page in order. Blank pages should still carry their
         #    original page number so the numbering stays aligned with the PDF scan.

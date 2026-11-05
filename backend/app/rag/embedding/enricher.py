@@ -1,10 +1,16 @@
 import json
 import os
-import re
 from typing import Any, Optional
 
 import requests
 from dotenv import load_dotenv
+
+from .category_registry import (
+    MAX_KEYWORDS,
+    normalize_categories,
+    normalize_keywords,
+    seed_categories,
+)
 
 load_dotenv()
 
@@ -12,29 +18,40 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
 
-def extract_project_enrichment(
-    text: str,
-    project_title: Optional[str] = None,
-    timeout: int | tuple[float, float] = (3, 30),
-) -> dict[str, Any]:
-    """
-    Use lightweight local LLM to extract high-impact metadata:
-      - summary (1-2 sentences)
-      - project_type (list of categories, e.g. IoT & Hardware, Web Application)
-      - key_technologies (list of tools/technologies, e.g. NodeMCU, RFID, MySQL)
-      - target_problem (1 sentence problem statement)
-    """
-    fallback_res: dict[str, Any] = {
+def _fallback_enrichment(existing_keywords: Optional[str] = None) -> dict[str, Any]:
+    keywords = normalize_keywords(existing_keywords)[:MAX_KEYWORDS]
+    return {
         "summary": None,
         "project_type": [],
         "key_technologies": [],
         "target_problem": None,
+        "keywords": keywords,
+        "categories": ["Other"],
     }
+
+
+def extract_project_enrichment(
+    text: str,
+    project_title: Optional[str] = None,
+    existing_keywords: Optional[str] = None,
+    category_options: Optional[list[str]] = None,
+    timeout: int | tuple[float, float] = (3, 30),
+) -> dict[str, Any]:
+    """
+    Use lightweight local LLM to extract high-impact metadata:
+      - summary, project_type, key_technologies, target_problem (legacy fields)
+      - keywords (refined list from Abstract + existing Keyword line)
+      - categories (from seed/registry; may invent English names)
+    """
+    fallback_res = _fallback_enrichment(existing_keywords)
 
     if not text or not str(text).strip():
         return fallback_res
 
     clean_text = text.strip()[:3500]
+    options = list(category_options or seed_categories())
+    options_text = ", ".join(options)
+    existing_kw_text = (existing_keywords or "").strip() or "(none)"
 
     system_prompt = (
         "You are a Senior Project Analysis Engine. Analyze the following project abstract/document excerpt "
@@ -43,21 +60,31 @@ def extract_project_enrichment(
 
     user_prompt = f"""Project Title: {project_title or 'Senior Project'}
 
-Document Excerpt:
+Document Excerpt (prefer Abstract / บทคัดย่อ):
 {clean_text}
 
-Extract the following 4 fields into valid JSON:
+Existing Keyword line (may be empty or truncated):
+{existing_kw_text}
+
+Available categories (prefer these exact names; invent a short new English category ONLY if none fit):
+{options_text}
+
+Extract the following fields into valid JSON:
 1. "summary": A concise 1-2 sentence overview in the primary language of the text describing what the project does and how it works.
-2. "project_type": A JSON array of 1-3 broad categories (e.g. ["IoT & Hardware", "Web Application", "Mobile App", "AI & Machine Learning", "Cybersecurity", "Network"]).
-3. "key_technologies": A JSON array of specifically mentioned technologies, frameworks, microcontrollers, sensors, or databases (e.g. ["NodeMCU ESP8266", "RFID", "MySQL", "React"]).
+2. "project_type": A JSON array of 1-3 broad categories (legacy; may mirror "categories").
+3. "key_technologies": A JSON array of specifically mentioned technologies, frameworks, microcontrollers, sensors, or databases.
 4. "target_problem": A concise 1-sentence statement of the main real-world problem or pain point this project solves.
+5. "keywords": A refined JSON array of up to {MAX_KEYWORDS} concise keywords (not a raw copy of the Keyword line only). Use English when the abstract is English.
+6. "categories": A JSON array of 1-3 category names from the available list above. Use exactly ["Other"] when nothing else fits. Never combine Other with another category.
 
 JSON Format:
 {{
   "summary": "...",
   "project_type": ["..."],
   "key_technologies": ["..."],
-  "target_problem": "..."
+  "target_problem": "...",
+  "keywords": ["..."],
+  "categories": ["..."]
 }}"""
 
     try:
@@ -71,7 +98,7 @@ JSON Format:
                 "keep_alive": "10m",
                 "options": {
                     "temperature": 0.0,
-                    "num_predict": 300,
+                    "num_predict": 400,
                 },
             },
             timeout=timeout,
@@ -115,11 +142,24 @@ JSON Format:
         else:
             target_problem = None
 
+        keywords = normalize_keywords(parsed.get("keywords"))
+        if not keywords:
+            keywords = normalize_keywords(existing_keywords) or normalize_keywords(key_techs)
+
+        categories = normalize_categories(parsed.get("categories"), options)
+        # Keep registry options aware of invented names for this response
+        for name in categories:
+            if name not in options and name != "Other":
+                options.append(name)
+        categories = normalize_categories(categories, options)
+
         return {
             "summary": summary,
             "project_type": proj_types,
             "key_technologies": key_techs,
             "target_problem": target_problem,
+            "keywords": keywords,
+            "categories": categories,
         }
 
     except Exception as exc:

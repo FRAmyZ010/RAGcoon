@@ -46,11 +46,13 @@ def test_scan_pdf_document_keeps_page_numbers_aligned_with_scan(monkeypatch, tmp
     monkeypatch.setattr(
         pdf_scanning,
         "extract_project_enrichment",
-        lambda text, project_title=None, timeout=(3, 30): {
+        lambda text, project_title=None, existing_keywords=None, category_options=None, timeout=(3, 30): {
             "summary": None,
             "project_type": [],
             "key_technologies": [],
             "target_problem": None,
+            "keywords": [],
+            "categories": ["Other"],
         },
     )
 

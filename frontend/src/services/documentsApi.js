@@ -159,6 +159,23 @@ export async function deleteDocument(documentId) {
   return res.json();
 }
 
+export async function listDocumentCategories() {
+  const res = await fetch(`${DOCUMENTS_BASE}/categories`, {
+    headers: authHeaders(),
+  });
+  await rejectIfNotOk(res, `Failed to load categories (${res.status})`);
+  return res.json();
+}
+
+export async function deleteDocumentCategory(name) {
+  const res = await fetch(`${DOCUMENTS_BASE}/categories/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await rejectIfNotOk(res, `Failed to delete category (${res.status})`);
+  return res.json();
+}
+
 /** Open PDF preview in a new browser tab (optionally jump to page). */
 export function openDocumentPreview(documentId, page) {
   if (!documentId) return;

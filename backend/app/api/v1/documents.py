@@ -12,6 +12,8 @@ from app.schemas.document import (
     BatchUploadResponse,
     BatchUploadItemResult,
     BatchUploadSummary,
+    CategoryRegistryResponse,
+    CategoryDeleteResponse,
 )
 from app.services.document_service import (
     accept_document_upload,
@@ -25,6 +27,10 @@ from app.services.document_service import (
     DocumentUploadError,
     MAX_TOTAL_UPLOAD_BYTES,
     MAX_TOTAL_UPLOAD_MB,
+)
+from app.rag.embedding.category_registry import (
+    delete_invented_category,
+    list_category_entries,
 )
 
 router = APIRouter(prefix="/documents", tags=["Document Ingestion & Management"])
@@ -178,6 +184,30 @@ async def upload_documents_batch(
 def read_public_catalog(db: Session = Depends(get_db)):
     """Titles and top keywords for the chat page. No upload or delete."""
     return get_public_catalog(db)
+
+
+@router.get("/categories", response_model=CategoryRegistryResponse)
+def read_document_categories(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_administrator),
+):
+    """Seed + invented categories for Documents admin."""
+    return {"categories": list_category_entries(db)}
+
+
+@router.delete("/categories/{category_name}", response_model=CategoryDeleteResponse)
+def remove_document_category(
+    category_name: str,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_administrator),
+):
+    """Delete an invented category and remap documents (empty → Other)."""
+    try:
+        return delete_invented_category(db, category_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[DocumentResponse])
