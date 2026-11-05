@@ -1,6 +1,17 @@
 from backend.app.rag.embedding import pdf_scanning
 
 
+def test_metadata_page_score_prefers_labelled_abstract_page():
+    cover = "SOME TITLE\nJOHN DOE\nBACHELOR OF ENGINEERING\n2023"
+    labelled = (
+        "Title Some Title\n"
+        "Author Mr. John Doe\n"
+        "Supervisory Committee Dr. Ada Lovelace Advisor\n"
+        "Abstract\nA short abstract."
+    )
+    assert pdf_scanning._metadata_page_score(labelled) > pdf_scanning._metadata_page_score(cover)
+
+
 class FakePage:
     def __init__(self, text: str):
         self._text = text

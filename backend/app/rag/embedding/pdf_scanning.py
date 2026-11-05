@@ -8,6 +8,20 @@ from .enricher import extract_project_enrichment
 from .metadata_extractor import extract_project_metadata
 
 
+def _metadata_page_score(text: str) -> int:
+    """Prefer the labelled Title/Author/Supervisory/Abstract metadata page."""
+    score = 0
+    if re.search(r"(?m)^\s*Title\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"(?m)^\s*Author\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"\bSupervisory\b", text, re.IGNORECASE):
+        score += 2
+    if re.search(r"\bAbstract\b", text, re.IGNORECASE) or "บทคัดย่อ" in text:
+        score += 1
+    return score
+
+
 def scan_pdf_document(file_path):
     extracted_data = []
 
@@ -30,11 +44,13 @@ def scan_pdf_document(file_path):
         }
 
         # 2. Collect metadata first so every page receives the final payload.
+        # Prefer labelled metadata pages (Title + Supervisory + Abstract) over cover pages.
         file_basename = os.path.basename(file_path)
         page_texts = [
             page.extract_text(x_tolerance=1, y_tolerance=2) or ""
             for page in pdf.pages
         ]
+        scored_pages: list[tuple[int, dict[str, Any]]] = []
         for text in page_texts[:5]:
             if not text:
                 continue
@@ -42,6 +58,9 @@ def scan_pdf_document(file_path):
                 page_meta = extract_project_metadata(text, filename=file_basename)
             except TypeError:
                 page_meta = extract_project_metadata(text)
+            scored_pages.append((_metadata_page_score(text), page_meta))
+
+        for _, page_meta in sorted(scored_pages, key=lambda item: -item[0]):
             for key, value in page_meta.items():
                 if value is None:
                     continue
@@ -57,13 +76,14 @@ def scan_pdf_document(file_path):
                     elif key == "author":
                         current_names = [n.strip() for n in current.split(",") if n.strip()]
                         new_names = [n.strip() for n in value.split(",") if n.strip()]
+                        has_label_leak = any(n.lower().startswith("author ") for n in current_names)
                         has_single_word_current = any(len(n.split()) == 1 for n in current_names)
                         all_multi_word_new = all(len(n.split()) >= 2 for n in new_names)
-                        if has_single_word_current and all_multi_word_new:
+                        if has_label_leak or (has_single_word_current and all_multi_word_new):
                             special_meta[key] = value
                     elif key == "advisor":
                         # Prefer advisor that has academic title or is longer
-                        if len(current) < 5 or (
+                        if len(current) < 10 or (
                             re.search(r"\b(?:Dr\.|Prof\.|Aj\.|Asst\.|Assoc\.)", value)
                             and not re.search(r"\b(?:Dr\.|Prof\.|Aj\.|Asst\.|Assoc\.)", current)
                         ):
