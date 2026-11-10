@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
     "dev:frontend": "npm --prefix frontend run dev",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f backend"
+    "stack:start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start.ps1",
+    "stack:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop.ps1",
+    "docker:up": "docker compose -p ragcoon up -d --build",
+    "docker:down": "docker compose -p ragcoon down",
+    "docker:logs": "docker compose -p ragcoon logs -f"
   }
 }
