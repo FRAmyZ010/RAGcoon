@@ -65,7 +65,7 @@ services:
       - ragcoon-network
 
   # ---------------------------------------------------------------------------
-  # 4. Backend Service: FastAPI + RAG Engine
+  # 4. Backend Service: FastAPI + RAG Engine (bind-mount + --reload)
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -76,7 +76,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ./backend/.env
+      - path: ./backend/.env
+        required: false
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-ragcoon_db}
       - POSTGRES_HOST=postgres
@@ -91,13 +92,53 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./backend:/app
       - huggingface_cache:/root/.cache/huggingface
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
         condition: service_started
+    networks:
+      - ragcoon-network
+
+  # ---------------------------------------------------------------------------
+  # 5. Frontend Service: Vite dev server (hot reload)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ragcoon-frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
+      # Help file watching through Docker Desktop (especially Windows)
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - ragcoon-network
 
@@ -109,3 +150,4 @@ volumes:
   postgres_data:
   ollama_data:
   huggingface_cache:
+  frontend_node_modules:

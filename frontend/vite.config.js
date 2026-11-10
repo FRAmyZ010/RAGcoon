@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
+const usePolling = process.env.CHOKIDAR_USEPOLLING === 'true'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -9,9 +12,12 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5173,
     strictPort: true,
+    watch: {
+      usePolling,
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: apiProxyTarget,
         changeOrigin: true,
         timeout: 1800000,
         proxyTimeout: 1800000,

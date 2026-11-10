@@ -1,5 +1,6 @@
 // src/services/api.js
-const API_BASE_URL = "http://localhost:8000/api/v1";
+// Relative path so Vite proxy (local or Docker) forwards to the backend.
+const API_BASE_URL = "/api/v1";
 
 // Read the token from localStorage
 const getAuthHeaders = () => {

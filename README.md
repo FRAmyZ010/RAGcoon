@@ -1,71 +1,111 @@
-## 📁 Project Structure
+# RAGcoon
+
+Senior-project RAG app: React frontend + FastAPI backend + Postgres + Ollama (+ Qdrant Cloud).
+
+## Quick start (Docker — recommended)
+
+**Requirements**
+- Docker Desktop (Windows/Mac) or Docker Engine + Compose (Linux)
+- Enough RAM for Ollama + embeddings (8GB+ recommended)
+- A Qdrant Cloud URL + API key (for RAG/chat features)
+
+### Option 1 — click / run script
+
+**Windows**
+- Double-click `start.bat`  
+  or in PowerShell: `.\start.ps1`
+
+**Mac / Linux**
+```bash
+chmod +x start.sh stop.sh scripts/start.sh scripts/stop.sh
+./start.sh
+```
+
+The start script will:
+1. Create `.env` and `backend/.env` from `.env.example` if missing
+2. Warn if Qdrant/JWT values still look like placeholders
+3. Run `docker compose -p ragcoon up -d --build`
+4. Wait until backend + frontend are healthy
+5. Open http://localhost:5173
+
+**Stop**
+- Windows: double-click `stop.bat` or `.\stop.ps1`
+- Mac/Linux: `./stop.sh`
+
+### Option 2 — commands only
+
+```bash
+# first time: copy env
+cp .env.example .env
+cp .env.example backend/.env
+# then edit backend/.env — set QDRANT_URL and QDRANT_API_KEY
+
+docker compose -p ragcoon up -d --build
+```
+
+Or from repo root on Windows:
+
+```bash
+npm run stack:start
+npm run stack:stop
+```
+
+```bash
+npm run docker:up
+npm run docker:down
+npm run docker:logs
+```
+
+### URLs
+
+| Service   | URL                      |
+|-----------|--------------------------|
+| Frontend  | http://localhost:5173    |
+| Backend   | http://localhost:8000/docs |
+| pgAdmin   | http://localhost:8080    |
+| Ollama    | http://localhost:11434   |
+| Postgres  | localhost:5432           |
+
+### After clone — edit secrets
+
+Edit `backend/.env` (and optionally root `.env` for Compose variable substitution):
+
+- `QDRANT_URL`
+- `QDRANT_API_KEY`
+- optionally `JWT_SECRET`, admin passwords, Gemini/OpenAI keys
+
+Scripts never overwrite an existing `.env`.
+
+## What runs in Docker
+
+- `frontend` — Vite dev server (hot reload; source bind-mounted)
+- `backend` — FastAPI with `--reload` (source bind-mounted)
+- `postgres` — PostgreSQL + pgvector
+- `pgadmin` — DB UI
+- `ollama` — local LLM (`gemma3:4b` pulled on first start)
+
+First start can take a long time (image pulls + Ollama model).
+
+## Hybrid local frontend (optional)
+
+If you only want infra/backend in Docker and Vite on the host:
+
+```bash
+npm run dev
+```
+
+This uses `scripts/dev.ps1` (Windows).
+
+## Project layout
 
 ```text
-RAGCOON/
-├── backend/                # 🐍 Python FastAPI Backend
-│   ├── data/               # เก็บไฟล์เอกสารดิบ (PDF, TXT)
-│   ├── rag/                # หัวใจของระบบ RAG (Logic, Engine)
-│   ├── services/           # บริการเสริมต่างๆ (เช่น การต่อ Database)
-│   ├── .env                # ไฟล์เก็บความลับ (API Keys) - ห้ามแชร์!
-│   ├── .env.example        # ไฟล์ตัวอย่างการตั้งค่า Environment
-│   ├── main.py             # จุดเริ่มต้นการรัน Server FastAPI
-│   └── requirements.txt    # รายการ Library ที่ต้องติดตั้ง
-│
-├── frontend/               # ⚛️ React Frontend
-│   ├── pages/              # หน้าหลักต่างๆ ของเว็บไซต์
-│   ├── public/             # ไฟล์ Static (index.html, Favicon)
-│   │   └── index.html      # ไฟล์ Entry point ของหน้าเว็บ
-│   ├── src/                # ซอร์สโค้ดหลักของ Frontend
-│   │   ├── components/     # ชิ้นส่วน UI (ChatBox, Navbar, Button)
-│   │   ├── icon/           # ไฟล์ไอคอนต่างๆ ที่ใช้ในเว็บ
-│   │   ├── img/            # ไฟล์รูปภาพประกอบ
-│   │   ├── services/       # ส่วนเชื่อมต่อ API (Axios, Fetch)
-│   │   └── styles/         # ไฟล์จัดการความสวยงาม (CSS/SCSS)
-│   ├── .env                # การตั้งค่าฝั่งหน้าบ้าน
-│   └── .env.example        # ตัวอย่างการตั้งค่าฝั่งหน้าบ้าน
-│
-├── .gitignore              # ไฟล์บอก Git ว่าไม่ต้องเอาไฟล์ไหนขึ้น GitHub
-└── README.md               # เอกสารอธิบายโปรเจกต์ (ไฟล์นี้)
-```
-
-## 🚀 การตั้งค่าโปรเจกต์ (Project Setup)
-
-### 1. การเตรียม Environment Variables
-สร้างไฟล์ `.env` ในโฟลเดอร์ `backend/` และ `frontend/` โดยอ้างอิงตามตัวอย่างในไฟล์ `.env.example`
-
-### 2. การตั้งค่า Backend
-#### 2.1 เข้าไปที่ Folder backend:
-```bash
-cd backend
-```
-#### 2.2 สร้างและเปิดใช้งาน Virtual Environment:
-```bash
-# สร้าง venv
-python -m venv venv
-
-# การเปิดใช้งาน
-# สำหรับ Windows:
-.\venv\Scripts\activate
-# สำหรับ Mac/Linux:
-source venv/bin/activate
-
-# การปิดใช้งาน
-deactivate
-```
-
-#### 2.3 ติดตั้ง Dependencies:
-```bash
-pip install -r requirements.txt
-``` 
-
-### 3. การตั้งค่า Frontend
-เปิด terminal อีกหน้าต่างและรันคำสั่งดังนี้
-#### 3.1 เข้าไปที่ Folder frontend
-```bash
-cd frontend
-```
-#### 3.2 ติดตั้ง Dependencies และ Library ที่จำเป็น:
-```bash
-npm init -y
-npm install axios lucide-react bcrypted
+RAGcoon/
+├── backend/           # FastAPI + RAG
+├── frontend/          # React + Vite
+├── scripts/           # start/stop/dev helpers
+├── docker-compose.yml # full stack
+├── start.bat / start.sh
+├── stop.bat / stop.sh
+├── .env.example
+└── README.md
 ```
