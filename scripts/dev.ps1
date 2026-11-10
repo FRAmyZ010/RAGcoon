@@ -125,7 +125,24 @@ if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
     }
 }
 
-Write-Step "Starting frontend (Vite) on http://localhost:5173"
+Write-Step "Starting frontend (Vite) — LAN enabled"
+$lanIps = @(
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.IPAddress -notlike "127.*" -and
+            $_.IPAddress -notlike "169.254.*" -and
+            $_.PrefixOrigin -ne "WellKnown"
+        } |
+        Select-Object -ExpandProperty IPAddress -Unique
+)
+Write-Host "Local:   http://localhost:5173"
+foreach ($ip in $lanIps) {
+    Write-Host "LAN:     http://${ip}:5173"
+}
+if (-not $lanIps) {
+    Write-Host "LAN:     (run ipconfig and share your IPv4 with friends on the same Wi-Fi)"
+}
+Write-Host "Allow Windows Firewall inbound TCP 5173 if friends cannot connect."
 Write-Host "Press Ctrl+C to stop the frontend. Docker services keep running (docker compose down to stop them)."
 Push-Location $frontendDir
 try {
