@@ -101,13 +101,86 @@ def retrieve_context(question: str) -> list[str]:
     return search(question)
 
 
+_CATEGORY_LIST_PARTIAL_TH = (
+    "\n\nนี่เป็นเพียงส่วนหนึ่งเท่านั้น หากต้องการดูรายการเพิ่มเติม "
+    'พิมพ์ว่า "ขอเพิ่ม" หรือ "show more" ได้'
+)
+_CATEGORY_LIST_PARTIAL_EN = (
+    "\n\nThis is only a partial list. "
+    'Ask for "show more" if you want additional projects.'
+)
+
+
+def _strip_model_artifacts(text: str) -> str:
+    cleaned = text
+    for marker in (
+        "<|file_separator|>",
+        "<|endoftext|>",
+        "<end_of_turn>",
+        "<start_of_turn>",
+        "<|eot_id|>",
+        "<|im_end|>",
+    ):
+        cleaned = cleaned.replace(marker, "")
+    return cleaned.strip()
+
+
+def _count_numbered_list_items(text: str) -> int:
+    return len(re.findall(r"(?m)^\s*\d+\.\s+", text or ""))
+
+
+def finalize_category_list_answer(
+    answer: str,
+    *,
+    catalog: Optional[dict[str, Any]] = None,
+    is_thai: bool = False,
+    num_predict: Optional[int] = None,
+    eval_count: Optional[int] = None,
+) -> str:
+    """
+    Clean CATEGORY_LIST answers and append a partial-list note when generation
+    likely hit the token budget before covering the full catalog page.
+    """
+    cleaned = _strip_model_artifacts(answer or "")
+    if not cleaned:
+        return cleaned
+
+    expected = 0
+    if catalog:
+        expected = len(catalog.get("projects") or [])
+    listed = _count_numbered_list_items(cleaned)
+
+    hit_token_budget = False
+    if num_predict and eval_count:
+        try:
+            hit_token_budget = int(eval_count) >= max(1, int(num_predict) - 8)
+        except (TypeError, ValueError):
+            hit_token_budget = False
+
+    incomplete = expected > 0 and listed < expected
+    # Mid-line cut (e.g. ends with "Mr. Vas" / dangling dash)
+    looks_truncated = bool(re.search(r"(—|-)\s*\S{0,40}$", cleaned)) and not cleaned.rstrip().endswith((".", ")", "]"))
+
+    already_noted = any(
+        marker in cleaned
+        for marker in (
+            "นี่เป็นเพียงส่วนหนึ่ง",
+            "only a partial list",
+            "ส่วนหนึ่งเท่านั้น",
+        )
+    )
+    if not already_noted and (incomplete or hit_token_budget or looks_truncated):
+        cleaned = cleaned.rstrip() + (_CATEGORY_LIST_PARTIAL_TH if is_thai else _CATEGORY_LIST_PARTIAL_EN)
+    return cleaned
+
+
 def clean_answer(answer: str, is_thai: bool = False) -> str:
     fallback_text = NO_ANSWER_TEXT_TH if is_thai else NO_ANSWER_TEXT_EN
 
     if not answer:
         return fallback_text
 
-    cleaned = answer.strip()
+    cleaned = _strip_model_artifacts(answer.strip())
 
     # Strip any <think>...</think> block or lingering think tags
     if "<think>" in cleaned:
@@ -206,12 +279,14 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     elif intent == "CATEGORY_LIST":
         return """4. Catalog Category Listing (COMPLETE ENUMERATION REQUIRED):
    Use ONLY the provided catalog/project metadata (do not invent projects).
-   You MUST list EVERY project on this catalog page — do not summarize, skip, or stop early.
-   Count the numbered projects in the catalog ("Projects on this page: N") and output exactly that many numbered items.
-   Keep each item ULTRA SHORT — one line only, no keywords/authors/categories/filename:
-   1. **[Project Title]** ([Year]) — [Advisor]
-   Do NOT paste the full catalog metadata lines. Details belong in Sources, not in the answer body.
-   After the full list, if more pages remain, tell the user they can ask for the next page (one short sentence).
+   You MUST try to list EVERY project on this catalog page — do not invent extras.
+   Count "Projects on this page: N" and aim for that many numbered items.
+   Keep each item ULTRA SHORT — one line only:
+   1. **[Project Title]** ([Year]) — [short gist in ~5-12 words]
+   Write the gist yourself from the project's keywords/meta (core topic only). Do NOT use advisor/author names as the gist.
+   Do NOT dump full keyword lists, filenames, or categories into the answer body.
+   If you are about to run out of space before finishing all N items, stop after the last COMPLETE numbered line and do not cut mid-sentence.
+   If more catalog pages remain after a complete page, one short sentence may say the user can ask for the next page.
    If no exact category match and suggestions are provided, list only the suggested categories (no invented projects)."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:
@@ -458,7 +533,7 @@ Question:
     if "gemma" in model_name:
         full_user = f"{system_content}\n\n{user_content}"
         prompt = f"<start_of_turn>user\n{full_user}<end_of_turn>\n<start_of_turn>model\n{prefill}"
-        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>"]
+        stop_tokens = ["<end_of_turn>", "<start_of_turn>", "<eos>", "<|im_end|>", "<|file_separator|>"]
     elif "llama" in model_name:
         prompt = (
             f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
@@ -1265,6 +1340,17 @@ def answer_question(
         if (intent == "CODE" or _is_code_query(question)) and answer == fallback_text:
             answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
 
+    if intent == "CATEGORY_LIST" and retrieval_details.get("catalog_mode"):
+        from .intent_config import get_intent_config
+
+        answer = finalize_category_list_answer(
+            answer,
+            catalog=retrieval_details.get("catalog"),
+            is_thai=is_thai,
+            num_predict=get_intent_config(intent).num_predict,
+            eval_count=stats_out.get("eval_count"),
+        )
+
     # Add assistant response to session history
     session_manager.add_assistant_message(session_id, answer)
 
@@ -1466,6 +1552,21 @@ def stream_answer_question(
 
         if (intent == "CODE" or _is_code_query(question)) and cleaned_answer == fallback_text:
             cleaned_answer = _build_code_fallback(scored_contexts, is_thai=is_thai)
+
+    if intent == "CATEGORY_LIST" and retrieval_details.get("catalog_mode"):
+        from .intent_config import get_intent_config
+
+        before = cleaned_answer
+        cleaned_answer = finalize_category_list_answer(
+            cleaned_answer,
+            catalog=retrieval_details.get("catalog"),
+            is_thai=is_thai,
+            num_predict=get_intent_config(intent).num_predict,
+            eval_count=stats_out.get("eval_count"),
+        )
+        # Stream the partial-list footer if it was appended after tokens finished
+        if cleaned_answer.startswith(before) and len(cleaned_answer) > len(before):
+            yield {"event": "token", "data": {"token": cleaned_answer[len(before):]}}
 
     # Add assistant response to session manager
     session_manager.add_assistant_message(session_id, cleaned_answer)
