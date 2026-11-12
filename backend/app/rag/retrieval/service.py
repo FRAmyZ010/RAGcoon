@@ -189,6 +189,8 @@ def search_with_details(
     chat_history: str | None = None,
     config: Any = None,
     precomputed_query_proc: tuple[str, dict, str, float] | None = None,
+    session_id: str | None = None,
+    category_list_offset: int | None = None,
 ) -> dict:
     """Search and return detailed results with scores, timing, and dynamic routing intent."""
     total_start = time.perf_counter()
@@ -238,6 +240,8 @@ def search_with_details(
                     filters=filters,
                     query_proc_seconds=query_proc_seconds,
                     total_start=total_start,
+                    offset=int(category_list_offset or 0),
+                    session_id=session_id,
                 )
             from .category_catalog import catalog_unsupported_filters
 
@@ -245,6 +249,10 @@ def search_with_details(
                 "CATEGORY_LIST filters not fully supported in Postgres "
                 f"{catalog_unsupported_filters(filters)}; falling back to hybrid retrieval"
             )
+            if session_id:
+                from .session_manager import session_manager
+
+                session_manager.clear_last_category_list(session_id)
 
         # =========================================================================
         # True Fast-Path Shortcut: Direct Metadata Payload Retrieval

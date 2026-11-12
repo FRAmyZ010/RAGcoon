@@ -849,7 +849,46 @@ def _prepare_rag_context(
     if precomputed_retrieval is not None:
         retrieval_details = precomputed_retrieval
     else:
-        retrieval_details = search_with_details(question, chat_history=chat_history_str, config=config)
+        from .category_catalog import (
+            build_category_list_retrieval,
+            can_answer_from_catalog,
+            looks_like_category_list_follow_up,
+        )
+
+        # Follow-up "show more / ขอเพิ่ม" reuses last_category_list (skip re-classification)
+        last_category = session_manager.get_last_category_list(session_id)
+        if (
+            last_category
+            and looks_like_category_list_follow_up(question)
+            and can_answer_from_catalog(last_category.get("filters") or {})
+        ):
+            follow_filters = dict(last_category.get("filters") or {})
+            follow_offset = int(last_category.get("next_offset") or 0)
+            follow_norm = (
+                last_category.get("normalized_query")
+                or f"senior projects in the {follow_filters.get('category')} category"
+            )
+            print(
+                f"\n📦 [CATEGORY_LIST follow-up] category={follow_filters.get('category')!r} "
+                f"offset={follow_offset}"
+            )
+            retrieval_details = build_category_list_retrieval(
+                normalized_query=follow_norm,
+                filters=follow_filters,
+                offset=follow_offset,
+                session_id=session_id,
+            )
+        else:
+            retrieval_details = search_with_details(
+                question,
+                chat_history=chat_history_str,
+                config=config,
+                session_id=session_id,
+            )
+            # Non-catalog turns drop pagination state so "more" cannot leak across topics
+            if retrieval_details.get("intent") != "CATEGORY_LIST" or not retrieval_details.get("catalog_mode"):
+                session_manager.clear_last_category_list(session_id)
+
     scored_contexts = retrieval_details["results"]
     intent = retrieval_details.get("intent", "FACTOID")
     filters = retrieval_details.get("filters", {})

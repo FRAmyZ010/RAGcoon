@@ -290,7 +290,8 @@ def looks_like_category_list_follow_up(raw_query: str) -> bool:
     if not raw_query or not raw_query.strip():
         return False
     q = raw_query.lower().strip()
-    cues = (
+    # Avoid bare substrings like "ต่อ" matching "ต่อยอด" (recommendation)
+    phrase_cues = (
         "next page",
         "show more",
         "more please",
@@ -298,14 +299,13 @@ def looks_like_category_list_follow_up(raw_query: str) -> bool:
         "หน้าถัดไป",
         "ขอเพิ่ม",
         "เพิ่มเติม",
-        "ต่อ",
         "ดูต่อ",
         "อีกหน่อย",
         "อีกหน้า",
+        "หน้าต่อไป",
     )
-    if any(cue in q for cue in cues):
+    if any(cue in q for cue in phrase_cues):
         return True
-    # Very short continuation
     return bool(re.fullmatch(r"(more|next|เพิ่ม|ต่อ)\??", q))
 
 
@@ -337,6 +337,55 @@ def _catalog_citations(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     return citations
 
 
+def category_list_session_state(
+    *,
+    catalog: dict[str, Any],
+    filters: dict[str, Any],
+    normalized_query: str,
+) -> dict[str, Any]:
+    """Build session payload for follow-up 'show more' turns."""
+    page_len = len(catalog.get("projects") or [])
+    offset = int(catalog.get("offset") or 0)
+    next_offset = offset + page_len
+    kept_filters = {
+        key: filters[key]
+        for key in ("category", "year", "advisor", "author")
+        if key in filters and filters[key] not in (None, "", [])
+    }
+    matched = catalog.get("matched_category")
+    if matched and "category" not in kept_filters:
+        kept_filters["category"] = matched
+    return {
+        "category": matched or kept_filters.get("category"),
+        "filters": kept_filters,
+        "next_offset": next_offset,
+        "total": int(catalog.get("total") or 0),
+        "has_more": bool(catalog.get("has_more")),
+        "normalized_query": normalized_query,
+    }
+
+
+def remember_category_list_result(
+    session_id: Optional[str],
+    retrieval_details: dict[str, Any],
+) -> None:
+    """Persist / clear last_category_list on the shared session_manager instance."""
+    from .session_manager import session_manager
+
+    if not session_id or not retrieval_details.get("catalog_mode"):
+        return
+    catalog = retrieval_details.get("catalog") or {}
+    if not catalog.get("matched_category"):
+        # Suggestions-only: keep prior state if any; do not advance offset
+        return
+    state = category_list_session_state(
+        catalog=catalog,
+        filters=retrieval_details.get("filters") or {},
+        normalized_query=retrieval_details.get("normalized_query") or "",
+    )
+    session_manager.set_last_category_list(session_id, state)
+
+
 def build_category_list_retrieval(
     *,
     normalized_query: str,
@@ -346,6 +395,7 @@ def build_category_list_retrieval(
     limit: int = CATEGORY_LIST_PAGE_SIZE,
     db: Session | None = None,
     total_start: float | None = None,
+    session_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Build a search_with_details-compatible payload from Postgres catalog data.
@@ -391,9 +441,10 @@ def build_category_list_retrieval(
             f"\n📦 [CATEGORY_LIST] Postgres catalog: "
             f"matched={catalog.get('matched_category')!r} "
             f"total={catalog.get('total')} page={len(catalog.get('projects') or [])} "
+            f"offset={catalog.get('offset')} "
             f"in {catalog_seconds:.3f}s (vector retrieval skipped)"
         )
-        return {
+        payload = {
             "results": results,
             "errors": [],
             "timing": {
@@ -414,6 +465,8 @@ def build_category_list_retrieval(
             "catalog_citations": citations,
             "catalog_sources": sources,
         }
+        remember_category_list_result(session_id, payload)
+        return payload
     finally:
         if owns_session and db is not None:
             db.close()

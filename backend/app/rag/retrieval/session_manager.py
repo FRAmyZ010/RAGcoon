@@ -91,6 +91,60 @@ class SessionChatManager:
     def add_assistant_message(self, session_id: Optional[str], content: str) -> None:
         self.add_message(session_id, "assistant", content)
 
+    def _ensure_session_locked(self, session_id: str) -> dict[str, Any]:
+        """Create session bucket if missing. Caller must hold ``self._lock``."""
+        if session_id not in self._sessions:
+            if len(self._sessions) >= self.max_sessions:
+                self._sessions.popitem(last=False)
+            self._sessions[session_id] = {
+                "messages": [],
+                "created_at": time.time(),
+                "updated_at": time.time(),
+            }
+        session = self._sessions[session_id]
+        session["updated_at"] = time.time()
+        self._sessions.move_to_end(session_id)
+        return session
+
+    def set_last_category_list(
+        self,
+        session_id: Optional[str],
+        state: Optional[dict[str, Any]],
+    ) -> None:
+        """
+        Store / replace CATEGORY_LIST pagination state for follow-up turns.
+
+        Expected keys: category, filters, next_offset, total, normalized_query, has_more
+        """
+        if not session_id:
+            return
+        with self._lock:
+            self._cleanup_expired_sessions()
+            session = self._ensure_session_locked(session_id)
+            if state is None:
+                session.pop("last_category_list", None)
+            else:
+                session["last_category_list"] = dict(state)
+
+    def get_last_category_list(self, session_id: Optional[str]) -> Optional[dict[str, Any]]:
+        """Return a copy of the last CATEGORY_LIST pagination state, if any."""
+        if not session_id:
+            return None
+        with self._lock:
+            self._cleanup_expired_sessions()
+            session = self._sessions.get(session_id)
+            if not session:
+                return None
+            state = session.get("last_category_list")
+            if not state:
+                return None
+            session["updated_at"] = time.time()
+            self._sessions.move_to_end(session_id)
+            return dict(state)
+
+    def clear_last_category_list(self, session_id: Optional[str]) -> None:
+        self.set_last_category_list(session_id, None)
+
     def format_history_for_prompt(self, session_id: Optional[str]) -> str:
         """Format the session history as a string suitable for LLM prompt context."""
         history = self.get_history(session_id)
