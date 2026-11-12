@@ -29,7 +29,7 @@ _ENGLISH_TECHNICAL_KEYWORDS = {
     "neural", "deep learning", "machine learning", "ai", "classifier", "classification",
 }
 
-_DISQUALIFIED_INTENTS = {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE"}
+_DISQUALIFIED_INTENTS = {"RECOMMENDATION", "COMPARISON", "DEEP_DIVE", "CODE", "CATEGORY_LIST"}
 
 
 def _has_technical_keywords(query: str, project_title: Optional[str] = None) -> bool:

@@ -45,7 +45,70 @@ class QueryFilterResult(BaseModel):
     project_title: Optional[str] = Field(None, description="Exact project title if specifically queried.")
     author: Optional[Any] = Field(None, description="Author student name(s) (string or array of strings) if specifically queried.")
     keywords: Optional[str] = Field(None, description="Domain keywords (e.g., IoT, BLE, MySQL, Arduino).")
-    intent: str = Field("FACTOID", description="Query intent: RECOMMENDATION, EXPLORATORY, DEEP_DIVE, COMPARISON, CODE, FACTOID")
+    intent: str = Field(
+        "FACTOID",
+        description="Query intent: RECOMMENDATION, EXPLORATORY, CATEGORY_LIST, DEEP_DIVE, COMPARISON, CODE, FACTOID",
+    )
+
+
+_CATEGORY_LIST_EXTRACT_PATTERNS = (
+    re.compile(r"\bin the\s+(.+?)\s+categor(?:y|ies)\b", re.IGNORECASE),
+    re.compile(r"\bcategor(?:y|ies)\s*[:\-]?\s*([A-Za-z][A-Za-z0-9 &/\-]{0,40})", re.IGNORECASE),
+    re.compile(r"หมวด(?:หมู่)?\s*([A-Za-z0-9][A-Za-z0-9 &/\-]{0,40}|[^\s?]+)", re.IGNORECASE),
+    re.compile(r"(?:ใน)?ประเภท\s*([A-Za-z0-9][A-Za-z0-9 &/\-]{0,40}|[^\s?]+)", re.IGNORECASE),
+)
+
+
+def _looks_like_category_list_query(raw_query: str) -> bool:
+    """True when the user is listing projects by a pre-tagged category (not loose domain search)."""
+    q = raw_query.lower()
+    if re.search(r"\bin the\s+.+\s+categor(?:y|ies)\b", q):
+        return True
+    has_marker = any(m in q for m in ("category", "categories", "หมวดหมู่", "หมวด", "ประเภท"))
+    if not has_marker:
+        return False
+    list_cues = (
+        "which", "list", "show", "all", "senior project", "projects",
+        "โปรเจกต์", "โครงงาน", "รายชื่อ", "อะไรบ้าง", "มีอะไร", "มีโครงงาน", "มีโปรเจกต์",
+    )
+    return any(cue in q for cue in list_cues)
+
+
+def extract_category_from_query(raw_query: str) -> Optional[str]:
+    """Extract a category label from an explicit category-list phrasing, if present."""
+    if not raw_query or not raw_query.strip():
+        return None
+    from app.rag.embedding.category_registry import SEED_CATEGORIES, normalize_categories
+
+    q = raw_query.strip()
+    for pattern in _CATEGORY_LIST_EXTRACT_PATTERNS:
+        match = pattern.search(q)
+        if not match:
+            continue
+        raw_label = match.group(1).strip(" .,\"'`")
+        raw_label = re.sub(
+            r"\b(senior\s+projects?|projects?|โครงงาน|โปรเจกต์)\b",
+            "",
+            raw_label,
+            flags=re.IGNORECASE,
+        ).strip(" .,\"'`")
+        if not raw_label:
+            continue
+        resolved = normalize_categories([raw_label], registry=SEED_CATEGORIES)
+        if resolved and resolved != ["Other"]:
+            return resolved[0]
+        # Keep raw label for later fuzzy suggest (task 2+); strip trailing junk
+        cleaned = re.sub(r"[?!.]+$", "", raw_label).strip()
+        if cleaned:
+            return cleaned
+
+    # Fallback: known seed name mentioned beside a category marker
+    q_lower = q.lower()
+    if any(m in q_lower for m in ("category", "categories", "หมวด", "ประเภท")):
+        for name in SEED_CATEGORIES:
+            if name.casefold() in q_lower:
+                return name
+    return None
 
 
 def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False) -> str:
@@ -69,6 +132,9 @@ def _detect_intent_by_rules(raw_query: str, project_title_present: bool = False)
     ]
     if any(k in q for k in recommend_triggers):
         return "RECOMMENDATION"
+    # Explicit catalog category listing (before generic EXPLORATORY / DEEP_DIVE)
+    if _looks_like_category_list_query(raw_query):
+        return "CATEGORY_LIST"
     if any(k in q for k in ["similar", "คล้าย", "เหมือน", "จัดกลุ่ม", "grouping", "group"]):
         return "EXPLORATORY"
     if any(k in q for k in [
@@ -128,9 +194,10 @@ Your task is to analyze the user's raw query (which may be in Thai, English, hav
 3. "author": Exact matching author name(s) from the KNOWN AUTHORS list. If multiple authors are mentioned, return a list/array of author names (e.g. ["FANA YAHLEE", "ROMTHEERA WANG"]). If single author, return a string (e.g. "PHUMPHOL CHANRUNGSRICHAY"). If not mentioned in the CURRENT query, return null.
 4. "year": 4-digit academic year in Christian Era (e.g. convert Thai year 2565 or 65 -> 2022, 2563 or 63 -> 2020). Return null if no year is specified in the CURRENT query.
 5. "project_title": Exact project title from the KNOWN PROJECTS list if specifically referenced, otherwise null.
-6. "intent": One of ["RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"].
+6. "intent": One of ["RECOMMENDATION", "EXPLORATORY", "CATEGORY_LIST", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"].
    - "RECOMMENDATION": Asking for project recommendations, ideas, suggestions, interesting topics to study, build upon, or develop further (e.g. "แนะนำโปรเจกต์หน่อย", "Could you recommend some projects?", "Are there any projects worth developing further into a mobile app?", "มีโปรเจกต์ไหนน่าสนใจเอาไปทำต่อยอดได้บ้าง"). DO NOT lock project_title or year filters.
-   - "EXPLORATORY": Surveying, listing, or searching multiple projects in a specific domain or advised by a specific teacher (e.g. "มีโปรเจกต์เกี่ยวกับ IoT อะไรบ้าง", "อาจารย์สุรพล ดูแลโปรเจกต์อะไรบ้าง", "List all web projects"). DO NOT lock project_title filter.
+   - "CATEGORY_LIST": Listing projects by a pre-tagged document category label (e.g. "Which senior projects are in the IoT category?", "โปรเจกต์ในหมวด Web", "list projects in the Network category"). Put the category name into "keywords". DO NOT lock project_title.
+   - "EXPLORATORY": Surveying, listing, or searching multiple projects in a specific domain or advised by a specific teacher WITHOUT naming a document category (e.g. "มีโปรเจกต์เกี่ยวกับ IoT อะไรบ้าง", "อาจารย์สุรพล ดูแลโปรเจกต์อะไรบ้าง"). DO NOT lock project_title filter.
    - "DEEP_DIVE": In-depth analysis of a single named project (e.g. "อธิบายระบบ X อย่างละเอียด", "Architecture of project Y").
    - "COMPARISON": Direct pairwise comparison between 2 specific named projects (e.g. "เปรียบเทียบ A กับ B", "Compare X and Y").
    - "CODE": Asking for source code, SQL, functions.
@@ -299,6 +366,22 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
     # 4. Intent Detection
     intent = _detect_intent_by_rules(raw_query, project_title_present=bool(matched_titles))
 
+    # Fast-path case 0: list by pre-tagged category (skip Ollama for clear phrasing)
+    if intent == "CATEGORY_LIST":
+        filters: dict[str, Any] = {}
+        category = extract_category_from_query(raw_query)
+        if category:
+            filters["category"] = category
+        if matched_advisor:
+            filters["advisor"] = matched_advisor
+        if matched_year:
+            filters["year"] = matched_year
+        if category:
+            norm_q = f"senior projects in the {category} category"
+        else:
+            norm_q = "senior projects by document category"
+        return norm_q, filters, "CATEGORY_LIST"
+
     # Fast-path case 1: เปรียบเทียบหลายโครงงาน (COMPARISON)
     if intent == "COMPARISON":
         if len(matched_titles) >= 2:
@@ -311,7 +394,7 @@ def _fast_path_check(raw_query: str, chat_history: Optional[str] = None) -> Opti
     if len(matched_titles) == 1:
         matched_title = matched_titles[0]
         filters: dict[str, Any] = {}
-        if intent not in {"EXPLORATORY", "COMPARISON"}:
+        if intent not in {"EXPLORATORY", "COMPARISON", "CATEGORY_LIST"}:
             filters["project_title"] = matched_title
         if matched_advisor:
             filters["advisor"] = matched_advisor
@@ -593,13 +676,29 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
                 if _is_title_explicitly_in_query(raw_query, str(v), chat_history):
                     filters[k] = v
 
-        valid_intents = {"RECOMMENDATION", "EXPLORATORY", "DEEP_DIVE", "COMPARISON", "CODE", "FACTOID"}
+        valid_intents = {
+            "RECOMMENDATION",
+            "EXPLORATORY",
+            "CATEGORY_LIST",
+            "DEEP_DIVE",
+            "COMPARISON",
+            "CODE",
+            "FACTOID",
+        }
         rule_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(filters.get("project_title")))
-        if rule_intent in {"COMPARISON", "RECOMMENDATION", "CODE"} or intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
+        if rule_intent in {"COMPARISON", "RECOMMENDATION", "CODE", "CATEGORY_LIST"} or intent not in valid_intents or any(w in raw_query.lower() for w in ["similar", "คล้าย", "เหมือน", "group", "กลุ่ม"]):
             intent = rule_intent
 
-        if filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not filters.get("project_title"):
+        if filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not filters.get("project_title") and intent != "CATEGORY_LIST":
             intent = "EXPLORATORY"
+
+        category_hint = extract_category_from_query(raw_query)
+        if intent == "CATEGORY_LIST" and category_hint:
+            filters["category"] = category_hint
+        elif intent == "CATEGORY_LIST" and keywords_raw:
+            # LLM may place the category label in keywords for ambiguous phrasing
+            resolved_kw = extract_category_from_query(f"in the {keywords_raw} category")
+            filters["category"] = resolved_kw or keywords_raw
 
         # Multi-project modes must not lock to a single project or author filter
         if intent == "COMPARISON":
@@ -609,7 +708,7 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
             matched_in_q = [t for t in metadata_cache.titles if t.lower() in raw_query.lower() or (len(t) > 8 and t[:18].lower() in raw_query.lower())]
             if matched_in_q:
                 filters["compared_projects"] = matched_in_q
-        elif intent in {"RECOMMENDATION", "EXPLORATORY"}:
+        elif intent in {"RECOMMENDATION", "EXPLORATORY", "CATEGORY_LIST"}:
             filters.pop("project_title", None)
             filters.pop("author", None)
             if intent == "RECOMMENDATION":
@@ -634,8 +733,11 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
     processor = QueryFilterProcessor(clean_norm)
     clean_q, fallback_filters = processor.parse()
     fallback_intent = _detect_intent_by_rules(raw_query, project_title_present=bool(fallback_filters.get("project_title")))
-    if fallback_filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not fallback_filters.get("project_title"):
+    if fallback_filters.get("advisor") and any(w in raw_query.lower() for w in ["projects", "โครงงาน", "โปรเจกต์", "งาน", "มีอะไรบ้าง", "list", "บ้าง"]) and not any(w in raw_query.lower() for w in ["who", "ใคร", "recommend", "แนะนำ"]) and not fallback_filters.get("project_title") and fallback_intent != "CATEGORY_LIST":
         fallback_intent = "EXPLORATORY"
+    category_hint = extract_category_from_query(raw_query)
+    if fallback_intent == "CATEGORY_LIST" and category_hint:
+        fallback_filters["category"] = category_hint
     if fallback_intent == "COMPARISON":
         fallback_filters.pop("project_title", None)
         fallback_filters.pop("author", None)
@@ -643,7 +745,7 @@ def process_query_with_llm(raw_query: str, chat_history: Optional[str] = None) -
         matched_in_q = [t for t in metadata_cache.titles if t.lower() in raw_query.lower() or (len(t) > 8 and t[:18].lower() in raw_query.lower())]
         if matched_in_q:
             fallback_filters["compared_projects"] = matched_in_q
-    elif fallback_intent in {"RECOMMENDATION", "EXPLORATORY"}:
+    elif fallback_intent in {"RECOMMENDATION", "EXPLORATORY", "CATEGORY_LIST"}:
         fallback_filters.pop("project_title", None)
         fallback_filters.pop("author", None)
         if fallback_intent == "RECOMMENDATION":

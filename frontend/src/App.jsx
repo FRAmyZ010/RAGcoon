@@ -29,9 +29,9 @@ import { fetchPublicCatalog, openDocumentPreview } from "./services/documentsApi
 import { submitFeedback } from "./services/feedbackApi";
 
 const SUGGESTIONS = [
-  "What senior projects used IoT or Bluetooth?",
-  "List projects advised by Surapol",
-  "Summarize projects about web applications",
+  "I need a senior project idea. What existing projects are good to learn from?",
+  "Which IoT projects look doable in one semester?",
+  "Show projects that combine hardware and a mobile/web app",
 ];
 
 function displayModel(model) {
