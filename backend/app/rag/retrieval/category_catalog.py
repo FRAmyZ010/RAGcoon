@@ -307,3 +307,113 @@ def looks_like_category_list_follow_up(raw_query: str) -> bool:
         return True
     # Very short continuation
     return bool(re.fullmatch(r"(more|next|เพิ่ม|ต่อ)\??", q))
+
+
+def _catalog_citations(catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    citations: list[dict[str, Any]] = []
+    for item in catalog.get("projects") or []:
+        categories = item.get("categories") or []
+        citations.append(
+            {
+                "project_title": item.get("title"),
+                "source": item.get("filename") or "catalog",
+                "pages": [],
+                "pages_formatted": "",
+                "author": item.get("authors"),
+                "advisor": item.get("advisor"),
+                "committee": item.get("supervisory_committee"),
+                "year": item.get("year"),
+                "school": None,
+                "program": None,
+                "summary": None,
+                "project_type": categories,
+                "key_technologies": None,
+                "target_problem": None,
+                "keywords": item.get("keywords"),
+                "categories": categories,
+                "document_id": item.get("document_id"),
+            }
+        )
+    return citations
+
+
+def build_category_list_retrieval(
+    *,
+    normalized_query: str,
+    filters: dict[str, Any],
+    query_proc_seconds: float = 0.0,
+    offset: int = 0,
+    limit: int = CATEGORY_LIST_PAGE_SIZE,
+    db: Session | None = None,
+    total_start: float | None = None,
+) -> dict[str, Any]:
+    """
+    Build a search_with_details-compatible payload from Postgres catalog data.
+    Skips Qdrant / hybrid / rerank entirely.
+    """
+    import time
+
+    owns_session = db is None
+    if owns_session:
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+
+    started = time.perf_counter() if total_start is None else total_start
+    try:
+        catalog_start = time.perf_counter()
+        catalog = list_projects_from_filters(db, filters, offset=offset, limit=limit)
+        catalog_seconds = time.perf_counter() - catalog_start
+        context = format_catalog_context(catalog)
+        citations = _catalog_citations(catalog)
+        sources = [
+            item.get("filename") or f"document:{item.get('document_id')}"
+            for item in (catalog.get("projects") or [])
+        ]
+        label = catalog.get("matched_category") or "category suggestions"
+        results = [
+            {
+                "id": "category-catalog",
+                "score": 1.0,
+                "text": context,
+                "payload": {
+                    "source": "postgres_catalog",
+                    "project_title": f"Category catalog: {label}",
+                    "page_number": None,
+                    "categories": [catalog["matched_category"]]
+                    if catalog.get("matched_category")
+                    else catalog.get("suggested_categories") or [],
+                },
+            }
+        ]
+        total_seconds = time.perf_counter() - started
+        print(
+            f"\n📦 [CATEGORY_LIST] Postgres catalog: "
+            f"matched={catalog.get('matched_category')!r} "
+            f"total={catalog.get('total')} page={len(catalog.get('projects') or [])} "
+            f"in {catalog_seconds:.3f}s (vector retrieval skipped)"
+        )
+        return {
+            "results": results,
+            "errors": [],
+            "timing": {
+                "query_proc_seconds": query_proc_seconds,
+                "retrieval_seconds": catalog_seconds,
+                "rerank_seconds": 0.0,
+                "total_seconds": total_seconds,
+            },
+            "normalized_query": normalized_query,
+            "filters": filters,
+            "intent": "CATEGORY_LIST",
+            "query_variants": [],
+            "retrieved_count": len(catalog.get("projects") or []),
+            "fast_path_used": True,
+            "catalog_mode": True,
+            "catalog": catalog,
+            "catalog_context": context,
+            "catalog_citations": citations,
+            "catalog_sources": sources,
+        }
+    finally:
+        if owns_session and db is not None:
+            db.close()

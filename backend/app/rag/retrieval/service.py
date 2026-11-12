@@ -226,6 +226,27 @@ def search_with_details(
         print("FILTERS:", filters)
 
         # =========================================================================
+        # CATEGORY_LIST: answer from Postgres keyword_groups (skip vector retrieval)
+        # Falls back to hybrid RAG when filters cannot be satisfied in DB.
+        # =========================================================================
+        if intent == "CATEGORY_LIST":
+            from .category_catalog import build_category_list_retrieval, can_answer_from_catalog
+
+            if can_answer_from_catalog(filters):
+                return build_category_list_retrieval(
+                    normalized_query=normalized_query,
+                    filters=filters,
+                    query_proc_seconds=query_proc_seconds,
+                    total_start=total_start,
+                )
+            from .category_catalog import catalog_unsupported_filters
+
+            print(
+                "CATEGORY_LIST filters not fully supported in Postgres "
+                f"{catalog_unsupported_filters(filters)}; falling back to hybrid retrieval"
+            )
+
+        # =========================================================================
         # True Fast-Path Shortcut: Direct Metadata Payload Retrieval
         # Bypasses expensive Embedding Vector Search and Cross-Encoder Reranker
         # for pure metadata queries (advisor, authors, year, committee, count)

@@ -18,6 +18,7 @@ from app.models.project import Project
 from app.models.rag_config import RagConfig  # noqa: F401
 from app.rag.embedding.category_registry import ensure_seeded
 from app.rag.retrieval.category_catalog import (
+    build_category_list_retrieval,
     can_answer_from_catalog,
     catalog_unsupported_filters,
     format_catalog_context,
@@ -143,6 +144,22 @@ class CategoryCatalogTests(unittest.TestCase):
         self.assertEqual(catalog_unsupported_filters({"category": "IoT"}), [])
         self.assertFalse(can_answer_from_catalog({"category": "IoT", "target_domains": ["iot"]}))
         self.assertIn("target_domains", catalog_unsupported_filters({"category": "IoT", "target_domains": ["iot"]}))
+
+    def test_build_category_list_retrieval_skips_vector_shape(self):
+        payload = build_category_list_retrieval(
+            normalized_query="senior projects in the IoT category",
+            filters={"category": "IoT"},
+            query_proc_seconds=0.01,
+            db=self.db,
+        )
+        self.assertTrue(payload["catalog_mode"])
+        self.assertTrue(payload["fast_path_used"])
+        self.assertEqual(payload["intent"], "CATEGORY_LIST")
+        self.assertEqual(payload["timing"]["rerank_seconds"], 0.0)
+        self.assertIn("IoT Watering System", payload["catalog_context"])
+        self.assertEqual(payload["retrieved_count"], 2)
+        self.assertEqual(len(payload["catalog_citations"]), 2)
+        self.assertEqual(payload["results"][0]["payload"]["source"], "postgres_catalog")
 
 
 if __name__ == "__main__":

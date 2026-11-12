@@ -447,7 +447,7 @@ Question:
         prefill = "## Recommended Projects\n\n### 1. "
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         prefill = "### 📌 สรุปภาพรวมโครงงาน\n" if is_thai else "### 📌 Project Overview\n"
-    elif intent == "EXPLORATORY":
+    elif intent in {"EXPLORATORY", "CATEGORY_LIST"}:
         prefill = "1. **"
 
     effective_model = llm_model or (rag_cfg.llm_model if rag_cfg is not None else None) or _active_model()
@@ -857,6 +857,29 @@ def _prepare_rag_context(
     contexts: list[str] = []
     has_filter = bool(filters)
 
+    # CATEGORY_LIST catalog path: use Postgres metadata as the sole LLM context
+    if intent == "CATEGORY_LIST" and retrieval_details.get("catalog_mode"):
+        catalog_context = retrieval_details.get("catalog_context") or ""
+        if catalog_context:
+            contexts = [catalog_context]
+        citations = list(retrieval_details.get("catalog_citations") or [])
+        sources = list(retrieval_details.get("catalog_sources") or [])
+        return {
+            "question": question,
+            "is_thai": is_thai,
+            "fallback_text": fallback_text,
+            "chat_history_str": chat_history_str,
+            "contexts": contexts,
+            "sources": sources,
+            "citations": citations,
+            "scored_contexts": scored_contexts,
+            "retrieval_details": retrieval_details,
+            "intent": intent,
+            "filters": filters,
+            "retrieval_errors": retrieval_details.get("errors", []),
+            "retrieval_timing": retrieval_details.get("timing", {}),
+        }
+
     # Dynamic Intent-Aware Context Quota & Smart Trimming
     intent_cfg = _get_intent_config(intent)
     max_context_chunks = intent_cfg.get("max_context_chunks", 4)
@@ -868,6 +891,10 @@ def _prepare_rag_context(
     elif intent == "EXPLORATORY":
         max_chunks_per_project = 1
         max_total_projects = 15
+        min_score = -1.0
+    elif intent == "CATEGORY_LIST":
+        max_chunks_per_project = 1
+        max_total_projects = 10
         min_score = -1.0
     elif intent == "COMPARISON":
         max_chunks_per_project = 2
