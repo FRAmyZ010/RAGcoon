@@ -262,17 +262,21 @@ def format_catalog_context(catalog: dict[str, Any]) -> str:
         if projects
         else f"Showing items 0-0 of {total}",
         f"Projects on this page: {page_count} (the answer MUST include all {page_count} items)",
+        "Answer format reminder: each item must be only `Title (Year) — Advisor` (details are in Sources).",
         "Projects:",
     ]
     if not projects:
         lines.append("- (none on this page)")
     for idx, item in enumerate(projects, start=offset + 1):
         cats = ", ".join(item.get("categories") or []) or "-"
+        # Compact primary line for the LLM answer; keep full metadata on the next line for Sources-quality grounding
         lines.append(
-            f"{idx}. Title: {item.get('title') or '-'}; "
-            f"Year: {item.get('year') if item.get('year') is not None else '-'}; "
-            f"Authors: {item.get('authors') or '-'}; "
-            f"Advisor: {item.get('advisor') or '-'}; "
+            f"{idx}. {item.get('title') or '-'} "
+            f"({item.get('year') if item.get('year') is not None else '-'}) — "
+            f"{item.get('advisor') or '-'}"
+        )
+        lines.append(
+            f"   meta: Authors: {item.get('authors') or '-'}; "
             f"Keywords: {item.get('keywords') or '-'}; "
             f"Categories: {cats}; "
             f"Filename: {item.get('filename') or '-'}"

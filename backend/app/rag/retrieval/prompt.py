@@ -206,11 +206,12 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
     elif intent == "CATEGORY_LIST":
         return """4. Catalog Category Listing (COMPLETE ENUMERATION REQUIRED):
    Use ONLY the provided catalog/project metadata (do not invent projects).
-   You MUST list EVERY project that appears in the catalog context — do not summarize, skip, or stop early.
-   Count the numbered projects in the catalog ("Showing items A-B of N") and output exactly that many numbered items.
-   Keep each item to ONE short line:
-   1. **[Project Title]** ([Year]) — Authors: [Authors]; Advisor: [Advisor]; Keywords: [Keywords]; Categories: [Categories]; File: [Filename]
-   After the full list, if the catalog says more pages remain, tell the user they can ask for the next page.
+   You MUST list EVERY project on this catalog page — do not summarize, skip, or stop early.
+   Count the numbered projects in the catalog ("Projects on this page: N") and output exactly that many numbered items.
+   Keep each item ULTRA SHORT — one line only, no keywords/authors/categories/filename:
+   1. **[Project Title]** ([Year]) — [Advisor]
+   Do NOT paste the full catalog metadata lines. Details belong in Sources, not in the answer body.
+   After the full list, if more pages remain, tell the user they can ask for the next page (one short sentence).
    If no exact category match and suggestions are provided, list only the suggested categories (no invented projects)."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:

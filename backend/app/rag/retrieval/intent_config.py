@@ -195,7 +195,7 @@ DEFAULT_INTENT_REGISTRY: dict[str, IntentConfig] = {
         max_total_projects=10,
         min_score=-1.0,
         temperature=0.0,
-        num_predict=1280,
+        num_predict=768,
         prompt_preset="concise",
     ),
     "CODE": IntentConfig(
