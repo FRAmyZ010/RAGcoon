@@ -254,12 +254,14 @@ def format_catalog_context(catalog: dict[str, Any]) -> str:
     offset = int(catalog.get("offset") or 0)
     projects = catalog.get("projects") or []
     has_more = bool(catalog.get("has_more"))
+    page_count = len(projects)
     lines = [
         f"Document category: {matched}",
         f"Total matching projects: {total}",
-        f"Showing items {offset + 1}-{offset + len(projects)} of {total}"
+        f"Showing items {offset + 1}-{offset + page_count} of {total}"
         if projects
         else f"Showing items 0-0 of {total}",
+        f"Projects on this page: {page_count} (the answer MUST include all {page_count} items)",
         "Projects:",
     ]
     if not projects:

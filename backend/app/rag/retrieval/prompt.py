@@ -204,12 +204,14 @@ def _build_intent_instruction(intent: str, question: str = "") -> str:
    ## Sources
    - List each project source filename and pages."""
     elif intent == "CATEGORY_LIST":
-        return """4. Catalog Category Listing:
+        return """4. Catalog Category Listing (COMPLETE ENUMERATION REQUIRED):
    Use ONLY the provided catalog/project metadata (do not invent projects).
-   Enumerate matching projects concisely:
-   1. **[Project Title]** ([Year]) - Authors: [Authors]; Advisor: [Advisor]; Keywords: [Keywords]; Categories: [Categories].
-   If the catalog notes more projects beyond this page, say the user can ask for the next page.
-   If no exact category match and suggestions are provided, list the suggested categories instead of inventing projects."""
+   You MUST list EVERY project that appears in the catalog context — do not summarize, skip, or stop early.
+   Count the numbered projects in the catalog ("Showing items A-B of N") and output exactly that many numbered items.
+   Keep each item to ONE short line:
+   1. **[Project Title]** ([Year]) — Authors: [Authors]; Advisor: [Advisor]; Keywords: [Keywords]; Categories: [Categories]; File: [Filename]
+   After the full list, if the catalog says more pages remain, tell the user they can ask for the next page.
+   If no exact category match and suggestions are provided, list only the suggested categories (no invented projects)."""
     elif intent in {"DEEP_DIVE", "EXPLANATION"}:
         return """4. Structured DEEP_DIVE Analysis:
    Use this exact structure (describe ONLY documented components and relationships; if information is absent, state 'Not specified in the retrieved document.'):
