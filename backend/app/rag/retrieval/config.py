@@ -82,6 +82,13 @@ INTENT_CONFIG: dict[str, dict[str, Any]] = {
         "max_context_chunks": 15,
         "thinking": False,
     },
+    "CATEGORY_LIST": {
+        "top_k": 10,
+        "rerank_top_n": 10,
+        "num_predict": 640,
+        "max_context_chunks": 10,
+        "thinking": False,
+    },
     "CODE": {
         "top_k": 20,
         "rerank_top_n": 6,
