@@ -1,20 +1,15 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Check,
   ChevronRight,
-  Copy,
   ExternalLink,
   FileText,
   Menu,
   MessageSquare,
   MessageSquarePlus,
   PanelLeftClose,
-  RefreshCw,
   Search,
   SendHorizontal,
-  ThumbsDown,
-  ThumbsUp,
   X,
 } from "lucide-react";
 import {
@@ -26,7 +21,6 @@ import {
 } from "./services/chatHistory";
 import MarkdownMessage from "./components/MarkdownMessage";
 import { fetchPublicCatalog, openDocumentPreview } from "./services/documentsApi";
-import { submitFeedback } from "./services/feedbackApi";
 
 const SUGGESTIONS = [
   "I need a senior project idea. What existing projects are good to learn from?",
@@ -193,8 +187,6 @@ export default function App() {
   const [activeWorkspaceTitle, setActiveWorkspaceTitle] = useState("New chat");
   const [showCitationsIndex, setShowCitationsIndex] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [feedback, setFeedback] = useState({});
-  const [copiedIndex, setCopiedIndex] = useState(null);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [catalog, setCatalog] = useState({ documents: [], top_keywords: [] });
   const [docQuery, setDocQuery] = useState("");
@@ -289,31 +281,19 @@ export default function App() {
   };
 
   const streamQuery = async (userQuery, workspaceId = activeWorkspaceId, options = {}) => {
-    const { replaceBotIndex = null, priorMessages = messages } = options;
+    const { priorMessages = messages } = options;
     setLoading(true);
 
-    let snapshot;
-    let botMsgIndex;
-    if (replaceBotIndex != null) {
-      botMsgIndex = replaceBotIndex;
-      snapshot = priorMessages.map((message, index) =>
-        index === botMsgIndex
-          ? { role: "bot", text: "", citations: [], meta: "Searching...", model: null, preset: null }
-          : message
-      );
-    } else {
-      botMsgIndex = priorMessages.length + 1;
-      snapshot = [
-        ...priorMessages,
-        { role: "user", text: userQuery },
-        { role: "bot", text: "", citations: [], meta: "Searching..." },
-      ];
-    }
+    const botMsgIndex = priorMessages.length + 1;
+    let snapshot = [
+      ...priorMessages,
+      { role: "user", text: userQuery },
+      { role: "bot", text: "", citations: [], meta: "Searching..." },
+    ];
     setMessages(snapshot);
 
     let saved = false;
-    const historyForApi =
-      replaceBotIndex != null ? priorMessages.slice(0, Math.max(replaceBotIndex - 1, 0)) : priorMessages;
+    const historyForApi = priorMessages;
     try {
       const response = await fetch("/api/v1/chat/query-stream", {
         method: "POST",
@@ -420,31 +400,6 @@ export default function App() {
     }
   };
 
-  const handleRegenerate = async () => {
-    if (loading || messages.length < 2) return;
-
-    let botIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === "bot") {
-        botIndex = i;
-        break;
-      }
-    }
-    if (botIndex < 1 || messages[botIndex - 1]?.role !== "user") return;
-
-    const userQuery = messages[botIndex - 1].text;
-    let workspaceId = activeWorkspaceId;
-    if (!workspaceId) {
-      workspaceId = createWorkspaceId();
-      setActiveWorkspaceId(workspaceId);
-    }
-
-    await streamQuery(userQuery, workspaceId, {
-      replaceBotIndex: botIndex,
-      priorMessages: messages,
-    });
-  };
-
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!input.trim() || loading) return;
@@ -471,46 +426,11 @@ export default function App() {
     await streamQuery(text, workspaceId, { priorMessages: messages });
   };
 
-  const rateAnswer = async (index, kind) => {
-    setFeedback({ ...feedback, [index]: kind });
-    const queryId = messages[index]?.queryId;
-    if (!queryId) return;
-    try {
-      await submitFeedback({
-        name: "Anonymous",
-        rating: kind === "like" ? 5 : 1,
-        feedbackType: "Others",
-        comment: kind,
-        queryId,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleCopy = async (text, idx) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedIndex(idx);
-      setTimeout(() => setCopiedIndex(null), 1500);
-    } catch {
-      console.log("Copy failed");
-    }
-  };
-
   const filteredThreads = threads.filter((item) =>
     item.title.toLowerCase().includes(search.toLowerCase())
   );
 
   const showEmptyState = messages.length === 0 && !loading;
-
-  let lastBotIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === "bot") {
-      lastBotIndex = i;
-      break;
-    }
-  }
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#f7f7f8] font-sans text-base text-gray-800 sm:text-lg">
@@ -757,68 +677,20 @@ export default function App() {
                             )}
                           </div>
 
-                          {(msg.text || (msg.citations && msg.citations.length > 0)) && (
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-400">
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => handleCopy(msg.text, index)}
-                                  className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
-                                  title="Copy message"
-                                  aria-label="Copy message"
-                                >
-                                  {copiedIndex === index ? (
-                                    <Check className="h-3.5 w-3.5 text-green-600" />
-                                  ) : (
-                                    <Copy className="h-3.5 w-3.5" />
-                                  )}
-                                </button>
-
-                                {index === lastBotIndex && !loading && (
-                                  <button
-                                    type="button"
-                                    onClick={handleRegenerate}
-                                    className="rounded-md p-1.5 hover:bg-gray-100 hover:text-gray-700"
-                                    title="Regenerate answer"
-                                    aria-label="Regenerate answer"
-                                  >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-
-                                {msg.citations && msg.citations.length > 0 && (
-                                  <button
-                                    onClick={() =>
-                                      setShowCitationsIndex(
-                                        showCitationsIndex === index ? null : index
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-gray-100 hover:text-gray-700"
-                                    title={`Sources (${msg.citations.length})`}
-                                  >
-                                    <FileText className="h-3.5 w-3.5" />
-                                    Sources ({msg.citations.length})
-                                  </button>
-                                )}
-
-                                <button
-                                  onClick={() => rateAnswer(index, "like")}
-                                  className={`rounded-md p-1.5 hover:bg-gray-100 ${
-                                    feedback[index] === "like" ? "text-green-600" : ""
-                                  }`}
-                                  aria-label="Like"
-                                >
-                                  <ThumbsUp className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => rateAnswer(index, "dislike")}
-                                  className={`rounded-md p-1.5 hover:bg-gray-100 ${
-                                    feedback[index] === "dislike" ? "text-red-600" : ""
-                                  }`}
-                                  aria-label="Dislike"
-                                >
-                                  <ThumbsDown className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
+                          {msg.citations && msg.citations.length > 0 && (
+                            <div className="mt-2 flex items-center text-sm text-gray-400">
+                              <button
+                                onClick={() =>
+                                  setShowCitationsIndex(
+                                    showCitationsIndex === index ? null : index
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium hover:bg-gray-100 hover:text-gray-700"
+                                title={`Sources (${msg.citations.length})`}
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                Sources ({msg.citations.length})
+                              </button>
                             </div>
                           )}
                           {(msg.preset || msg.model || msg.meta) && (
